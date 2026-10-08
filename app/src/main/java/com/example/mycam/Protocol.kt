@@ -58,4 +58,30 @@ object Protocol {
     }
 
     data class Command(val cmd: Int, val arg: Int)
+
+    /** Splits the PC's byte stream into commands, skipping garbage until the next valid magic. */
+    class CommandParser {
+        private var pending = ByteArray(0)
+
+        fun feed(bytes: ByteArray, length: Int = bytes.size): List<Command> {
+            val data = pending + bytes.copyOfRange(0, length)
+            val buf = ByteBuffer.wrap(data).order(ByteOrder.BIG_ENDIAN)
+            val commands = mutableListOf<Command>()
+            var pos = 0
+            while (data.size - pos >= COMMAND_SIZE) {
+                // Only accept plausible commands so stray magic bytes in garbage can't desync the stream.
+                val cmd = data[pos + 4].toInt() and 0xFF
+                val valid = buf.getInt(pos) == COMMAND_MAGIC && cmd in CMD_HELLO..CMD_SET_FACING &&
+                    data[pos + 6].toInt() == 0 && data[pos + 7].toInt() == 0
+                if (!valid) {
+                    pos++ // Resync byte by byte.
+                    continue
+                }
+                commands += Command(cmd, data[pos + 5].toInt() and 0xFF)
+                pos += COMMAND_SIZE
+            }
+            pending = data.copyOfRange(pos, data.size)
+            return commands
+        }
+    }
 }

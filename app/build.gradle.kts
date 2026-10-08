@@ -53,3 +53,8 @@ dependencies {
     debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(libs.androidx.compose.ui.tooling)
 }
+// ProtocolTest reads the shared golden vectors; re-run unit tests whenever they change.
+val protocolGolden = rootProject.file("protocol/golden.txt")
+tasks.withType<Test>().configureEach {
+    inputs.file(protocolGolden).withPathSensitivity(PathSensitivity.RELATIVE)
+}

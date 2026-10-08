@@ -1,0 +1,20 @@
+# Golden byte sequences for the MyCam wire protocol (see PROTOCOL.md).
+# Both test suites check against this file:
+#   Android: app/src/test/java/com/example/mycam/ProtocolTest.kt  (builds packets, parses commands)
+#   Windows: pc/tests/tests.cpp                                   (parses packets, builds commands)
+# Format: name = hex bytes (spaces are ignored). Change both implementations and this file together.
+
+# Phone -> PC packets: magic | type | flags | reserved(2) | ptsUs(8) | length(4) | payload
+packet.hello   = 4D43414D 00 00 0000 0000000000000000 00000002 0001
+packet.config  = 4D43414D 01 00 0000 0000000000000000 0000000C 0780 0438 005A 01 0000000167
+packet.frame   = 4D43414D 02 01 0000 0102030405060708 00000004 DEADBEEF
+packet.orient  = 4D43414D 03 00 0000 0000000000000000 00000002 010E
+packet.state   = 4D43414D 04 00 0000 0000000000000000 00000002 01 01
+packet.log     = 4D43414D 05 00 0000 0000000000000000 00000002 6869
+
+# PC -> phone commands: magic | cmd | arg | reserved(2)
+command.hello       = 4D434D44 01 00 0000
+command.start       = 4D434D44 02 00 0000
+command.stop        = 4D434D44 03 00 0000
+command.keyframe    = 4D434D44 04 00 0000
+command.facing_front = 4D434D44 05 01 0000

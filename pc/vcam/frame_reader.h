@@ -30,8 +30,6 @@ private:
     bool mirror_ = false;
     uint64_t frameTick_ = 0;
     LONG lastSeq_ = -1;
-
-    std::vector<int> xmap_, ymap_;
 };
 
 } // namespace mycam

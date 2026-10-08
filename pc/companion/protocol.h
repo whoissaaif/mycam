@@ -16,6 +16,7 @@ enum PacketType : uint8_t {
     kState = 4,   // u8 state, [u8 facing]
     kLog = 5,     // UTF-8 diagnostic text from the phone
 };
+constexpr uint8_t kMaxPacketType = kLog;
 
 constexpr uint8_t kFlagKeyFrame = 0x01;
 

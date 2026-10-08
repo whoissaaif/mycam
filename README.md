@@ -26,14 +26,17 @@ Camera2 → H.264 encoder ──────────────────
 | Path | What |
 |---|---|
 | `app/` | Android app (Kotlin, Compose). `WebcamService` owns the USB link and camera. |
-| `pc/companion/` | Tray app: AOA handshake (libusb + UsbDk), H.264 decode, frame hand-off. |
+| `pc/companion/` | Tray app: AOA switch (libusb + UsbDk), streaming over WinUSB, H.264 decode, frame hand-off. |
 | `pc/vcam/` | Virtual camera media source DLL loaded by Windows Frame Server. |
 | `pc/common/` | Shared memory layout and the COM CLSID. |
 | `pc/install.ps1` / `uninstall.ps1` | One-time PC setup / removal. |
-| `pc/tools/capture_test.cpp` | Grabs a frame from the MyCam camera, for testing. |
+| `pc/tests/` | C++ unit tests: packet parser, protocol vectors, frame rotate/scale. |
+| `pc/tools/` | Developer tools (not shipped): `capture_test` grabs a MyCam frame, `usb_probe` lists USB devices via UsbDk. |
+| `protocol/` | Wire protocol spec (`PROTOCOL.md`) and byte-exact test vectors (`golden.txt`). |
 
-The wire protocol is defined twice and must stay in sync:
-`app/src/main/java/com/example/mycam/Protocol.kt` and `pc/companion/protocol.h`.
+The wire protocol is implemented twice, in `app/.../Protocol.kt` and `pc/companion/protocol.h`. Both test suites
+check against `protocol/golden.txt`, so a change on one side alone fails a test. See
+[protocol/PROTOCOL.md](protocol/PROTOCOL.md).
 
 ## Build
 
@@ -42,8 +45,15 @@ The wire protocol is defined twice and must stay in sync:
 **PC** (Visual Studio 2022 Build Tools + Windows 11 SDK + CMake):
 ```
 cd pc
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64   # add -DMYCAM_BUILD_TOOLS=ON for the dev tools
 cmake --build build --config Release
+```
+
+## Tests
+
+```
+gradlew :app:testDebugUnitTest                 # Android: protocol encoding/parsing
+ctest --test-dir pc/build -C Release           # PC: parser, protocol vectors, frame transform
 ```
 
 ## Install
@@ -54,7 +64,8 @@ cmake --build build --config Release
    hash-checked), copies MyCam to `C:\Program Files\MyCam`, registers the virtual camera, and adds the
    tray app to startup.
 3. Plug in the phone. The first time, the phone asks to open MyCam: tick **Always** and tap **OK**,
-   then allow camera access.
+   then allow camera access. Windows also asks for admin once per new phone, to give its accessory mode
+   the built-in WinUSB driver.
 
 After that, plugging in is all it takes. Switch cameras from the phone app or the tray menu.
 
@@ -62,8 +73,16 @@ After that, plugging in is all it takes. Switch cameras from the phone app or th
 
 ```
 "C:\Program Files\MyCam\MyCamCompanion.exe" --test-pattern [--rotate=90]
-pc\build\Release\capture_test.exe out.bmp
+pc\build\Release\capture_test.exe out.bmp      # needs -DMYCAM_BUILD_TOOLS=ON
 ```
+
+## Troubleshooting
+
+The companion writes `%LOCALAPPDATA%\MyCam\mycam.log`, including the phone's own messages ("phone says: ...").
+It records each step: phone found, switched to accessory mode, connected, camera started, frames decoded.
+
+Exit MyCam from the tray rather than killing it. A killed companion can leave the phone stuck until it's
+replugged.
 
 ## Known limits
 

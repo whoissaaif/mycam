@@ -1,0 +1,88 @@
+package com.example.mycam
+
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Test
+import java.io.File
+
+/** Checks Protocol.kt against the shared byte-exact vectors in protocol/golden.txt. */
+class ProtocolTest {
+
+    private val golden: Map<String, ByteArray> by lazy {
+        // Gradle runs unit tests from the app module directory.
+        File("../protocol/golden.txt").readLines()
+            .map { it.substringBefore('#').trim() }
+            .filter { it.contains('=') }
+            .associate { line ->
+                val (name, value) = line.split('=', limit = 2).map { it.trim() }
+                name to hex(value)
+            }
+    }
+
+    private fun hex(s: String) = s.replace(" ", "").chunked(2).map { it.toInt(16).toByte() }.toByteArray()
+
+    @Test
+    fun packetsMatchGolden() {
+        assertArrayEquals(golden.getValue("packet.hello"), Protocol.packet(Protocol.TYPE_HELLO, 0, 0, hex("0001")))
+        assertArrayEquals(
+            golden.getValue("packet.config"),
+            Protocol.packet(Protocol.TYPE_CONFIG, 0, 0, hex("0780 0438 005A 01 0000000167")),
+        )
+        assertArrayEquals(
+            golden.getValue("packet.frame"),
+            Protocol.packet(Protocol.TYPE_FRAME, Protocol.FLAG_KEYFRAME, 0x0102030405060708L, hex("DEADBEEF")),
+        )
+        assertArrayEquals(golden.getValue("packet.orient"), Protocol.packet(Protocol.TYPE_ORIENT, 0, 0, hex("010E")))
+        assertArrayEquals(
+            golden.getValue("packet.state"),
+            Protocol.packet(
+                Protocol.TYPE_STATE, 0, 0,
+                byteArrayOf(Protocol.STATE_STREAMING.toByte(), Protocol.FACING_FRONT.toByte()),
+            ),
+        )
+        assertArrayEquals(golden.getValue("packet.log"), Protocol.packet(Protocol.TYPE_LOG, 0, 0, "hi".toByteArray()))
+    }
+
+    @Test
+    fun commandsMatchGolden() {
+        val expected = mapOf(
+            "command.hello" to Protocol.Command(Protocol.CMD_HELLO, 0),
+            "command.start" to Protocol.Command(Protocol.CMD_START, 0),
+            "command.stop" to Protocol.Command(Protocol.CMD_STOP, 0),
+            "command.keyframe" to Protocol.Command(Protocol.CMD_KEYFRAME, 0),
+            "command.facing_front" to Protocol.Command(Protocol.CMD_SET_FACING, Protocol.FACING_FRONT),
+        )
+        for ((name, command) in expected) {
+            assertEquals(name, listOf(command), Protocol.CommandParser().feed(golden.getValue(name)))
+        }
+    }
+
+    @Test
+    fun commandParserHandlesSplitsBatchesAndGarbage() {
+        val start = golden.getValue("command.start")
+        val stop = golden.getValue("command.stop")
+        val parser = Protocol.CommandParser()
+
+        // Split across reads.
+        assertEquals(emptyList<Protocol.Command>(), parser.feed(start.copyOfRange(0, 3)))
+        assertEquals(listOf(Protocol.Command(Protocol.CMD_START, 0)), parser.feed(start.copyOfRange(3, start.size)))
+
+        // Garbage first, then two commands in one read.
+        assertEquals(
+            listOf(Protocol.Command(Protocol.CMD_START, 0), Protocol.Command(Protocol.CMD_STOP, 0)),
+            parser.feed(hex("00 FF 4D 43") + start + stop),
+        )
+
+        // A stray magic followed by an invalid command must not hide the real command after it.
+        assertEquals(
+            listOf(Protocol.Command(Protocol.CMD_STOP, 0)),
+            Protocol.CommandParser().feed(hex("4D434D44 FF 00 1234") + stop),
+        )
+
+        // A read far larger than the old fixed 4 KiB buffer.
+        assertEquals(
+            listOf(Protocol.Command(Protocol.CMD_START, 0)),
+            Protocol.CommandParser().feed(ByteArray(20000) + start),
+        )
+    }
+}

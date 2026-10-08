@@ -29,6 +29,7 @@ add_library(MyCamVCam SHARED
     vcam/dllmain.cpp
     vcam/media_source.cpp
     vcam/frame_reader.cpp
+    vcam/frame_transform.cpp
     vcam/MyCamVCam.def
 )
 target_link_libraries(MyCamVCam PRIVATE mfplat mfuuid advapi32 runtimeobject)
@@ -39,14 +40,27 @@ add_executable(MyCamCompanion WIN32
     companion/phone_link.cpp
     companion/decoder.cpp
     companion/frame_writer.cpp
+    companion/packet_parser.cpp
     companion/winusb_bind.cpp
     companion/log.cpp
     companion/companion.rc
 )
 target_link_libraries(MyCamCompanion PRIVATE usb mfplat mfuuid mfsensorgroup ole32 shell32 advapi32 setupapi newdev cfgmgr32)
 
-# --- Test tool: grabs a frame from the MyCam camera ------------------------------------------------
-add_executable(capture_test tools/capture_test.cpp)
-target_link_libraries(capture_test PRIVATE mfplat mf mfreadwrite mfuuid ole32)
-add_executable(usb_probe tools/usb_probe.cpp)
-target_link_libraries(usb_probe PRIVATE usb)
+# --- Developer tools (not shipped; install.ps1 copies only the two binaries above) -------------------
+option(MYCAM_BUILD_TOOLS "Build developer tools (capture_test, usb_probe)" OFF)
+if(MYCAM_BUILD_TOOLS)
+    add_executable(capture_test tools/capture_test.cpp)
+    target_link_libraries(capture_test PRIVATE mfplat mf mfreadwrite mfuuid ole32)
+    add_executable(usb_probe tools/usb_probe.cpp)
+    target_link_libraries(usb_probe PRIVATE usb)
+endif()
+
+# --- Unit tests ------------------------------------------------------------------------------------
+option(MYCAM_BUILD_TESTS "Build unit tests" ON)
+if(MYCAM_BUILD_TESTS)
+    enable_testing()
+    add_executable(mycam_tests tests/tests.cpp companion/packet_parser.cpp vcam/frame_transform.cpp)
+    target_compile_definitions(mycam_tests PRIVATE MYCAM_GOLDEN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../protocol/golden.txt")
+    add_test(NAME mycam_tests COMMAND mycam_tests)
+endif()

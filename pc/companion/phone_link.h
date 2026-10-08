@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "decoder.h"
+#include "packet_parser.h"
 #include "frame_writer.h"
 
 struct libusb_context;
@@ -56,7 +57,6 @@ private:
     libusb_device* FindAccessory(libusb_context* ctx);
 
     bool SendCommand(uint8_t cmd, uint8_t arg = 0);
-    void ParsePackets();
     void HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const uint8_t* payload, uint32_t length);
     void OnDecodedFrame(const uint8_t* nv12, uint32_t width, uint32_t height);
     void Publish();
@@ -79,7 +79,7 @@ private:
     // Session state (worker thread only).
     libusb_device_handle* handle_ = nullptr;
     unsigned char epIn_ = 0, epOut_ = 0;
-    std::vector<uint8_t> rx_;
+    PacketParser parser_;
     bool gotHello_ = false;
     bool startSent_ = false;
     bool phoneStreaming_ = false;
@@ -97,7 +97,6 @@ private:
     bool sessionEnding_ = false;
     bool sessionError_ = false;
     bool keyFrameWanted_ = false;
-    bool parsing_ = false; // Sending a command runs libusb events, which can deliver more data mid-parse.
 
     // Diagnostics, logged every few seconds.
     uint64_t statBytes_ = 0, statPackets_ = 0, statFrames_ = 0, statDecoded_ = 0, statDecodeErrors_ = 0;

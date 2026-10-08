@@ -1,0 +1,82 @@
+# MyCam wire protocol (version 1)
+
+The phone and the PC talk over the two bulk endpoints of an Android Open Accessory (AOA) connection.
+All integers are **big-endian**. Implementations:
+
+- Android: `app/src/main/java/com/example/mycam/Protocol.kt`
+- Windows: `pc/companion/protocol.h` and `pc/companion/packet_parser.cpp`
+
+Byte-exact examples live in [`golden.txt`](golden.txt), and both test suites check against them.
+**When you change the protocol, update both implementations and `golden.txt` together.**
+
+## AOA identification
+
+The PC sends these strings during the AOA handshake. The phone's `res/xml/accessory_filter.xml` must
+match the manufacturer and model.
+
+| Index | Field | Value |
+|---|---|---|
+| 0 | manufacturer | `MyCam` |
+| 1 | model | `MyCam Webcam` |
+| 2 | description | `Use this phone as a USB webcam` |
+| 3 | version | `1` |
+| 4 | URI | Shown when the app isn't installed (currently a placeholder) |
+| 5 | serial | `0001` |
+
+## Phone → PC packets
+
+20-byte header followed by `length` bytes of payload:
+
+| Offset | Size | Field |
+|---|---|---|
+| 0 | 4 | magic `0x4D43414D` (`MCAM`) |
+| 4 | 1 | type |
+| 5 | 1 | flags (bit 0: key frame) |
+| 6 | 2 | reserved, 0 |
+| 8 | 8 | presentation time, µs (frames only; otherwise 0) |
+| 16 | 4 | payload length (max 8 MiB) |
+
+| Type | Name | Payload |
+|---|---|---|
+| 0 | HELLO | u16 protocol version (reply to `CMD_HELLO`) |
+| 1 | CONFIG | u16 width, u16 height, u16 sensor orientation, u8 facing, then SPS/PPS in Annex-B (may be empty) |
+| 2 | FRAME | one H.264 access unit, Annex-B. Key frames carry SPS/PPS on most phones. |
+| 3 | ORIENT | u16 device rotation, degrees clockwise (0/90/180/270) |
+| 4 | STATE | u8 state (0 idle, 1 streaming, 2 error), u8 facing |
+| 5 | LOG | UTF-8 text; the PC writes it to `mycam.log` |
+
+Facing: 0 = back, 1 = front.
+
+A receiver treats a header as valid only if the magic matches, the reserved bytes are 0, the type is
+known and the length is within limits. Otherwise it skips one byte and looks again. This resyncs after
+garbage, and stops a stray `MCAM` inside video data from being mistaken for a header. New packet types
+therefore need a protocol version bump.
+
+## PC → phone commands
+
+Fixed 8 bytes:
+
+| Offset | Size | Field |
+|---|---|---|
+| 0 | 4 | magic `0x4D434D44` (`MCMD`) |
+| 4 | 1 | command |
+| 5 | 1 | argument |
+| 6 | 2 | reserved, 0 |
+
+| Cmd | Name | Meaning |
+|---|---|---|
+| 1 | HELLO | Phone replies with HELLO, STATE and ORIENT |
+| 2 | START | Turn the camera on and stream (resends CONFIG and a key frame if already streaming) |
+| 3 | STOP | Turn the camera off |
+| 4 | KEYFRAME | Resend CONFIG and request a key frame |
+| 5 | SET_FACING | Switch camera; argument = facing |
+
+Commands are validated the same way: magic, a known command number, and zero reserved bytes.
+
+## Flow
+
+1. PC opens the accessory and sends `HELLO` (repeated every 2 s until answered).
+2. The phone answers `HELLO`, `STATE`, `ORIENT`.
+3. When a PC app opens the MyCam camera, the PC sends `START`. The phone sends `CONFIG`, `STATE(streaming)`,
+   then `FRAME`s.
+4. About 4 s after the last PC app closes the camera, the PC sends `STOP`.

@@ -14,7 +14,7 @@
 .cxx
 local.properties
 
-/pc/build
+/pc/build*/
 
 # Local scratch
 *.log

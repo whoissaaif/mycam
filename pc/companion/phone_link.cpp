@@ -256,7 +256,7 @@ void PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx) {
         return;
     }
 
-    rx_.clear();
+    parser_.Reset();
     gotHello_ = startSent_ = phoneStreaming_ = false;
     waitKeyFrame_ = true;
     csd_.clear();
@@ -361,8 +361,10 @@ void PhoneLink::OnInTransfer(libusb_transfer* t) {
     if (t->status == LIBUSB_TRANSFER_COMPLETED || t->status == LIBUSB_TRANSFER_TIMED_OUT) {
         if (t->actual_length > 0) {
             statBytes_ += t->actual_length;
-            rx_.insert(rx_.end(), t->buffer, t->buffer + t->actual_length);
-            if (!parsing_) ParsePackets(); // Otherwise the running parse loop picks it up.
+            parser_.Feed(t->buffer, size_t(t->actual_length), [this](const Packet& p) {
+                ++statPackets_;
+                HandlePacket(p.type, p.flags, p.ptsUs, p.payload, p.length);
+            });
         }
         if (!sessionEnding_ && libusb_submit_transfer(t) == LIBUSB_SUCCESS) return;
     } else if (t->status != LIBUSB_TRANSFER_CANCELLED) {
@@ -394,29 +396,6 @@ bool PhoneLink::SendCommand(uint8_t cmd, uint8_t arg) {
         return false;
     }
     return true;
-}
-
-void PhoneLink::ParsePackets() {
-    parsing_ = true;
-    size_t pos = 0;
-    while (rx_.size() - pos >= proto::kHeaderSize) {
-        const uint8_t* p = rx_.data() + pos;
-        if (proto::ReadU32(p) != proto::kPacketMagic) {
-            ++pos; // Resync byte by byte.
-            continue;
-        }
-        uint32_t length = proto::ReadU32(p + 16);
-        if (length > proto::kMaxPayload) {
-            ++pos;
-            continue;
-        }
-        if (rx_.size() - pos < proto::kHeaderSize + length) break; // Wait for the rest.
-        ++statPackets_;
-        HandlePacket(p[4], p[5], proto::ReadI64(p + 8), p + proto::kHeaderSize, length);
-        pos += proto::kHeaderSize + length;
-    }
-    rx_.erase(rx_.begin(), rx_.begin() + pos);
-    parsing_ = false;
 }
 
 void PhoneLink::HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const uint8_t* payload, uint32_t length) {

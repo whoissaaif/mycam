@@ -99,17 +99,18 @@ publisher" warnings and an uninstaller entry in Settings → Apps.
 
 ---
 
-## 6. Project hygiene (S)
-- Set up git and commit.
-- Keep `capture_test` and `usb_probe` out of the shipped build.
-- Unit tests for the protocol parser and `FrameReader` scaling/rotation.
-- Keep `Protocol.kt` and `protocol.h` in sync (a shared spec or a test).
+## 6. Project hygiene (S): ✅ done
+- ✅ Git repo set up and committed.
+- ✅ `capture_test` and `usb_probe` are behind `-DMYCAM_BUILD_TOOLS=ON` and never shipped.
+- ✅ Unit tests: C++ (`pc/tests`, packet parser and frame transform) and Android (`ProtocolTest`).
+- ✅ Protocol spec in `protocol/PROTOCOL.md`; both sides tested against `protocol/golden.txt`.
+- Found by the tests and fixed: a stray `MCAM`/`MCMD` inside garbage could be taken for a header,
+  and the phone's command reader could crash on a read over 4 KiB.
 
 ---
 
 ## Suggested order
 
-0. **6** Project hygiene (in progress)
 1. **1.2** Pause when Windows is locked (privacy)
 2. **1.1** Pause button on the phone
 3. **3.1** Crop to fill, and **4.1** dim the screen while streaming

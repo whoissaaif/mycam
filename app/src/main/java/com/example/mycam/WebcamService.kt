@@ -181,26 +181,12 @@ class WebcamService : Service() {
     private fun readLoop(input: FileInputStream) {
         // AOA reads must use a buffer of at least 16 KiB or some kernels fail the transfer.
         val buf = ByteArray(16384)
-        val pending = ByteBuffer.allocate(4096).order(ByteOrder.BIG_ENDIAN)
+        val parser = Protocol.CommandParser()
         try {
             while (!Thread.currentThread().isInterrupted) {
                 val n = input.read(buf)
                 if (n < 0) break
-                if (n > pending.remaining()) pending.clear() // Garbage; resync.
-                pending.put(buf, 0, n)
-                pending.flip()
-                while (pending.remaining() >= Protocol.COMMAND_SIZE) {
-                    pending.mark()
-                    if (pending.int != Protocol.COMMAND_MAGIC) {
-                        pending.reset(); pending.get() // Skip one byte and try to resync.
-                        continue
-                    }
-                    val cmd = pending.get().toInt() and 0xFF
-                    val arg = pending.get().toInt() and 0xFF
-                    pending.short
-                    camera.post { handleCommand(cmd, arg) }
-                }
-                pending.compact()
+                for (c in parser.feed(buf, n)) camera.post { handleCommand(c.cmd, c.arg) }
             }
         } catch (e: IOException) {
             Log.i(TAG, "Accessory read ended: ${e.message}")
