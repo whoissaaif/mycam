@@ -29,3 +29,6 @@ local.properties
 # Local design references (Microsoft artwork, not redistributable) and raw screenshots
 /inspo/
 /screenshots/
+
+# Release files staged for GitHub Releases
+/release/
