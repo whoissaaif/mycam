@@ -76,4 +76,28 @@ void DrawFittedNV12(const uint8_t* src, uint32_t srcWidth, uint32_t srcHeight, u
     }
 }
 
+void BgraToNV12(const uint8_t* bgra, ptrdiff_t stride, uint32_t width, uint32_t height, uint8_t* dst) {
+    uint8_t* y = dst;
+    uint8_t* uv = dst + size_t(width) * height;
+    for (uint32_t row = 0; row < height; ++row) {
+        const uint8_t* p = bgra + row * stride;
+        for (uint32_t x = 0; x < width; ++x, p += 4) {
+            y[row * width + x] = uint8_t(((66 * p[2] + 129 * p[1] + 25 * p[0] + 128) >> 8) + 16);
+        }
+    }
+    // Chroma from the average of each 2x2 block.
+    for (uint32_t row = 0; row < height / 2; ++row) {
+        const uint8_t* a = bgra + (2 * row) * stride;
+        const uint8_t* b = a + stride;
+        for (uint32_t x = 0; x < width / 2; ++x) {
+            const uint8_t* p[4] = {a + 8 * x, a + 8 * x + 4, b + 8 * x, b + 8 * x + 4};
+            int r = 0, g = 0, bl = 0;
+            for (const uint8_t* q : p) { r += q[2]; g += q[1]; bl += q[0]; }
+            r = (r + 2) / 4; g = (g + 2) / 4; bl = (bl + 2) / 4;
+            uv[row * width + 2 * x] = uint8_t(((-38 * r - 74 * g + 112 * bl + 128) >> 8) + 128);
+            uv[row * width + 2 * x + 1] = uint8_t(((112 * r - 94 * g - 18 * bl + 128) >> 8) + 128);
+        }
+    }
+}
+
 } // namespace mycam

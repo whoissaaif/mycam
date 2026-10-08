@@ -15,30 +15,11 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.tooling.preview.Preview
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
+import com.example.mycam.ui.WebcamScreen
 import com.example.mycam.ui.theme.MycamTheme
 
 class MainActivity : ComponentActivity() {
@@ -70,22 +51,16 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        WebcamService.showIdleFacing(
-            getSharedPreferences(WebcamService.PREFS, MODE_PRIVATE).getInt(WebcamService.PREF_FACING, Protocol.FACING_BACK)
-        )
+        val prefs = getSharedPreferences(WebcamService.PREFS, MODE_PRIVATE)
+        WebcamService.showIdleFacing(prefs.getInt(WebcamService.PREF_FACING, Protocol.FACING_BACK))
+        WebcamService.showIdlePaused(prefs.getBoolean(WebcamService.PREF_PAUSED, false))
         ContextCompat.registerReceiver(
             this, usbPermissionReceiver, IntentFilter(ACTION_USB_PERMISSION), ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         setContent {
             MycamTheme {
                 val state by WebcamService.state.collectAsState()
-                Scaffold(modifier = Modifier.fillMaxSize()) { innerPadding ->
-                    WebcamScreen(
-                        state = state,
-                        onFacing = ::setFacing,
-                        modifier = Modifier.padding(innerPadding),
-                    )
-                }
+                WebcamScreen(state = state, onFacing = ::setFacing, onPause = ::setPaused)
             }
         }
         handleIntent(intent)
@@ -176,53 +151,26 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    /** Pause or resume. With a PC connected the service applies it (and tells the PC); otherwise it is saved. */
+    private fun setPaused(paused: Boolean) {
+        if (WebcamService.state.value.connected) {
+            startService(
+                Intent(this, WebcamService::class.java)
+                    .setAction(WebcamService.ACTION_SET_PAUSED)
+                    .putExtra(WebcamService.EXTRA_PAUSED, paused)
+            )
+        } else {
+            getSharedPreferences(WebcamService.PREFS, MODE_PRIVATE).edit()
+                .putBoolean(WebcamService.PREF_PAUSED, paused).apply()
+            WebcamService.showIdlePaused(paused)
+        }
+    }
+
     private fun granted(permission: String) =
         ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
     companion object {
         private const val ACTION_USB_PERMISSION = "com.example.mycam.USB_PERMISSION"
         const val ACCESSORY_MANUFACTURER = "MyCam"
-    }
-}
-
-@Composable
-fun WebcamScreen(state: WebcamService.UiState, onFacing: (Int) -> Unit, modifier: Modifier = Modifier) {
-    Column(
-        modifier = modifier.fillMaxSize().padding(24.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-    ) {
-        val (title, detail) = when {
-            state.error != null -> stringResource(R.string.status_error) to state.error
-            state.streaming -> stringResource(R.string.status_streaming) to state.resolution
-            state.connected -> stringResource(R.string.status_idle) to stringResource(R.string.status_idle_detail)
-            else -> stringResource(R.string.status_disconnected) to stringResource(R.string.status_disconnected_detail)
-        }
-        Text(title, style = MaterialTheme.typography.headlineMedium, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(8.dp))
-        Text(detail, style = MaterialTheme.typography.bodyLarge, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(32.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-            FacingButton(stringResource(R.string.camera_back), state.facing == Protocol.FACING_BACK, Modifier.weight(1f)) {
-                onFacing(Protocol.FACING_BACK)
-            }
-            FacingButton(stringResource(R.string.camera_front), state.facing == Protocol.FACING_FRONT, Modifier.weight(1f)) {
-                onFacing(Protocol.FACING_FRONT)
-            }
-        }
-    }
-}
-
-@Composable
-private fun FacingButton(label: String, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
-    if (selected) Button(onClick = onClick, modifier = modifier) { Text(label) }
-    else OutlinedButton(onClick = onClick, modifier = modifier) { Text(label) }
-}
-
-@Preview(showBackground = true)
-@Composable
-fun WebcamScreenPreview() {
-    MycamTheme {
-        WebcamScreen(WebcamService.UiState(connected = true, streaming = true, resolution = "1920×1080"), {})
     }
 }

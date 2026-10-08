@@ -6,3 +6,8 @@
 103 ICON "res/tray_streaming.ico"
 104 ICON "res/tray_paused.ico"
 105 ICON "res/tray_error.ico"
+
+// Pictures the MyCam camera shows when there is no live video (design/tools/make_status_frames.ps1).
+// IDs must match StatusImageId in status_images.h.
+201 RCDATA "res/frame_paused.png"
+202 RCDATA "res/frame_waiting.png"

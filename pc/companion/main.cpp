@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <commctrl.h>
 #include <shellapi.h>
+#include <wtsapi32.h>
 #include <mfapi.h>
 #include <mfvirtualcamera.h>
 #include <wrl/client.h>
@@ -19,6 +20,7 @@
 #include "phone_link.h"
 #include "protocol.h"
 #include "settings_window.h"
+#include "status_images.h"
 #include "status_text.h"
 #include "winusb_bind.h"
 
@@ -35,6 +37,7 @@ constexpr UINT kTrayId = 1;
 enum MenuId : UINT {
     kMenuSettings = 100,
     kMenuStatus,
+    kMenuPause,
     kMenuBack,
     kMenuFront,
     kMenuMirror,
@@ -53,6 +56,8 @@ std::mutex g_statusLock;
 LinkStatus g_status;
 LinkStatus g_shownStatus;
 bool g_vcamOk = false;
+bool g_sessionLocked = false; // Windows session locked (WTS notifications)
+bool g_suspended = false;     // PC going to sleep
 int g_trayIcon = 0;
 
 LinkStatus CurrentStatus() {
@@ -112,6 +117,11 @@ void SetMirror(bool mirror) {
     WriteSetting(L"Mirror", mirror);
 }
 
+// Windows locked or asleep: keep the phone camera off (privacy). Separate from the user's own pause.
+void UpdateLockPause() {
+    if (g_link) g_link->SetLockPaused(g_sessionLocked || g_suspended);
+}
+
 void ShowMenu(HWND hwnd) {
     const LinkStatus s = CurrentStatus();
     const StatusView view = DescribeStatus(s, g_vcamOk);
@@ -120,6 +130,10 @@ void ShowMenu(HWND hwnd) {
     SetMenuDefaultItem(menu, kMenuSettings, FALSE); // Bold; also what a left-click opens.
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING | MF_GRAYED, kMenuStatus, view.headline.c_str());
+    const bool paused = s.state == LinkState::Paused;
+    const bool connected = s.state >= LinkState::Idle;
+    AppendMenuW(menu, MF_STRING | (connected && !s.lockPaused ? 0 : MF_GRAYED), kMenuPause,
+                paused ? L"Resume camera" : L"Pause camera");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kMenuBack, L"Back camera");
     AppendMenuW(menu, MF_STRING, kMenuFront, L"Front camera");
@@ -171,6 +185,17 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case WM_CONTEXTMENU: ShowMenu(hwnd); break;
         }
         return 0;
+    case WM_WTSSESSION_CHANGE:
+        if (wp == WTS_SESSION_LOCK || wp == WTS_SESSION_UNLOCK) {
+            g_sessionLocked = wp == WTS_SESSION_LOCK;
+            UpdateLockPause();
+        }
+        return 0;
+    case WM_POWERBROADCAST:
+        if (wp == PBT_APMSUSPEND) g_suspended = true;
+        if (wp == PBT_APMRESUMEAUTOMATIC || wp == PBT_APMRESUMESUSPEND) g_suspended = false;
+        UpdateLockPause();
+        return TRUE;
     case WM_NEED_DRIVER:
         RunDriverBinder();
         return 0;
@@ -180,6 +205,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_COMMAND:
         switch (LOWORD(wp)) {
         case kMenuSettings: if (g_settings) g_settings->Show(); break;
+        case kMenuPause: g_link->RequestPause(CurrentStatus().state != LinkState::Paused); break;
         case kMenuBack:  g_link->RequestFacing(proto::kFacingBack); break;
         case kMenuFront: g_link->RequestFacing(proto::kFacingFront); break;
         case kMenuMirror: SetMirror(!g_mirror); break;
@@ -190,6 +216,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         if (g_settings) g_settings->Refresh();
         return 0;
     case WM_DESTROY:
+        WTSUnRegisterSessionNotification(hwnd);
         Shell_NotifyIconW(NIM_DELETE, &g_tray);
         PostQuitMessage(0);
         return 0;
@@ -227,7 +254,9 @@ void RunTestPattern(std::atomic<bool>& quit, uint32_t rotation) {
 }
 
 int QuitRunningInstance() {
-    HWND other = FindWindowExW(HWND_MESSAGE, nullptr, L"MyCamCompanion", nullptr);
+    // Current versions use a hidden top-level window; versions before 1.1 used a message-only window.
+    HWND other = FindWindowW(L"MyCamCompanion", nullptr);
+    if (!other) other = FindWindowExW(HWND_MESSAGE, nullptr, L"MyCamCompanion", nullptr);
     if (!other) return 0;
     DWORD pid = 0;
     GetWindowThreadProcessId(other, &pid);
@@ -272,7 +301,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     wc.hInstance = instance;
     wc.lpszClassName = L"MyCamCompanion";
     RegisterClassW(&wc);
-    g_hwnd = CreateWindowW(wc.lpszClassName, L"MyCam", 0, 0, 0, 0, 0, HWND_MESSAGE, nullptr, instance, nullptr);
+    // A hidden top-level window (never shown): unlike a message-only window it receives lock/unlock and
+    // sleep notifications.
+    g_hwnd = CreateWindowExW(WS_EX_TOOLWINDOW, wc.lpszClassName, L"MyCam", WS_POPUP, 0, 0, 0, 0, nullptr, nullptr, instance, nullptr);
+    WTSRegisterSessionNotification(g_hwnd, NOTIFY_FOR_THIS_SESSION);
 
     g_tray.cbSize = sizeof(g_tray);
     g_tray.hWnd = g_hwnd;
@@ -300,6 +332,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         PostMessageW(g_hwnd, WM_STATUS, 0, 0);
     }, [] { PostMessageW(g_hwnd, WM_NEED_DRIVER, 0, 0); });
     link.SetMirror(g_mirror);
+    link.SetStatusImages(LoadStatusImage(kImagePaused), LoadStatusImage(kImageWaiting));
     g_link = &link;
 
     SettingsWindow settings({
@@ -312,6 +345,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         [](int facing) { g_link->RequestFacing(facing); },
         [] { g_link->RequestReconnect(); },
         OpenLogFolder,
+        [] { return CurrentStatus().state == LinkState::Paused; },
+        [](bool pause) { g_link->RequestPause(pause); },
     });
     g_settings = &settings;
     UpdateTray();

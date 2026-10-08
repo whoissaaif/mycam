@@ -41,6 +41,10 @@ class ProtocolTest {
             ),
         )
         assertArrayEquals(golden.getValue("packet.log"), Protocol.packet(Protocol.TYPE_LOG, 0, 0, "hi".toByteArray()))
+        assertArrayEquals(
+            golden.getValue("packet.state_paused"),
+            Protocol.packet(Protocol.TYPE_STATE, 0, 0, byteArrayOf(Protocol.STATE_PAUSED.toByte(), Protocol.FACING_BACK.toByte())),
+        )
     }
 
     @Test
@@ -51,6 +55,8 @@ class ProtocolTest {
             "command.stop" to Protocol.Command(Protocol.CMD_STOP, 0),
             "command.keyframe" to Protocol.Command(Protocol.CMD_KEYFRAME, 0),
             "command.facing_front" to Protocol.Command(Protocol.CMD_SET_FACING, Protocol.FACING_FRONT),
+            "command.pause" to Protocol.Command(Protocol.CMD_PAUSE, 0),
+            "command.resume" to Protocol.Command(Protocol.CMD_RESUME, 0),
         )
         for ((name, command) in expected) {
             assertEquals(name, listOf(command), Protocol.CommandParser().feed(golden.getValue(name)))

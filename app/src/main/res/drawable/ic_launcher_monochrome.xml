@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Themed-icon (Android 13+) silhouette of the MyCam webcam, inside the 66 dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- Head with the lens cut out. -->
+    <path android:fillColor="#FFFFFFFF" android:fillType="evenOdd"
+        android:pathData="M54,25a22,22 0,1 1,0 44a22,22 0,1 1,0 -44z M54,37a10,10 0,1 0,0 20a10,10 0,1 0,0 -20z" />
+    <!-- Pupil. -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M54,43a4,4 0,1 1,0 8a4,4 0,1 1,0 -8z" />
+    <!-- Neck and base. -->
+    <path android:fillColor="#FFFFFFFF" android:pathData="M50.5,68h7v8h-7z" />
+    <path android:fillColor="#FFFFFFFF" android:pathData="M54,75c9,0 15,2.2 15,4s-6,4 -15,4s-15,-2.2 -15,-4s6,-4 15,-4z" />
+</vector>

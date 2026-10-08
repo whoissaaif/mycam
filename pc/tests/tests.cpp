@@ -76,6 +76,7 @@ void TestGoldenPackets(std::map<std::string, Bytes>& golden) {
         {"packet.orient", proto::kOrient, 0, 0, "010E"},
         {"packet.state", proto::kState, 0, 0, "01 01"},
         {"packet.log", proto::kLog, 0, 0, "6869"},
+        {"packet.state_paused", proto::kState, 0, 0, "03 00"},
     };
     for (const Expect& e : cases) {
         CHECK(golden.count(e.name) == 1);
@@ -93,6 +94,7 @@ void TestGoldenPackets(std::map<std::string, Bytes>& golden) {
     // Spot-check the constants the golden payloads rely on.
     CHECK(Hex("01 01")[0] == proto::kStateStreaming);
     CHECK(Hex("01 01")[1] == proto::kFacingFront);
+    CHECK(Hex("03 00")[0] == proto::kStatePaused);
 }
 
 void TestGoldenCommands(std::map<std::string, Bytes>& golden) {
@@ -103,6 +105,8 @@ void TestGoldenCommands(std::map<std::string, Bytes>& golden) {
         {"command.stop", proto::kCmdStop, 0},
         {"command.keyframe", proto::kCmdKeyFrame, 0},
         {"command.facing_front", proto::kCmdSetFacing, proto::kFacingFront},
+        {"command.pause", proto::kCmdPause, 0},
+        {"command.resume", proto::kCmdResume, 0},
     };
     for (const Expect& e : cases) {
         uint8_t out[proto::kCommandSize];
@@ -240,6 +244,30 @@ void TestPitch() {
     CHECK(dst[4] == 0xAB && dst[pitch + 7] == 0xAB); // Padding untouched.
 }
 
+void TestBgraToNV12() {
+    // 2x2 blocks of solid colours -> known BT.601 limited-range values.
+    struct Case { uint8_t r, g, b, y, u, v; };
+    const Case cases[] = {
+        {255, 255, 255, 235, 128, 128}, // white
+        {0, 0, 0, 16, 128, 128},        // black
+        {255, 0, 0, 82, 90, 240},       // red
+        {128, 128, 128, 126, 128, 128}, // mid gray
+    };
+    for (const Case& c : cases) {
+        uint8_t bgra[16];
+        for (int i = 0; i < 4; ++i) { bgra[i * 4] = c.b; bgra[i * 4 + 1] = c.g; bgra[i * 4 + 2] = c.r; bgra[i * 4 + 3] = 255; }
+        uint8_t out[6] = {};
+        BgraToNV12(bgra, 8, 2, 2, out);
+        CHECK(out[0] == c.y && out[1] == c.y && out[2] == c.y && out[3] == c.y);
+        CHECK(out[4] == c.u && out[5] == c.v);
+    }
+    // Chroma averages a 2x2 block: half black, half white -> neutral chroma.
+    uint8_t mixed[16] = {0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 255};
+    uint8_t out[6] = {};
+    BgraToNV12(mixed, 8, 2, 2, out);
+    CHECK(out[0] == 16 && out[1] == 235 && out[4] == 128 && out[5] == 128);
+}
+
 } // namespace
 
 int main() {
@@ -259,6 +287,7 @@ int main() {
     printf("transform letterbox\n");       TestLetterbox();
     printf("transform downscale\n");       TestDownscale();
     printf("transform pitch\n");           TestPitch();
+    printf("bgra to nv12\n");              TestBgraToNV12();
 
     printf("%d checks, %d failed\n", g_checks, g_failures);
     return g_failures ? 1 : 0;

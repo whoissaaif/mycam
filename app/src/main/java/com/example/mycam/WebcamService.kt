@@ -44,6 +44,7 @@ class WebcamService : Service() {
     data class UiState(
         val connected: Boolean = false,
         val streaming: Boolean = false,
+        val paused: Boolean = false,
         val facing: Int = Protocol.FACING_BACK,
         val resolution: String = "",
         val error: String? = null,
@@ -62,6 +63,7 @@ class WebcamService : Service() {
 
     // Owned by the camera thread.
     private var wantStreaming = false
+    private var paused = false // User pause (phone or PC). Persisted so a reconnect never turns the camera back on.
     private var facing = Protocol.FACING_BACK
     private var lastConfig: ByteArray? = null
     private var deviceRotation = 0
@@ -83,8 +85,10 @@ class WebcamService : Service() {
         super.onCreate()
         cameraThread = HandlerThread("camera").apply { start() }
         camera = Handler(cameraThread.looper)
-        facing = getSharedPreferences(PREFS, MODE_PRIVATE).getInt(PREF_FACING, Protocol.FACING_BACK)
-        _state.update { UiState(facing = facing) }
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        facing = prefs.getInt(PREF_FACING, Protocol.FACING_BACK)
+        paused = prefs.getBoolean(PREF_PAUSED, false)
+        _state.update { UiState(facing = facing, paused = paused) }
         ContextCompat.registerReceiver(
             this, detachReceiver, IntentFilter(UsbManager.ACTION_USB_ACCESSORY_DETACHED),
             ContextCompat.RECEIVER_NOT_EXPORTED,
@@ -112,6 +116,11 @@ class WebcamService : Service() {
                 camera.post { setFacing(f) }
                 return START_NOT_STICKY
             }
+            ACTION_SET_PAUSED -> {
+                val p = intent.getBooleanExtra(EXTRA_PAUSED, false)
+                camera.post { setPaused(p) }
+                return START_NOT_STICKY
+            }
         }
 
         val acc = intent?.let { IntentCompat.getParcelableExtra(it, UsbManager.EXTRA_ACCESSORY, UsbAccessory::class.java) }
@@ -135,16 +144,7 @@ class WebcamService : Service() {
                 NotificationChannel(CHANNEL_ID, getString(R.string.channel_name), NotificationManager.IMPORTANCE_LOW)
             )
         }
-        val open = PendingIntent.getActivity(
-            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
-        )
-        val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_stat_webcam)
-            .setContentTitle(getString(R.string.notification_title))
-            .setContentText(getString(R.string.notification_text))
-            .setContentIntent(open)
-            .setOngoing(true)
-            .build()
+        val notification = buildNotification()
         return try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA)
@@ -156,6 +156,36 @@ class WebcamService : Service() {
             Log.e(TAG, "startForeground failed", e)
             false
         }
+    }
+
+    /** Ongoing notification with a Pause / Resume action, so the camera can be paused from the shade. */
+    private fun buildNotification(): Notification {
+        val open = PendingIntent.getActivity(
+            this, 0, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
+        )
+        val toggle = PendingIntent.getService(
+            this, 1,
+            Intent(this, WebcamService::class.java).setAction(ACTION_SET_PAUSED).putExtra(EXTRA_PAUSED, !paused),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_webcam)
+            .setContentTitle(getString(if (paused) R.string.notification_title_paused else R.string.notification_title))
+            .setContentText(getString(if (paused) R.string.notification_text_paused else R.string.notification_text))
+            .setContentIntent(open)
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .addAction(
+                if (paused) R.drawable.ic_action_resume else R.drawable.ic_action_pause,
+                getString(if (paused) R.string.action_resume else R.string.action_pause),
+                toggle,
+            )
+            .build()
+    }
+
+    private fun updateNotification() {
+        if (accessory == null) return
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification())
     }
 
     private fun openAccessory(acc: UsbAccessory) {
@@ -207,7 +237,8 @@ class WebcamService : Service() {
             }
             Protocol.CMD_START -> {
                 wantStreaming = true
-                if (streamer == null) startStreamer()
+                if (paused) sendState() // Stay off; the PC shows its "Camera paused" picture.
+                else if (streamer == null) startStreamer()
                 else {
                     lastConfig?.let { send(Protocol.TYPE_CONFIG, 0, 0, it) }
                     streamer?.requestKeyFrame()
@@ -222,6 +253,24 @@ class WebcamService : Service() {
                 streamer?.requestKeyFrame()
             }
             Protocol.CMD_SET_FACING -> setFacing(arg)
+            Protocol.CMD_PAUSE -> setPaused(true)
+            Protocol.CMD_RESUME -> setPaused(false)
+        }
+    }
+
+    /** Camera thread. Pausing turns the camera fully off; resuming restarts it only if the PC still wants video. */
+    private fun setPaused(p: Boolean) {
+        if (p != paused) {
+            paused = p
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(PREF_PAUSED, p).apply()
+            _state.update { it.copy(paused = p) }
+            updateNotification()
+            remoteLog(if (p) "paused" else "resumed")
+        }
+        when {
+            p && streamer != null -> stopStreamer() // Reports STATE_PAUSED.
+            !p && wantStreaming && streamer == null -> startStreamer()
+            else -> sendState()
         }
     }
 
@@ -288,7 +337,11 @@ class WebcamService : Service() {
     }
 
     private fun sendState() {
-        val st = if (streamer != null) Protocol.STATE_STREAMING else Protocol.STATE_IDLE
+        val st = when {
+            paused -> Protocol.STATE_PAUSED
+            streamer != null -> Protocol.STATE_STREAMING
+            else -> Protocol.STATE_IDLE
+        }
         send(Protocol.TYPE_STATE, 0, 0, byteArrayOf(st.toByte(), facing.toByte()))
     }
 
@@ -342,7 +395,7 @@ class WebcamService : Service() {
         closeAccessory()
         wakeLock?.release()
         wakeLock = null
-        _state.update { UiState(facing = facing) }
+        _state.update { UiState(facing = facing, paused = paused) }
         super.onDestroy()
     }
 
@@ -356,6 +409,9 @@ class WebcamService : Service() {
         const val PREF_FACING = "facing"
         const val ACTION_SET_FACING = "com.example.mycam.SET_FACING"
         const val EXTRA_FACING = "facing"
+        const val PREF_PAUSED = "paused"
+        const val ACTION_SET_PAUSED = "com.example.mycam.SET_PAUSED"
+        const val EXTRA_PAUSED = "paused"
 
         private val _state = MutableStateFlow(UiState())
         val state: StateFlow<UiState> = _state.asStateFlow()
@@ -363,6 +419,11 @@ class WebcamService : Service() {
         /** Shows the saved camera choice while no PC is connected. */
         fun showIdleFacing(facing: Int) {
             _state.update { if (it.connected) it else it.copy(facing = facing) }
+        }
+
+        /** Shows the saved pause choice while no PC is connected. */
+        fun showIdlePaused(paused: Boolean) {
+            _state.update { if (it.connected) it else it.copy(paused = paused) }
         }
     }
 }

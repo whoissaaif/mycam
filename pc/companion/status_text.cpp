@@ -9,6 +9,9 @@ StatusView DescribeStatus(const LinkStatus& s, bool cameraRegistered) {
         return {L"Camera not registered", L"Run the MyCam installer again. Windows 11 is required.", kIconError};
     }
     const std::wstring camera = s.facing == proto::kFacingFront ? L"Front camera" : L"Back camera";
+    if (s.lockPaused && s.state != LinkState::NoDriver) {
+        return {L"Paused", L"Windows is locked. MyCam turns the camera back on when you unlock.", kIconPaused};
+    }
     switch (s.state) {
     case LinkState::NoDriver:
         return {L"USB driver missing", L"Run the MyCam installer again to set up the USB driver.", kIconError};
@@ -25,6 +28,8 @@ StatusView DescribeStatus(const LinkStatus& s, bool cameraRegistered) {
     }
     case LinkState::PhoneError:
         return {L"Camera problem", L"Check the phone. Another app may be using its camera.", kIconError};
+    case LinkState::Paused:
+        return {L"Paused", L"The camera is off. Apps see a “Camera paused” picture. Resume here or on the phone.", kIconPaused};
     }
     return {L"", L"", kIconDisconnected};
 }

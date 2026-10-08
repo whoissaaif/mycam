@@ -1,15 +1,39 @@
 <resources>
     <string name="app_name">MyCam</string>
     <string name="channel_name">Webcam connection</string>
+
+    <!-- Notification -->
     <string name="notification_title">MyCam is connected</string>
     <string name="notification_text">Your phone is available as a webcam on the PC</string>
+    <string name="notification_title_paused">MyCam is paused</string>
+    <string name="notification_text_paused">The camera is off. The PC shows a “Camera paused” picture.</string>
+    <string name="action_pause">Pause</string>
+    <string name="action_resume">Resume</string>
     <string name="error_open_accessory">Could not open the USB connection. Unplug and plug in again.</string>
+
+    <!-- Status -->
     <string name="status_disconnected">Not connected</string>
-    <string name="status_disconnected_detail">Plug this phone into a PC running the MyCam companion app.</string>
-    <string name="status_idle">Connected</string>
-    <string name="status_idle_detail">The camera turns on when an app on the PC uses the MyCam webcam.</string>
+    <string name="status_disconnected_detail">Plug this phone into a PC running MyCam.</string>
+    <string name="status_idle">Ready</string>
+    <string name="status_idle_detail">The camera turns on when an app on the PC uses MyCam.</string>
     <string name="status_streaming">Streaming</string>
+    <string name="status_paused">Paused</string>
+    <string name="status_paused_detail">The camera is off. Apps on the PC see a “Camera paused” picture.</string>
     <string name="status_error">Camera problem</string>
+
+    <!-- Actions -->
+    <string name="action_pause_title">Pause the camera</string>
+    <string name="action_pause_detail">Turns the camera off until you resume, here or on the PC.</string>
+    <string name="action_resume_title">Resume the camera</string>
+    <string name="action_resume_detail">Video comes back as soon as an app on the PC is using MyCam.</string>
+
+    <!-- Camera -->
+    <string name="section_camera">Camera</string>
     <string name="camera_back">Back camera</string>
     <string name="camera_front">Front camera</string>
+    <string name="camera_hint">The camera turns on only while an app on the PC is using it.</string>
+
+    <!-- Footer -->
+    <string name="footer_connected">Connected to your PC over USB</string>
+    <string name="footer_disconnected">Not connected</string>
 </resources>

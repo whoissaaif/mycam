@@ -65,7 +65,11 @@ void PhoneLink::Run() {
 
     while (!quit_) {
         ScanOnce();
-        for (int i = 0; i < 10 && !quit_; ++i) Sleep(100);
+        for (int i = 0; i < 10 && !quit_; ++i) {
+            SyncLockPaused();
+            WriteStatusFrame(GetTickCount64()); // "Waiting for the phone" while none is connected.
+            Sleep(100);
+        }
     }
     if (winusbCtx_) libusb_exit(winusbCtx_);
     winusbCtx_ = nullptr;
@@ -300,6 +304,8 @@ void PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx) {
 
         uint64_t now = GetTickCount64();
         LogStats(now);
+        SyncLockPaused();
+        WriteStatusFrame(now);
         if (reconnect_.exchange(false)) {
             // Forces the phone out of accessory mode; it re-enumerates and we switch it back.
             libusb_reset_device(handle_);
@@ -319,9 +325,15 @@ void PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx) {
         }
         int facing = pendingFacing_.exchange(-1);
         if (facing >= 0) SendCommand(proto::kCmdSetFacing, uint8_t(facing));
+        int pause = pendingPause_.exchange(-1);
+        if (pause >= 0) {
+            Log("session: user %s the camera from the PC", pause ? "paused" : "resumed");
+            SendCommand(pause ? proto::kCmdPause : proto::kCmdResume);
+        }
 
         if (writer_.ConsumerActive(kConsumerWindowMs)) lastConsumer = now;
-        bool wanted = lastConsumer && now - lastConsumer < kStopGraceMs;
+        // Video is wanted only if an app is using the camera and nothing has paused it.
+        bool wanted = lastConsumer && now - lastConsumer < kStopGraceMs && !phonePaused_ && !lockPaused_;
         if (wanted && (!startSent_ || (!phoneStreaming_ && now - lastStart > 3000))) {
             // (Re)start the phone camera; repeated if the phone reported an error or never started.
             Log("session: app is using the camera -> START");
@@ -332,7 +344,7 @@ void PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx) {
         } else if (!wanted && (startSent_ || (phoneStreaming_ && now - lastStop > 3000))) {
             // Also stops a phone that is streaming without being asked, e.g. after the companion crashed
             // or was killed mid-stream and the phone kept its camera on.
-            Log("session: no app using the camera -> STOP");
+            Log("session: camera not wanted (no app, paused or Windows locked) -> STOP");
             if (!SendCommand(proto::kCmdStop)) break;
             startSent_ = false;
             lastStop = now;
@@ -356,6 +368,7 @@ void PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx) {
     libusb_release_interface(handle_, 0);
     libusb_close(handle_);
     handle_ = nullptr;
+    phonePaused_ = phoneStreaming_ = false;
     writer_.SetPhoneState(kPhoneNone);
     status_ = LinkStatus{};
     Publish();
@@ -433,6 +446,7 @@ void PhoneLink::HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const u
     }
 
     case proto::kFrame: {
+        if (phonePaused_) return; // Late frames after a pause must never reach the camera.
         ++statFrames_;
         bool key = flags & proto::kFlagKeyFrame;
         if (!phoneStreaming_) {
@@ -489,9 +503,11 @@ void PhoneLink::HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const u
         if (length < 1) return;
         Log("phone: state %d", int(payload[0]));
         phoneStreaming_ = payload[0] == proto::kStateStreaming;
+        phonePaused_ = payload[0] == proto::kStatePaused;
         if (length >= 2) status_.facing = payload[1];
         status_.state = payload[0] == proto::kStateStreaming ? LinkState::Streaming
                       : payload[0] == proto::kStateError     ? LinkState::PhoneError
+                      : payload[0] == proto::kStatePaused    ? LinkState::Paused
                                                              : LinkState::Idle;
         if (!phoneStreaming_) status_.width = status_.height = 0;
         writer_.SetPhoneState(phoneStreaming_ ? kPhoneStreaming : kPhoneIdle);
@@ -506,12 +522,33 @@ void PhoneLink::OnDecodedFrame(const uint8_t* nv12, uint32_t width, uint32_t hei
                                                          : (sensorOrientation_ + deviceRotation_) % 360;
     rotation = (rotation + 45) / 90 * 90 % 360;
     ++statDecoded_;
+    if (phonePaused_ || lockPaused_) return; // Privacy: nothing reaches the camera while paused or locked.
     writer_.Write(nv12, width, height, uint32_t(rotation), mirror_);
     lastFrameTick_ = GetTickCount64();
 }
 
 void PhoneLink::Publish() {
+    status_.lockPaused = lockPaused_;
     if (onStatus_) onStatus_(status_);
+}
+
+void PhoneLink::SyncLockPaused() {
+    if (status_.lockPaused != lockPaused_) {
+        Log("Windows %s: camera %s", lockPaused_ ? "locked" : "unlocked", lockPaused_ ? "paused" : "may resume");
+        Publish();
+    }
+}
+
+// While there is no live video, keep the MyCam camera showing a picture instead of black (the camera
+// treats frames older than 1.5 s as stale, so refresh a few times a second).
+void PhoneLink::WriteStatusFrame(uint64_t now) {
+    if (now - lastStatusFrame_ < 400) return;
+    const bool live = phoneStreaming_ && !phonePaused_ && !lockPaused_ && lastFrameTick_ && now - lastFrameTick_ < 1000;
+    if (live) return;
+    const Nv12Image& image = (phonePaused_ || lockPaused_) ? pausedImage_ : waitingImage_;
+    if (image.empty()) return;
+    lastStatusFrame_ = now;
+    writer_.Write(image.data.data(), image.width, image.height, 0, false);
 }
 
 } // namespace mycam

@@ -20,7 +20,7 @@ constexpr uint8_t kMaxPacketType = kLog;
 
 constexpr uint8_t kFlagKeyFrame = 0x01;
 
-enum PhoneStreamState : uint8_t { kStateIdle = 0, kStateStreaming = 1, kStateError = 2 };
+enum PhoneStreamState : uint8_t { kStateIdle = 0, kStateStreaming = 1, kStateError = 2, kStatePaused = 3 /* v2 */ };
 enum Facing : uint8_t { kFacingBack = 0, kFacingFront = 1 };
 
 constexpr uint32_t kCommandMagic = 0x4D434D44; // 'MCMD'
@@ -32,6 +32,8 @@ enum Command : uint8_t {
     kCmdStop = 3,
     kCmdKeyFrame = 4,
     kCmdSetFacing = 5,
+    kCmdPause = 6,  // v2
+    kCmdResume = 7, // v2
 };
 
 inline uint16_t ReadU16(const uint8_t* p) { return uint16_t(p[0] << 8 | p[1]); }

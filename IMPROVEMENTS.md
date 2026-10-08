@@ -19,20 +19,30 @@ once, and a phone that has never been connected before (the first-use UAC flow).
 
 ## 1. Privacy and control (highest priority)
 
-### 1.1 Pause button on the phone (S)
-A **Pause / Resume** button in the app and in the notification. While paused, the phone camera is off and
-the PC shows a "Paused" frame instead of black, so the person on the other end of a call knows it's
-intentional.
-- Phone: new `TYPE_STATE` value `STATE_PAUSED`. The phone ignores `CMD_START` while paused.
-- PC: set `phoneState = kPhonePaused` in shared memory. The virtual camera renders a paused frame and the
-  tray shows "Paused".
+### 1.1 Pause button on the phone **and** the PC (S)
+**Pause / Resume** controls in four places: the phone app, the phone's notification, the PC tray menu and
+the PC settings window. Pausing on either side pauses both: the phone camera turns fully off and the PC
+shows "Paused" everywhere. The person on the other end of a call sees an Aero-style **"Camera paused"**
+picture instead of black or a frozen frame, so they know it's intentional.
+- The phone owns the pause state, so both sides always agree. It's remembered across reconnects: a cable
+  glitch never turns a paused camera back on.
+- Protocol v2: PC → phone `CMD_PAUSE` / `CMD_RESUME`; phone → PC `STATE_PAUSED`. The phone ignores
+  `CMD_START` while paused.
+- When no phone video is available (not connected, starting, phone problem), the PC camera shows a
+  "Waiting for your phone" picture instead of black.
 
 ### 1.2 Pause when Windows is locked (S): privacy fix
-Stop the phone camera when the Windows session is locked, and resume on unlock.
-- Companion: `WTSRegisterSessionNotification`, then `WTS_SESSION_LOCK` / `WTS_SESSION_UNLOCK` → send
-  `CMD_STOP` / allow `CMD_START`.
-- Also pause on sleep (`WM_POWERBROADCAST`), and when the user switches Windows accounts.
-- The virtual camera shows the paused frame while locked.
+Turn the phone camera off when the Windows session is locked or the PC goes to sleep, and resume on
+unlock. This is separate from the manual pause: unlocking never undoes a pause you chose yourself.
+- Companion: `WTSRegisterSessionNotification` (`WTS_SESSION_LOCK` / `UNLOCK`) and `WM_POWERBROADCAST`
+  (suspend / resume).
+- While locked, the PC camera shows the "Camera paused" picture, and the tray reads "Paused while Windows
+  is locked".
+
+### 1.3 Aero design on the phone app (M)
+Bring the Android app into the design language (section 7) while its screens are being changed anyway:
+glass header, Aero buttons, Win7 "main instruction" status, LIVE pill, Selawik font, and the new webcam
+launcher icon.
 
 ---
 

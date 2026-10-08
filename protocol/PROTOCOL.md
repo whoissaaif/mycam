@@ -1,4 +1,4 @@
-# MyCam wire protocol (version 1)
+# MyCam wire protocol (version 2)
 
 The phone and the PC talk over the two bulk endpoints of an Android Open Accessory (AOA) connection.
 All integers are **big-endian**. Implementations:
@@ -38,11 +38,11 @@ match the manufacturer and model.
 
 | Type | Name | Payload |
 |---|---|---|
-| 0 | HELLO | u16 protocol version (reply to `CMD_HELLO`) |
+| 0 | HELLO | u16 protocol version (reply to `CMD_HELLO`). 1 = original, 2 = adds pause |
 | 1 | CONFIG | u16 width, u16 height, u16 sensor orientation, u8 facing, then SPS/PPS in Annex-B (may be empty) |
 | 2 | FRAME | one H.264 access unit, Annex-B. Key frames carry SPS/PPS on most phones. |
 | 3 | ORIENT | u16 device rotation, degrees clockwise (0/90/180/270) |
-| 4 | STATE | u8 state (0 idle, 1 streaming, 2 error), u8 facing |
+| 4 | STATE | u8 state (0 idle, 1 streaming, 2 error, 3 paused [v2]), u8 facing |
 | 5 | LOG | UTF-8 text; the PC writes it to `mycam.log` |
 
 Facing: 0 = back, 1 = front.
@@ -70,6 +70,8 @@ Fixed 8 bytes:
 | 3 | STOP | Turn the camera off |
 | 4 | KEYFRAME | Resend CONFIG and request a key frame |
 | 5 | SET_FACING | Switch camera; argument = facing |
+| 6 | PAUSE | [v2] Pause: camera off until RESUME. The phone stores this, so it survives reconnects. |
+| 7 | RESUME | [v2] Resume; the camera turns back on if the PC still wants video |
 
 Commands are validated the same way: magic, a known command number, and zero reserved bytes.
 
@@ -80,3 +82,12 @@ Commands are validated the same way: magic, a known command number, and zero res
 3. When a PC app opens the MyCam camera, the PC sends `START`. The phone sends `CONFIG`, `STATE(streaming)`,
    then `FRAME`s.
 4. About 4 s after the last PC app closes the camera, the PC sends `STOP`.
+
+## Pause (v2)
+
+The phone owns the pause state. It can be paused from the phone UI or by the PC (`PAUSE`), and resumed
+either way (`RESUME`). While paused it reports `STATE(paused)`, keeps its camera off, and answers `START` with
+`STATE(paused)` instead of video. The PC shows a "Camera paused" picture on the virtual camera.
+
+The PC's automatic pause while Windows is locked is PC-only: the PC simply stops asking for video
+(`STOP`) and never sends `START` until unlock. It does not change the phone's pause state.

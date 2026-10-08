@@ -22,3 +22,6 @@ local.properties
 # Installer build outputs and downloaded third-party packages
 /installer/redist/
 /installer/output/
+
+# Built APKs handed out for testing
+/*.apk

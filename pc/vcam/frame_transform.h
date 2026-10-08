@@ -17,4 +17,8 @@ void FillBlackNV12(uint8_t* dst, ptrdiff_t pitch, uint32_t width, uint32_t heigh
 void DrawFittedNV12(const uint8_t* src, uint32_t srcWidth, uint32_t srcHeight, uint32_t rotation, bool mirror,
                     uint8_t* dst, ptrdiff_t pitch, uint32_t width, uint32_t height);
 
+// Converts a 32-bit BGRA image (width, height even) to tightly packed NV12, BT.601 limited range, the
+// same colour space the phone's H.264 video decodes to. dst must hold width * height * 3 / 2 bytes.
+void BgraToNV12(const uint8_t* bgra, ptrdiff_t stride, uint32_t width, uint32_t height, uint8_t* dst);
+
 } // namespace mycam

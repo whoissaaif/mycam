@@ -9,6 +9,7 @@
 #include "decoder.h"
 #include "packet_parser.h"
 #include "frame_writer.h"
+#include "status_images.h"
 
 struct libusb_context;
 struct libusb_device;
@@ -24,12 +25,14 @@ enum class LinkState {
     Idle,        // Connected; camera off because no PC app is using the webcam.
     Streaming,   // Frames flowing.
     PhoneError,  // The phone reported a camera problem.
+    Paused,      // The user paused the camera (on the phone or the PC). Camera is off.
 };
 
 struct LinkStatus {
     LinkState state = LinkState::Searching;
     int facing = 0;          // proto::Facing
     uint32_t width = 0, height = 0;
+    bool lockPaused = false; // Windows is locked or asleep: MyCam keeps the phone camera off.
 };
 
 // Owns all USB traffic. Run() blocks on the calling (worker) thread until Quit() is called.
@@ -48,6 +51,15 @@ public:
     void RequestFacing(int facing) { pendingFacing_ = facing; }
     void SetMirror(bool mirror) { mirror_ = mirror; }
     void RequestReconnect() { reconnect_ = true; }
+    // Pause / resume the camera (the phone stores the choice). Needs a connected phone.
+    void RequestPause(bool pause) { pendingPause_ = pause ? 1 : 0; }
+    // Windows locked / asleep: keep the phone camera off until unlocked. Independent of RequestPause.
+    void SetLockPaused(bool locked) { lockPaused_ = locked; }
+    // Pictures shown on the MyCam camera while there is no live video. Call before Run().
+    void SetStatusImages(Nv12Image paused, Nv12Image waiting) {
+        pausedImage_ = std::move(paused);
+        waitingImage_ = std::move(waiting);
+    }
 
 private:
     void ScanOnce();
@@ -62,6 +74,8 @@ private:
     void Publish();
     void OnInTransfer(libusb_transfer* transfer);
     void LogStats(uint64_t now);
+    void SyncLockPaused();
+    void WriteStatusFrame(uint64_t now);
 
     StatusCallback onStatus_;
     std::function<void()> onNeedDriver_;
@@ -70,6 +84,10 @@ private:
     std::atomic<int> pendingFacing_{-1};
     std::atomic<bool> mirror_{false};
     std::atomic<bool> reconnect_{false};
+    std::atomic<int> pendingPause_{-1};
+    std::atomic<bool> lockPaused_{false};
+    Nv12Image pausedImage_, waitingImage_;
+    uint64_t lastStatusFrame_ = 0;
 
     libusb_context* ctx_ = nullptr;       // UsbDk backend: switches phones into accessory mode.
     libusb_context* winusbCtx_ = nullptr; // WinUSB backend: streams from accessory-mode phones (WinUSB-bound).
@@ -83,6 +101,7 @@ private:
     bool gotHello_ = false;
     bool startSent_ = false;
     bool phoneStreaming_ = false;
+    bool phonePaused_ = false;
     bool waitKeyFrame_ = true;
     std::vector<uint8_t> csd_;
     std::vector<uint8_t> scratch_;

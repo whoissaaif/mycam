@@ -13,7 +13,7 @@ import java.nio.ByteOrder
  *   u32 magic 'MCMD' | u8 cmd | u8 arg | u16 reserved
  */
 object Protocol {
-    const val VERSION = 1
+    const val VERSION = 2
 
     const val PACKET_MAGIC = 0x4D43414D // 'MCAM'
     const val HEADER_SIZE = 20
@@ -31,6 +31,7 @@ object Protocol {
     const val STATE_IDLE = 0
     const val STATE_STREAMING = 1
     const val STATE_ERROR = 2
+    const val STATE_PAUSED = 3 // v2: camera off because the user paused (on the phone or the PC)
 
     const val FACING_BACK = 0
     const val FACING_FRONT = 1
@@ -44,6 +45,8 @@ object Protocol {
     const val CMD_STOP = 3
     const val CMD_KEYFRAME = 4
     const val CMD_SET_FACING = 5 // arg: FACING_*
+    const val CMD_PAUSE = 6 // v2
+    const val CMD_RESUME = 7 // v2
 
     fun packet(type: Int, flags: Int, ptsUs: Long, payload: ByteArray, offset: Int = 0, length: Int = payload.size): ByteArray {
         val buf = ByteBuffer.allocate(HEADER_SIZE + length).order(ByteOrder.BIG_ENDIAN)
@@ -71,7 +74,7 @@ object Protocol {
             while (data.size - pos >= COMMAND_SIZE) {
                 // Only accept plausible commands so stray magic bytes in garbage can't desync the stream.
                 val cmd = data[pos + 4].toInt() and 0xFF
-                val valid = buf.getInt(pos) == COMMAND_MAGIC && cmd in CMD_HELLO..CMD_SET_FACING &&
+                val valid = buf.getInt(pos) == COMMAND_MAGIC && cmd in CMD_HELLO..CMD_RESUME &&
                     data[pos + 6].toInt() == 0 && data[pos + 7].toInt() == 0
                 if (!valid) {
                     pos++ // Resync byte by byte.

@@ -34,7 +34,7 @@ constexpr UINT32 kRule = 0xE2E2E2;
 constexpr float kWidth = 420, kHeight = 432;
 constexpr float kTitleH = 30, kFrame = 7, kCommandH = 46;
 
-enum Id { kNone = 0, kBack, kFront, kMirror, kAutostart, kReconnect, kOpenLog, kClose, kTitleClose };
+enum Id { kNone = 0, kPause, kBack, kFront, kMirror, kAutostart, kReconnect, kOpenLog, kClose, kTitleClose };
 enum class Kind { Segment, Checkbox, Link, Button, TitleClose };
 
 struct Element {
@@ -91,6 +91,7 @@ struct SettingsWindow::Impl {
         elements.clear();
         const float x = kFrame + 20;
         elements.push_back({kTitleClose, Kind::TitleClose, Rect(kWidth - kFrame - 45, 1, 43, 19), L""});
+        elements.push_back({kPause, Kind::Button, Rect(kWidth - kFrame - 20 - 92, kTitleH + 22, 92, 28), L"Pause"});
         elements.push_back({kBack, Kind::Segment, Rect(x, 164, 150, 28), L"Back camera"});
         elements.push_back({kFront, Kind::Segment, Rect(x + 149, 164, 150, 28), L"Front camera"});
         elements.push_back({kMirror, Kind::Checkbox, Rect(x, 246, 300, 20), L"Mirror the image"});
@@ -106,8 +107,17 @@ struct SettingsWindow::Impl {
         return nullptr;
     }
 
+    // Pause needs a connected phone, and is moot while Windows is locked (already paused).
+    bool PauseEnabled() const {
+        const LinkStatus s = model->status();
+        return s.state >= LinkState::Idle && !s.lockPaused;
+    }
+
     Id HitTest(float x, float y) const {
-        for (const auto& e : elements) if (Contains(e.rect, x, y)) return e.id;
+        for (const auto& e : elements) {
+            if (e.id == kPause && !PauseEnabled()) continue;
+            if (Contains(e.rect, x, y)) return e.id;
+        }
         return kNone;
     }
 
@@ -229,13 +239,20 @@ struct SettingsWindow::Impl {
 
     // Aero push button: two-tone gloss split at the middle (IMPROVEMENTS.md 7.2 button tokens).
     void DrawAeroButton(D2D1_RECT_F r, const std::wstring& label, bool isHot, bool isDown, bool selected,
-                        float radiusL = 3, float radiusR = 3) {
+                        bool enabled = true) {
+        if (!enabled) {
+            D2D1_ROUNDED_RECT rr = {D2D1::RectF(r.left + 0.5f, r.top + 0.5f, r.right - 0.5f, r.bottom - 0.5f), 3, 3};
+            rt->FillRoundedRectangle(rr, Solid(Rgb(0xF4F4F4)).Get());
+            rt->DrawRoundedRectangle(rr, Solid(Rgb(0xADB2B5)).Get());
+            Text(label, fontBody.Get(), r, Rgb(0x838383), DWRITE_TEXT_ALIGNMENT_CENTER);
+            return;
+        }
         const bool lit = isDown || selected;
         auto fill = lit   ? Vertical(r.top, r.bottom, {{0.f, Rgb(0xE5F4FC)}, {0.5f, Rgb(0xC4E5F6)}, {0.51f, Rgb(0x98D1EF)}, {1.f, Rgb(0x68B3DB)}})
                   : isHot ? Vertical(r.top, r.bottom, {{0.f, Rgb(0xEAF6FD)}, {0.5f, Rgb(0xD9F0FC)}, {0.51f, Rgb(0xBEE6FD)}, {1.f, Rgb(0xA7D9F5)}})
                           : Vertical(r.top, r.bottom, {{0.f, Rgb(0xF2F2F2)}, {0.5f, Rgb(0xEBEBEB)}, {0.51f, Rgb(0xDDDDDD)}, {1.f, Rgb(0xCFCFCF)}});
         const UINT32 border = lit ? 0x2C628B : isHot ? 0x3C7FB1 : 0x707070;
-        const float radius = (radiusL + radiusR) / 2;
+        const float radius = 3;
         D2D1_ROUNDED_RECT rr = {D2D1::RectF(r.left + 0.5f, r.top + 0.5f, r.right - 0.5f, r.bottom - 0.5f), radius, radius};
         rt->FillRoundedRectangle(rr, fill.Get());
         D2D1_ROUNDED_RECT inner = {D2D1::RectF(r.left + 1.5f, r.top + 1.5f, r.right - 1.5f, r.bottom - 1.5f), radius - 1, radius - 1};
@@ -339,7 +356,8 @@ struct SettingsWindow::Impl {
         }
         const float x = kFrame + 20;
         if (statusIcon) rt->DrawBitmap(statusIcon.Get(), Rect(x, kTitleH + 20, 48, 48));
-        Text(view.headline, fontInstruction.Get(), Rect(x + 62, kTitleH + 18, 260, 26), Rgb(kMainInstruction));
+        const float textW = kWidth - kFrame - 20 - 92 - 10 - (x + 62); // Up to the Pause button.
+        Text(view.headline, fontInstruction.Get(), Rect(x + 62, kTitleH + 18, textW, 26), Rgb(kMainInstruction));
         if (status.state == LinkState::Streaming) {
             ComPtr<IDWriteTextLayout> layout;
             dwrite->CreateTextLayout(view.headline.c_str(), UINT32(view.headline.size()), fontInstruction.Get(), 300, 26, &layout);
@@ -347,7 +365,7 @@ struct SettingsWindow::Impl {
             layout->GetMetrics(&m);
             DrawLivePill(x + 62 + m.width + 10, kTitleH + 23);
         }
-        Text(view.detail, fontBody.Get(), Rect(x + 62, kTitleH + 44, kWidth - x - 62 - kFrame - 20, 34), Rgb(kSubtle));
+        Text(view.detail, fontBody.Get(), Rect(x + 62, kTitleH + 44, textW, 50), Rgb(kSubtle));
 
         SectionHeading(L"Camera", 140);
         SectionHeading(L"Picture", 222);
@@ -365,7 +383,10 @@ struct SettingsWindow::Impl {
                 DrawCheckbox(e, e.id == kMirror ? model->mirror() : model->autostart());
                 break;
             case Kind::Link: DrawLink(e); break;
-            case Kind::Button: DrawAeroButton(e.rect, e.text, isHot, isDown, false); break;
+            case Kind::Button:
+                if (e.id == kPause) DrawAeroButton(e.rect, model->paused() ? L"Resume" : L"Pause", isHot, isDown, false, PauseEnabled());
+                else DrawAeroButton(e.rect, e.text, isHot, isDown, false);
+                break;
             }
         }
         Text(L"The camera turns on only while an app is using it.", fontBody.Get(),
@@ -383,6 +404,9 @@ struct SettingsWindow::Impl {
 
     void Activate(Id id) {
         switch (id) {
+        case kPause:
+            if (PauseEnabled()) model->setPaused(!model->paused());
+            break;
         case kBack: model->setFacing(proto::kFacingBack); break;
         case kFront: model->setFacing(proto::kFacingFront); break;
         case kMirror: model->setMirror(!model->mirror()); break;
@@ -397,10 +421,11 @@ struct SettingsWindow::Impl {
     }
 
     void MoveFocus(int step) {
-        static const Id order[] = {kBack, kFront, kMirror, kAutostart, kReconnect, kOpenLog, kClose};
+        static const Id order[] = {kPause, kBack, kFront, kMirror, kAutostart, kReconnect, kOpenLog, kClose};
+        constexpr int n = 8;
         int i = 0;
-        for (int k = 0; k < 7; ++k) if (order[k] == focus) i = k;
-        focus = order[(i + step + 7) % 7];
+        for (int k = 0; k < n; ++k) if (order[k] == focus) i = k;
+        focus = order[(i + step + n) % n];
         keyboardCues = true;
         InvalidateRect(hwnd, nullptr, FALSE);
     }
