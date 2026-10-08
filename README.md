@@ -103,8 +103,6 @@ replugged.
 * The phone must support Android Open Accessory. Nearly all phones from the last 10+ years do.
 * While the companion is running, any Android phone you plug in switches to webcam (accessory) mode,
   so MTP file transfer isn't available. Exit MyCam from the tray to transfer files.
-* `kAccessoryUri` in `pc/companion/protocol.h` is a placeholder. Android shows that link when a phone
-  without the app is plugged in, so point it at your download page.
 
 ## License
 
