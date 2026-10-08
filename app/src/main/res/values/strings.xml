@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">MyCam</string>
+    <string name="channel_name">Webcam connection</string>
+    <string name="notification_title">MyCam is connected</string>
+    <string name="notification_text">Your phone is available as a webcam on the PC</string>
+    <string name="error_open_accessory">Could not open the USB connection. Unplug and plug in again.</string>
+    <string name="status_disconnected">Not connected</string>
+    <string name="status_disconnected_detail">Plug this phone into a PC running the MyCam companion app.</string>
+    <string name="status_idle">Connected</string>
+    <string name="status_idle_detail">The camera turns on when an app on the PC uses the MyCam webcam.</string>
+    <string name="status_streaming">Streaming</string>
+    <string name="status_error">Camera problem</string>
+    <string name="camera_back">Back camera</string>
+    <string name="camera_front">Front camera</string>
+</resources>
