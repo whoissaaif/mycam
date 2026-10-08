@@ -50,7 +50,7 @@ constexpr const char* kAccessoryManufacturer = "MyCam";
 constexpr const char* kAccessoryModel = "MyCam Webcam";
 constexpr const char* kAccessoryDescription = "Use this phone as a USB webcam";
 constexpr const char* kAccessoryVersion = "1";
-constexpr const char* kAccessoryUri = "https://github.com/";
+constexpr const char* kAccessoryUri = "https://github.com/whoissaaif/mycam";
 constexpr const char* kAccessorySerial = "0001";
 
 } // namespace mycam::proto

@@ -20,7 +20,7 @@ match the manufacturer and model.
 | 1 | model | `MyCam Webcam` |
 | 2 | description | `Use this phone as a USB webcam` |
 | 3 | version | `1` |
-| 4 | URI | Shown when the app isn't installed (currently a placeholder) |
+| 4 | URI | `https://github.com/whoissaaif/mycam`, shown when the app isn't installed |
 | 5 | serial | `0001` |
 
 ## Phone → PC packets
