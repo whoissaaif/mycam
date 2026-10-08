@@ -3,6 +3,16 @@
 Plug the phone into a Windows 11 PC and it shows up as a camera called **MyCam** in Zoom, Teams, OBS,
 browsers, and the Windows Camera app. Both the front and back cameras work.
 
+<p>
+  <img src="docs/screenshots/phone-streaming.png" alt="MyCam phone app streaming" width="260">
+  <img src="docs/screenshots/camera-status-frames.png" alt="Camera paused and Waiting pictures shown to other apps" width="540">
+</p>
+
+* **Wired only, plug and play.** No Wi-Fi, and no Developer Options or USB debugging.
+* **Privacy first.** Pause from the phone, its notification, or the PC tray. The camera also turns off by itself
+  while Windows is locked. Other apps then see a "Camera paused" picture instead of you.
+* **Windows 7 Aero look** on both the phone app and the PC (tray icons, settings window, installer).
+
 ## How it works
 
 ```
@@ -95,3 +105,11 @@ replugged.
   so MTP file transfer isn't available. Exit MyCam from the tray to transfer files.
 * `kAccessoryUri` in `pc/companion/protocol.h` is a placeholder. Android shows that link when a phone
   without the app is plugged in, so point it at your download page.
+
+## License
+
+MIT. See [LICENSE](LICENSE). Third-party parts keep their own licenses:
+[libusb](https://libusb.info) (LGPL-2.1, vendored in `pc/third_party/libusb`),
+[UsbDk](https://github.com/daynix/UsbDk) (Apache-2.0, downloaded by the installer build), and
+[Selawik](https://github.com/microsoft/Selawik) (SIL OFL 1.1). The Windows 7 look is an homage drawn from scratch;
+no Microsoft artwork is included.

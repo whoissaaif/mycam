@@ -25,3 +25,7 @@ local.properties
 
 # Built APKs handed out for testing
 /*.apk
+
+# Local design references (Microsoft artwork, not redistributable) and raw screenshots
+/inspo/
+/screenshots/
