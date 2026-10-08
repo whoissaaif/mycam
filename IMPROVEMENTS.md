@@ -84,18 +84,28 @@ A real app icon, and a proper package name instead of `com.example.mycam`.
 
 ---
 
-## 5. PC app
+## 5. PC app: ✅ done (2026-10-09), except code signing
 
-### 5.1 Tray icon that shows status (S)
-A different icon or badge for disconnected, ready, streaming and paused, instead of one icon with a
-tooltip.
+### 5.1 Tray icon that shows status (S): ✅
+Aero webcam icon with a status badge: disconnected (grayscale), ready, streaming (green), paused (amber,
+for 1.1), error (red). 16–256 px, DPI-aware via `LoadIconMetric`. Drawn by `design/tools/make_icons.ps1`.
 
-### 5.2 Settings window (M)
-Camera, resolution, mirror, crop, and start with Windows, all in one small window.
+### 5.2 Settings window (M): ✅
+Aero-style window (Direct2D): glass title bar, live status with a LIVE pill, back/front camera, mirror,
+start with Windows, reconnect and open the log folder. Left-click the tray icon to open it; it's also the
+default item in the tray menu. Keyboard: Tab / arrows, Space / Enter, Esc. Resolution and crop options
+arrive with 3.1 / 3.2.
+- Follow-up: the controls are custom-drawn, so screen readers don't see them yet (needs UI Automation
+  support).
 
-### 5.3 Real installer (M)
-An `.exe` or MSI (Inno Setup / WiX) instead of `install.ps1`, plus code signing to remove the "unknown
-publisher" warnings and an uninstaller entry in Settings → Apps.
+### 5.3 Real installer (M): ✅, code signing pending
+Inno Setup wizard with Aero artwork (`installer/`, built by `installer/build.ps1`). It installs UsbDk if
+needed, registers the camera, offers "Start with Windows", and lists MyCam in Settings → Apps. Upgrades
+close the running companion cleanly. The uninstaller removes everything, and asks before removing UsbDk.
+- Still to do: **code signing**. This needs a code-signing certificate; `mycam.iss` is ready for it (`/DSIGN`).
+- Licensing before public distribution: libusb is LGPL-2.1 and statically linked. Ship the app's source,
+  or link libusb dynamically, so users can relink it. The UsbDk (Apache-2.0) and libusb licenses are
+  already installed under `licenses\`.
 
 ---
 
@@ -109,8 +119,86 @@ publisher" warnings and an uninstaller entry in Settings → Apps.
 
 ---
 
+## 7. Design language and assets
+
+Goal: one consistent retro "Windows 7" look across the phone app, the PC tray/settings window, the
+virtual camera's status frames and the installer. Decide it and draw the assets **before** building the
+new UI (1.1 pause button, 4.1 dimmed screen, 5.1 tray icons, 5.2 settings window, 5.3 installer), so each
+of those is built once, in the final style.
+
+References: `inspo/`.
+
+### 7.1 Decision: which "retro Windows"? ✅ Decided: A, Aero (Windows 7)
+The reference images mix two different eras:
+
+| Reference | Era | Look |
+|---|---|---|
+| `Windows 7 icons.jpg`, `Vista VS glass effect.jpg` | **Vista / 7 "Aero"** | Translucent glass title bars, soft blue gradients, glossy pill buttons, rich 3D icons, Segoe UI type |
+| `windows 7 windows.jpg`, `more win7 inspo.jpg` | **Windows 95/98 "Classic"** | Flat gray (#C0C0C0) with hard 3D bevels, navy title bars, pixel-art icons, bitmap-style type |
+
+Options:
+- **A. Aero (Windows 7)** *(recommended)*: matches the stated "win7" goal. It looks premium and friendly,
+  and it scales well to high-DPI phone screens.
+- **B. Classic (Windows 95/98)**: stronger retro/meme character. It's easier to draw (flat bevels, pixel
+  icons), but needs care to stay crisp at phone DPIs.
+- **C. Aero shell + Classic easter eggs**: Aero everywhere, with Classic-style dialogs only for playful
+  moments (e.g. the "No signal" frame looks like a 98-style "System message" box).
+
+**Decision (2026-10-09): option A.** Everything uses the Windows 7 Aero look. The Classic 95/98 images
+in `inspo/` are not used as a style source.
+
+### 7.2 Style guide (S): `design/STYLE.md`
+Written once, used by every UI. Starting values for Aero (approximate; refine during 7.4):
+
+| Token | Value (start) | Use |
+|---|---|---|
+| Glass frame | translucent sky blue, about `#6FA8DC` at 60–70% with blur and a white inner highlight | Title bars, headers |
+| Window body | `#F0F0F0` | Panels, dialogs |
+| Button, normal | gradient `#F2F2F2 → #DDDDDD`, border `#707070`, radius 3 px | All buttons |
+| Button, hover / focus | gradient `#EAF6FD → #BEE6FD`, border `#3C7FB1` | Phone: focus/pressed |
+| Button, pressed | gradient `#C4E5F6 → #98D1EF`, border `#2C628B` | |
+| Selection | fill `#CCE8FF`, border `#99D1FF` | Selected camera, list rows |
+| Progress / "live" green | `#06B025` with a gloss highlight | Streaming indicator |
+| Text | `#000000`, secondary `#6D6D6D`, link `#0066CC` | |
+| Aurora background | blue-green gradient with soft light streaks | Phone background, installer banner |
+| Type | Segoe UI look-alike. Android can't bundle Segoe UI, so use **Selawik** (Microsoft's open-source Segoe fallback, OFL), after checking its license | Phone app, frames |
+
+It also defines spacing, corner radii, shadow/glow, icon sizes and states (normal, hover, pressed,
+disabled), plus how much transparency/blur to use on Android (keep it cheap: blur only on static
+backgrounds).
+
+### 7.3 Asset list (M)
+All drawn **originally, in the style of** Windows 7. No copied Microsoft icons, wallpapers, logos or fonts.
+
+| Asset | Sizes / format | Where |
+|---|---|---|
+| App icon: glossy webcam, Win7-icon style | Android adaptive (108 dp fg/bg) + Play 512 px; Windows `.ico` 16/20/24/32/48/256 | Phone launcher, companion exe, installer |
+| Tray status icons: disconnected / ready / streaming / paused / error | 16, 20, 24, 32 px (100–200% DPI) `.ico` | Windows tray (5.1) |
+| Android notification icon | Single-color silhouette, 24 dp vector (Android forces monochrome) | Foreground-service notification |
+| Status frames shown on the PC camera: "No signal", "Paused", "Phone locked" | 1920×1080 + 1280×720 NV12-friendly PNG | Virtual camera (1.1, 1.2) |
+| Phone UI kit: glass header, Aero buttons, camera toggle, big pause/resume button, "live" pill, status card | Compose components + 9-patch/vector drawables | Phone app |
+| Dimmed streaming screen: dark aurora with a small status readout | Vector/Compose | 4.1 |
+| Settings window chrome: custom-drawn glass title bar + controls | Win32 custom draw or a small UI toolkit | 5.2 |
+| Installer art: wizard banner + side panel | Inno Setup / WiX sizes | 5.3 |
+
+### 7.4 Mockups before code (S)
+Mock up the phone main screen, the dimmed streaming screen, the tray menu, the settings window and the
+"Paused" frame in the chosen style. Approve those, then implement.
+
+### Notes and risks
+- **Tray menus:** Windows draws tray menus in the current Windows 11 theme. A fully retro menu needs a
+  custom popup window instead of the native menu. That's more work, and native is more accessible.
+  Suggest: retro icons in a native menu, with the retro look saved for the settings window.
+- **Accessibility:** glossy gradients can hurt contrast. Keep text at WCAG AA contrast and keep the dark,
+  dimmed screen readable.
+- **Licensing:** Segoe UI, Windows wallpapers and Microsoft icon artwork can't be shipped. Everything in
+  7.3 must be original or properly licensed.
+
+---
+
 ## Suggested order
 
+0. **7** Design language (Aero chosen): write the style guide, mock up, then draw the assets
 1. **1.2** Pause when Windows is locked (privacy)
 2. **1.1** Pause button on the phone
 3. **3.1** Crop to fill, and **4.1** dim the screen while streaming

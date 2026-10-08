@@ -29,7 +29,9 @@ Camera2 → H.264 encoder ──────────────────
 | `pc/companion/` | Tray app: AOA switch (libusb + UsbDk), streaming over WinUSB, H.264 decode, frame hand-off. |
 | `pc/vcam/` | Virtual camera media source DLL loaded by Windows Frame Server. |
 | `pc/common/` | Shared memory layout and the COM CLSID. |
-| `pc/install.ps1` / `uninstall.ps1` | One-time PC setup / removal. |
+| `installer/` | Inno Setup installer (`mycam.iss`) and its build script (`build.ps1`). |
+| `pc/install.ps1` / `uninstall.ps1` | Developer install/removal without building the installer. |
+| `design/` | Design tools (`tools/make_icons.ps1`, `make_installer_art.ps1`) and previews. Style: Windows 7 Aero (IMPROVEMENTS.md section 7). |
 | `pc/tests/` | C++ unit tests: packet parser, protocol vectors, frame rotate/scale. |
 | `pc/tools/` | Developer tools (not shipped): `capture_test` grabs a MyCam frame, `usb_probe` lists USB devices via UsbDk. |
 | `protocol/` | Wire protocol spec (`PROTOCOL.md`) and byte-exact test vectors (`golden.txt`). |
@@ -59,15 +61,16 @@ ctest --test-dir pc/build -C Release           # PC: parser, protocol vectors, f
 ## Install
 
 1. Install the APK on the phone: `adb install app/build/outputs/apk/debug/app-debug.apk`, or copy it over.
-2. On the PC, run once: `powershell -ExecutionPolicy Bypass -File pc\install.ps1` (asks for admin).
-   This installs the [UsbDk](https://github.com/daynix/UsbDk) driver (signed by Red Hat; the download is
-   hash-checked), copies MyCam to `C:\Program Files\MyCam`, registers the virtual camera, and adds the
-   tray app to startup.
+2. On the PC, run `MyCam-Setup-1.0.0.exe` (build it with `powershell -ExecutionPolicy Bypass -File installer\build.ps1`;
+   output in `installer\output`). It installs the [UsbDk](https://github.com/daynix/UsbDk) driver if needed (signed by
+   Red Hat; hash-checked), registers the MyCam camera, and can start MyCam with Windows. Uninstall from
+   Settings → Apps.
 3. Plug in the phone. The first time, the phone asks to open MyCam: tick **Always** and tap **OK**,
    then allow camera access. Windows also asks for admin once per new phone, to give its accessory mode
    the built-in WinUSB driver.
 
-After that, plugging in is all it takes. Switch cameras from the phone app or the tray menu.
+After that, plugging in is all it takes. Left-click the tray icon for the settings window (camera, mirror,
+start with Windows); right-click for the quick menu.
 
 ## Testing without a phone
 

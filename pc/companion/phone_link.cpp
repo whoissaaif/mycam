@@ -291,6 +291,7 @@ void PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx) {
     uint64_t lastHello = GetTickCount64();
     uint64_t lastConsumer = 0;
     uint64_t lastStart = 0;
+    uint64_t lastStop = 0;
     lastStats_ = lastHello;
 
     while (!quit_ && !sessionError_) {
@@ -328,10 +329,13 @@ void PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx) {
             startSent_ = true;
             lastStart = now;
             waitKeyFrame_ = true;
-        } else if (!wanted && startSent_) {
+        } else if (!wanted && (startSent_ || (phoneStreaming_ && now - lastStop > 3000))) {
+            // Also stops a phone that is streaming without being asked, e.g. after the companion crashed
+            // or was killed mid-stream and the phone kept its camera on.
             Log("session: no app using the camera -> STOP");
             if (!SendCommand(proto::kCmdStop)) break;
             startSent_ = false;
+            lastStop = now;
         }
     }
     Log("session: ending (quit=%d, error=%d)", int(quit_.load()), int(sessionError_));

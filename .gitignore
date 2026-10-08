@@ -18,3 +18,7 @@ local.properties
 
 # Local scratch
 *.log
+
+# Installer build outputs and downloaded third-party packages
+/installer/redist/
+/installer/output/

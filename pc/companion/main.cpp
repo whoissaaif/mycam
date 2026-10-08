@@ -1,6 +1,7 @@
 // MyCamCompanion.exe: tray app that registers the "MyCam" virtual camera and bridges the phone over USB.
 
 #include <windows.h>
+#include <commctrl.h>
 #include <shellapi.h>
 #include <mfapi.h>
 #include <mfvirtualcamera.h>
@@ -13,10 +14,13 @@
 #include <vector>
 
 #include "../common/guids.h"
-#include "phone_link.h"
+#include "app_settings.h"
 #include "log.h"
-#include "winusb_bind.h"
+#include "phone_link.h"
 #include "protocol.h"
+#include "settings_window.h"
+#include "status_text.h"
+#include "winusb_bind.h"
 
 using Microsoft::WRL::ComPtr;
 using namespace mycam;
@@ -29,7 +33,8 @@ constexpr UINT WM_NEED_DRIVER = WM_APP + 3;
 constexpr UINT kTrayId = 1;
 
 enum MenuId : UINT {
-    kMenuStatus = 100,
+    kMenuSettings = 100,
+    kMenuStatus,
     kMenuBack,
     kMenuFront,
     kMenuMirror,
@@ -38,63 +43,30 @@ enum MenuId : UINT {
     kMenuExit,
 };
 
-constexpr wchar_t kSettingsKey[] = L"Software\\MyCam";
-constexpr wchar_t kRunKey[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
-constexpr wchar_t kRunValue[] = L"MyCam";
-
 HWND g_hwnd = nullptr;
 NOTIFYICONDATAW g_tray = {};
 PhoneLink* g_link = nullptr;
+SettingsWindow* g_settings = nullptr;
 bool g_mirror = false;
 
 std::mutex g_statusLock;
 LinkStatus g_status;
 LinkStatus g_shownStatus;
 bool g_vcamOk = false;
+int g_trayIcon = 0;
 
-DWORD ReadSetting(const wchar_t* name, DWORD fallback) {
-    DWORD value = fallback, size = sizeof(value);
-    RegGetValueW(HKEY_CURRENT_USER, kSettingsKey, name, RRF_RT_REG_DWORD, nullptr, &value, &size);
-    return value;
+LinkStatus CurrentStatus() {
+    std::lock_guard<std::mutex> lock(g_statusLock);
+    return g_status;
 }
 
-void WriteSetting(const wchar_t* name, DWORD value) {
-    RegSetKeyValueW(HKEY_CURRENT_USER, kSettingsKey, name, REG_DWORD, &value, sizeof(value));
-}
-
-bool AutostartEnabled() {
-    return RegGetValueW(HKEY_CURRENT_USER, kRunKey, kRunValue, RRF_RT_REG_SZ, nullptr, nullptr, nullptr) == ERROR_SUCCESS;
-}
-
-void SetAutostart(bool enable) {
-    if (enable) {
-        wchar_t path[MAX_PATH];
-        GetModuleFileNameW(nullptr, path, MAX_PATH);
-        std::wstring cmd = L"\"" + std::wstring(path) + L"\"";
-        RegSetKeyValueW(HKEY_CURRENT_USER, kRunKey, kRunValue, REG_SZ, cmd.c_str(), DWORD((cmd.size() + 1) * sizeof(wchar_t)));
-    } else {
-        HKEY key;
-        if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKey, 0, KEY_SET_VALUE, &key) == ERROR_SUCCESS) {
-            RegDeleteValueW(key, kRunValue);
-            RegCloseKey(key);
-        }
+// Tray icons are drawn for 16-32 px; LoadIconMetric picks the right size for the current DPI.
+HICON LoadTrayIcon(int id) {
+    HICON icon = nullptr;
+    if (FAILED(LoadIconMetric(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(id), LIM_SMALL, &icon))) {
+        icon = LoadIconW(nullptr, IDI_APPLICATION);
     }
-}
-
-std::wstring StatusText(const LinkStatus& s) {
-    if (!g_vcamOk) return L"Virtual camera unavailable (run install.ps1)";
-    const wchar_t* cam = s.facing == proto::kFacingFront ? L"front" : L"back";
-    switch (s.state) {
-    case LinkState::NoDriver:   return L"USB driver missing (run install.ps1)";
-    case LinkState::Searching:  return L"Plug in your phone";
-    case LinkState::Waiting:    return L"Phone found: open MyCam on the phone";
-    case LinkState::Idle:       return std::wstring(L"Ready (") + cam + L" camera)";
-    case LinkState::PhoneError: return L"Phone camera problem; check the phone";
-    case LinkState::Streaming:
-        if (s.width) return std::wstring(L"Streaming ") + cam + L" camera, " + std::to_wstring(s.width) + L"x" + std::to_wstring(s.height);
-        return std::wstring(L"Streaming ") + cam + L" camera";
-    }
-    return L"";
+    return icon;
 }
 
 void Notify(const wchar_t* title, const std::wstring& text) {
@@ -106,37 +78,48 @@ void Notify(const wchar_t* title, const std::wstring& text) {
 }
 
 void UpdateTray() {
-    LinkStatus s;
-    {
-        std::lock_guard<std::mutex> lock(g_statusLock);
-        s = g_status;
-    }
-    std::wstring tip = L"MyCam: " + StatusText(s);
+    const LinkStatus s = CurrentStatus();
+    const StatusView view = DescribeStatus(s, g_vcamOk);
+
     g_tray.uFlags = NIF_TIP;
+    std::wstring tip = L"MyCam: " + view.headline + L"\n" + view.detail;
     wcsncpy_s(g_tray.szTip, tip.c_str(), _TRUNCATE);
+    if (view.icon != g_trayIcon) {
+        if (g_tray.hIcon) DestroyIcon(g_tray.hIcon);
+        g_tray.hIcon = LoadTrayIcon(view.icon);
+        g_tray.uFlags |= NIF_ICON;
+        g_trayIcon = view.icon;
+    }
     Shell_NotifyIconW(NIM_MODIFY, &g_tray);
+    if (g_settings) g_settings->Refresh();
 
     // Balloon only on meaningful transitions.
     bool wasConnected = g_shownStatus.state >= LinkState::Idle;
     bool isConnected = s.state >= LinkState::Idle;
     if (s.state == LinkState::NoDriver && g_shownStatus.state != LinkState::NoDriver) {
-        Notify(L"MyCam", StatusText(s));
+        Notify(view.headline.c_str(), view.detail);
     } else if (isConnected && !wasConnected) {
-        Notify(L"Phone connected", L"Select \"MyCam\" as the camera in any app.");
+        Notify(L"Phone connected", L"Choose “MyCam” as the camera in any app.");
     } else if (s.state == LinkState::Waiting && g_shownStatus.state != LinkState::Waiting) {
-        Notify(L"Phone found", L"Tap OK on your phone to open MyCam (tick \"Always\" so you're never asked again).");
+        Notify(L"Phone found", L"Tap OK on your phone to open MyCam (tick “Always” so you're never asked again).");
     }
     g_shownStatus = s;
 }
 
+void SetMirror(bool mirror) {
+    g_mirror = mirror;
+    g_link->SetMirror(mirror);
+    WriteSetting(L"Mirror", mirror);
+}
+
 void ShowMenu(HWND hwnd) {
-    LinkStatus s;
-    {
-        std::lock_guard<std::mutex> lock(g_statusLock);
-        s = g_status;
-    }
+    const LinkStatus s = CurrentStatus();
+    const StatusView view = DescribeStatus(s, g_vcamOk);
     HMENU menu = CreatePopupMenu();
-    AppendMenuW(menu, MF_STRING | MF_GRAYED, kMenuStatus, StatusText(s).c_str());
+    AppendMenuW(menu, MF_STRING, kMenuSettings, L"&Settings…");
+    SetMenuDefaultItem(menu, kMenuSettings, FALSE); // Bold; also what a left-click opens.
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING | MF_GRAYED, kMenuStatus, view.headline.c_str());
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kMenuBack, L"Back camera");
     AppendMenuW(menu, MF_STRING, kMenuFront, L"Front camera");
@@ -182,7 +165,11 @@ void RunDriverBinder() {
 LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     switch (msg) {
     case WM_TRAY:
-        if (LOWORD(lp) == WM_RBUTTONUP || LOWORD(lp) == WM_LBUTTONUP || LOWORD(lp) == WM_CONTEXTMENU) ShowMenu(hwnd);
+        switch (LOWORD(lp)) {
+        case WM_LBUTTONUP: if (g_settings) g_settings->Show(); break;
+        case WM_RBUTTONUP:
+        case WM_CONTEXTMENU: ShowMenu(hwnd); break;
+        }
         return 0;
     case WM_NEED_DRIVER:
         RunDriverBinder();
@@ -192,17 +179,15 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         return 0;
     case WM_COMMAND:
         switch (LOWORD(wp)) {
+        case kMenuSettings: if (g_settings) g_settings->Show(); break;
         case kMenuBack:  g_link->RequestFacing(proto::kFacingBack); break;
         case kMenuFront: g_link->RequestFacing(proto::kFacingFront); break;
-        case kMenuMirror:
-            g_mirror = !g_mirror;
-            g_link->SetMirror(g_mirror);
-            WriteSetting(L"Mirror", g_mirror);
-            break;
+        case kMenuMirror: SetMirror(!g_mirror); break;
         case kMenuReconnect: g_link->RequestReconnect(); break;
         case kMenuAutostart: SetAutostart(!AutostartEnabled()); break;
         case kMenuExit: DestroyWindow(hwnd); break;
         }
+        if (g_settings) g_settings->Refresh();
         return 0;
     case WM_DESTROY:
         Shell_NotifyIconW(NIM_DELETE, &g_tray);
@@ -241,6 +226,18 @@ void RunTestPattern(std::atomic<bool>& quit, uint32_t rotation) {
     }
 }
 
+int QuitRunningInstance() {
+    HWND other = FindWindowExW(HWND_MESSAGE, nullptr, L"MyCamCompanion", nullptr);
+    if (!other) return 0;
+    DWORD pid = 0;
+    GetWindowThreadProcessId(other, &pid);
+    HANDLE process = OpenProcess(SYNCHRONIZE, FALSE, pid);
+    PostMessageW(other, WM_CLOSE, 0, 0);
+    DWORD wait = process ? WaitForSingleObject(process, 5000) : WAIT_FAILED;
+    if (process) CloseHandle(process);
+    return wait == WAIT_OBJECT_0 ? 0 : 1;
+}
+
 HRESULT CreateVirtualCamera(ComPtr<IMFVirtualCamera>& vcam) {
     HRESULT hr = MFCreateVirtualCamera(MFVirtualCameraType_SoftwareCameraSource, MFVirtualCameraLifetime_Session,
                                        MFVirtualCameraAccess_CurrentUser, kCameraFriendlyName, MYCAM_VCAM_CLSID_STRING,
@@ -254,6 +251,9 @@ HRESULT CreateVirtualCamera(ComPtr<IMFVirtualCamera>& vcam) {
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     // Elevated helper mode (launched by the companion via UAC): bind WinUSB to accessory-mode phones.
     if (wcsstr(GetCommandLineW(), L"--bind-driver")) return BindAccessoryDrivers();
+    // Used by the installer/uninstaller: close the running companion cleanly (it turns the phone camera
+    // off on the way out) and wait for it to exit. Exit code 0 = none running or it closed.
+    if (wcsstr(GetCommandLineW(), L"--quit")) return QuitRunningInstance();
 
     HANDLE single = CreateMutexW(nullptr, TRUE, L"Local\\MyCamCompanion");
     if (GetLastError() == ERROR_ALREADY_EXISTS) return 0;
@@ -279,8 +279,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     g_tray.uID = kTrayId;
     g_tray.uFlags = NIF_ICON | NIF_TIP | NIF_MESSAGE;
     g_tray.uCallbackMessage = WM_TRAY;
-    g_tray.hIcon = LoadIconW(instance, MAKEINTRESOURCEW(1));
-    if (!g_tray.hIcon) g_tray.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
+    g_tray.hIcon = LoadTrayIcon(kIconDisconnected);
+    g_trayIcon = kIconDisconnected;
     wcscpy_s(g_tray.szTip, L"MyCam");
     Shell_NotifyIconW(NIM_ADD, &g_tray);
 
@@ -301,6 +301,22 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     }, [] { PostMessageW(g_hwnd, WM_NEED_DRIVER, 0, 0); });
     link.SetMirror(g_mirror);
     g_link = &link;
+
+    SettingsWindow settings({
+        CurrentStatus,
+        [] { return g_vcamOk; },
+        [] { return g_mirror; },
+        SetMirror,
+        AutostartEnabled,
+        SetAutostart,
+        [](int facing) { g_link->RequestFacing(facing); },
+        [] { g_link->RequestReconnect(); },
+        OpenLogFolder,
+    });
+    g_settings = &settings;
+    UpdateTray();
+    if (wcsstr(GetCommandLineW(), L"--settings")) settings.Show();
+
     std::atomic<bool> quitPattern{false};
     const bool testPattern = wcsstr(GetCommandLineW(), L"--test-pattern") != nullptr;
     std::thread worker([&] {
@@ -325,6 +341,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     link.Quit();
     quitPattern = true;
     worker.join();
+    g_settings = nullptr;
     g_link = nullptr;
     if (vcam) {
         vcam->Stop();
