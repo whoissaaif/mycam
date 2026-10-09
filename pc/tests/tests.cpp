@@ -12,6 +12,7 @@
 
 #include "../companion/packet_parser.h"
 #include "../companion/protocol.h"
+#include "../companion/wifi_crypto.h"
 #include "../vcam/frame_transform.h"
 
 using namespace mycam;
@@ -196,6 +197,63 @@ void TestParserReentrant(std::map<std::string, Bytes>& golden) {
     CHECK(parser.Buffered() == 0);
 }
 
+// --- Wireless crypto (golden.txt "wifi.*", made with the JDK) -----------------------------------
+
+void TestWifiCrypto(std::map<std::string, Bytes>& golden) {
+    using namespace mycam::wifi;
+    CHECK(Hkdf(Hex(std::string(44, 'B').replace(0, 44, "0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B0B")), Hex("000102030405060708090A0B0C"),
+               Hex("F0F1F2F3F4F5F6F7F8F9"), 42) == golden["wifi.hkdf_rfc5869_1"]);
+
+    // ECDH both ways; also proves the CNG raw secret is byte-reversed into Java's order.
+    const Bytes pcPub = golden["wifi.pc_public"], phonePub = golden["wifi.phone_public"];
+    EcKey pc, phone;
+    CHECK(pc.ImportPrivate(golden["wifi.pc_private"], pcPub));
+    CHECK(phone.ImportPrivate(golden["wifi.phone_private"], phonePub));
+    CHECK(pc.PublicRaw() == pcPub);
+    Bytes z1, z2;
+    CHECK(pc.Agree(phonePub, &z1) && z1 == golden["wifi.ecdh"]);
+    CHECK(phone.Agree(pcPub, &z2) && z2 == golden["wifi.ecdh"]);
+    Bytes bad = phonePub;
+    bad[40] ^= 1; // Not on the curve any more: must be refused.
+    CHECK(!pc.Agree(bad, &z1));
+
+    const Bytes z = golden["wifi.ecdh"], na = golden["wifi.na"], nb = golden["wifi.nb"];
+    CHECK(Commit(nb, phonePub, pcPub) == golden["wifi.commit"]);
+    CHECK(Sas(pcPub, phonePub, na, nb) == "554294"); // golden "wifi.sas" holds these digits as text.
+    const Bytes pairKey = PairKey(z, na, nb);
+    CHECK(pairKey == golden["wifi.pair_key"]);
+    const Bytes okm = SessionKeys(z, pairKey, golden["wifi.npc"], golden["wifi.nph"]);
+    CHECK(okm == golden["wifi.session_okm"]);
+    const Bytes kFin(okm.begin() + 64, okm.end());
+    CHECK(Finished(kFin, "PC", golden["wifi.transcript"]) == golden["wifi.finished_pc"]);
+    CHECK(Finished(kFin, "PH", golden["wifi.transcript"]) == golden["wifi.finished_phone"]);
+
+    // Records: exact bytes, counters, tamper and direction checks.
+    const Bytes k1(okm.begin(), okm.begin() + 32);
+    RecordKey tx, rx;
+    CHECK(tx.Init(k1, kDirPcToPhone));
+    Bytes record;
+    const char hello[] = "MCMD hello";
+    CHECK(tx.Seal(reinterpret_cast<const uint8_t*>(hello), strlen(hello), &record));
+    CHECK(record == golden["wifi.record_pc_0"]);
+
+    RecordKey phoneTx;
+    CHECK(phoneTx.Init(k1, kDirPhoneToPc));
+    Bytes empty;
+    for (int i = 0; i < 7; ++i) { Bytes skip; phoneTx.Seal(nullptr, 0, &skip); }
+    CHECK(phoneTx.Seal(nullptr, 0, &empty) && empty == golden["wifi.record_phone_7"]);
+
+    CHECK(rx.Init(k1, kDirPcToPhone));
+    Bytes plain;
+    CHECK(rx.Open(record.data() + 4, record.size() - 4, &plain) && Bytes(plain) == Bytes(hello, hello + strlen(hello)));
+    CHECK(!rx.Open(record.data() + 4, record.size() - 4, &plain)); // Replayed: counter has moved on.
+    RecordKey rx2;
+    rx2.Init(k1, kDirPcToPhone);
+    Bytes tampered = record;
+    tampered[8] ^= 1;
+    CHECK(!rx2.Open(tampered.data() + 4, tampered.size() - 4, &plain));
+}
+
 // --- Frame transform -------------------------------------------------------------------------
 
 // A w x h NV12 image whose luma is a unique value per pixel (y * w + x + 1) and whose chroma pairs
@@ -336,6 +394,7 @@ int main() {
     printf("protocol golden commands\n");  withGolden(TestGoldenCommands);
     printf("protocol golden camera\n");    withGolden(TestGoldenCamera);
     printf("parser splits/batches\n");     withGolden(TestParserSplitsAndBatches);
+    printf("wireless crypto\n");           withGolden(TestWifiCrypto);
     printf("parser resyncs\n");            withGolden(TestParserResyncs);
     printf("parser re-entrant\n");         withGolden(TestParserReentrant);
     printf("transform identity\n");        TestIdentity();

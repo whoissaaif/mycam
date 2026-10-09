@@ -74,6 +74,7 @@ fun WebcamScreen(
     onDim: () -> Unit = {},
     onWireless: (Boolean) -> Unit = {},
     onAnswerPc: (Boolean) -> Unit = {},
+    onForgetPcs: () -> Unit = {},
 ) {
     val view = describe(state)
     Column(modifier.fillMaxSize().background(Aero.Body)) {
@@ -86,10 +87,15 @@ fun WebcamScreen(
                 .padding(horizontal = 20.dp, vertical = 24.dp),
         ) {
             // A PC on the Wi-Fi asks to use the camera: nothing streams until the user allows it.
+            // Pairing a new PC: the same code must show on the PC, or someone else is in between.
             state.pendingPc?.let { pc ->
-                Text(stringResource(R.string.wireless_ask_title, pc), style = MaterialTheme.typography.titleMedium, color = Aero.MainInstruction)
+                val code = WebcamService.formatCode(state.pendingCode ?: "")
+                Text(stringResource(R.string.wireless_pair_title, pc), style = MaterialTheme.typography.titleMedium, color = Aero.MainInstruction)
+                Spacer(Modifier.height(8.dp))
+                Text(stringResource(R.string.wireless_code_label), style = MaterialTheme.typography.bodyMedium, color = Aero.Subtle)
+                Text(code, style = MaterialTheme.typography.headlineLarge, color = Aero.Text)
                 Spacer(Modifier.height(4.dp))
-                Text(stringResource(R.string.wireless_ask_text), style = MaterialTheme.typography.bodyMedium, color = Aero.Subtle)
+                Text(stringResource(R.string.wireless_pair_text, code), style = MaterialTheme.typography.bodyMedium, color = Aero.Subtle)
                 Spacer(Modifier.height(10.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     AeroButton(stringResource(R.string.wireless_allow), onClick = { onAnswerPc(true) }, modifier = Modifier.width(120.dp))
@@ -170,6 +176,15 @@ fun WebcamScreen(
                 },
                 style = MaterialTheme.typography.bodyMedium, color = Aero.Subtle,
             )
+            if (state.pairedPcs.isNotEmpty()) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    stringResource(R.string.wireless_paired, state.pairedPcs.joinToString(", ")),
+                    style = MaterialTheme.typography.bodyMedium, color = Aero.Subtle,
+                )
+                Spacer(Modifier.height(8.dp))
+                AeroButton(stringResource(R.string.wireless_forget), onClick = onForgetPcs)
+            }
         }
 
         CommandArea {

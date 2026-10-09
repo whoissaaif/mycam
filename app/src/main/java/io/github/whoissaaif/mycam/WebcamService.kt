@@ -64,8 +64,11 @@ class WebcamService : Service() {
         val wireless: Boolean = false,
         /** This phone's address on Wi-Fi, shown so the user can tell which network it is on. */
         val wirelessAddress: String? = null,
-        /** A PC that connected over Wi-Fi and is waiting for the user to allow it. */
+        /** A PC that is pairing over Wi-Fi and waiting for the user to allow it, and the code both screens show. */
         val pendingPc: String? = null,
+        val pendingCode: String? = null,
+        /** Names of the PCs this phone is paired with (they connect without asking). */
+        val pairedPcs: List<String> = emptyList(),
         /** Name of the PC connected over Wi-Fi. */
         val wirelessPc: String? = null,
     )
@@ -92,8 +95,9 @@ class WebcamService : Service() {
     private var wireless: WirelessServer? = null
     private var wirelessOn = false
     private var wifiLock: WifiManager.WifiLock? = null
-    private var pendingClient: Pair<Socket, String>? = null
-    private val approvedPcs = mutableSetOf<String>() // IP addresses allowed since the service started.
+    private var handshaking = false                      // A PC is pairing or proving its pairing key.
+    private var pendingAnswer: ((Boolean) -> Unit)? = null // Waiting for Allow / Don't allow on a pairing.
+    private val pairedPcs by lazy { PairedPcs(getSharedPreferences(PREFS, MODE_PRIVATE)) }
 
     // Owned by the camera thread.
     private var wantStreaming = false
@@ -187,6 +191,10 @@ class WebcamService : Service() {
                 setWireless(intent.getBooleanExtra(EXTRA_ON, false))
                 return START_NOT_STICKY
             }
+            ACTION_FORGET_PCS -> {
+                forgetPcs()
+                return START_NOT_STICKY
+            }
             ACTION_WIRELESS_ANSWER -> {
                 answerPc(intent.getBooleanExtra(EXTRA_ALLOW, false))
                 return START_NOT_STICKY
@@ -203,7 +211,7 @@ class WebcamService : Service() {
         return START_NOT_STICKY
     }
 
-    // --- Wireless mode (IMPROVEMENTS.md 11, phase 1) -------------------------------------------------
+    // --- Wireless mode (IMPROVEMENTS.md 11) ----------------------------------------------------------
 
     /** Main thread. Turns wireless mode on (findable on Wi-Fi, accepting PCs) or off. */
     private fun setWireless(on: Boolean) {
@@ -213,7 +221,9 @@ class WebcamService : Service() {
             if (!goForeground()) { stopSelf(); return }
             wirelessOn = true
             wireless = WirelessServer(this) { sock, name -> main.post { offerPc(sock, name) } }.also { it.start() }
-            _state.update { it.copy(wirelessOn = true, wirelessAddress = WirelessServer.localAddress(this)) }
+            _state.update {
+                it.copy(wirelessOn = true, wirelessAddress = WirelessServer.localAddress(this), pairedPcs = pairedPcs.names())
+            }
         } else {
             wirelessOn = false
             wireless?.stop()
@@ -230,45 +240,69 @@ class WebcamService : Service() {
         updateNotification()
     }
 
-    /** Main thread. A PC connected over Wi-Fi: ask the user, unless it was allowed earlier or USB is in use. */
-    private fun offerPc(sock: Socket, name: String) {
-        val ip = sock.inetAddress.hostAddress ?: ""
-        if (!wirelessOn || linked || pendingClient != null) {
+    /**
+     * Main thread. A PC connected over Wi-Fi. Unless USB is in use or another PC is being set up, run the
+     * handshake on its own thread: a paired PC connects straight away; a new one is paired only if the user
+     * allows it after comparing the 6-digit code (PROTOCOL.md "Wireless security").
+     */
+    private fun offerPc(sock: Socket, discoveredName: String) {
+        if (!wirelessOn || linked || handshaking) {
             // The cable wins, and only one PC at a time.
             try { sock.close() } catch (_: IOException) {}
             return
         }
-        if (ip in approvedPcs) { openSocket(sock, name); return }
-        pendingClient = sock to name
-        _state.update { it.copy(pendingPc = name) }
-        showApprovalNotification(name)
-        // Nobody answered: refuse, so a PC can't wait on the phone forever.
-        main.postDelayed({ if (pendingClient?.first === sock) answerPc(false) }, APPROVAL_TIMEOUT_MS)
+        handshaking = true
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        Thread({
+            val result = WifiHandshake(sock, pairedPcs, PairedPcs.phoneId(prefs), WirelessServer.deviceName(this), ::askUser).run()
+            main.post {
+                handshaking = false
+                if (result != null && wirelessOn && !linked) openSocket(sock, result)
+                else try { sock.close() } catch (_: IOException) {}
+            }
+        }, "wifi-handshake").start()
+        Log.i(TAG, "Wi-Fi connection from $discoveredName (${sock.inetAddress.hostAddress})")
     }
 
-    /** Main thread. The user allowed or refused the waiting PC. */
-    private fun answerPc(allow: Boolean) {
-        val (sock, name) = pendingClient ?: return
-        pendingClient = null
-        _state.update { it.copy(pendingPc = null) }
-        getSystemService(NotificationManager::class.java).cancel(APPROVAL_NOTIFICATION_ID)
-        if (allow && wirelessOn && !linked) {
-            sock.inetAddress.hostAddress?.let { approvedPcs += it }
-            openSocket(sock, name)
-        } else {
-            try { sock.close() } catch (_: IOException) {}
+    /** Handshake thread. Shows "Pair with <PC>? Code …" and waits for Allow / Don't allow (or the timeout). */
+    private fun askUser(pcName: String, code: String): Boolean {
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val answer = java.util.concurrent.atomic.AtomicBoolean(false)
+        main.post {
+            pendingAnswer = { allow -> answer.set(allow); latch.countDown() }
+            _state.update { it.copy(pendingPc = pcName, pendingCode = code) }
+            showApprovalNotification(pcName, code)
         }
+        val answered = latch.await(APPROVAL_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+        main.post { if (!answered) answerPc(false) }
+        return answered && answer.get()
     }
 
-    private fun showApprovalNotification(name: String) {
+    /** Main thread. The user allowed or refused the PC that is pairing. */
+    private fun answerPc(allow: Boolean) {
+        val reply = pendingAnswer ?: return
+        pendingAnswer = null
+        _state.update { it.copy(pendingPc = null, pendingCode = null) }
+        getSystemService(NotificationManager::class.java).cancel(APPROVAL_NOTIFICATION_ID)
+        reply(allow && wirelessOn && !linked)
+    }
+
+    /** Main thread. Forgets every paired PC: they have to pair again (with a code) next time. */
+    private fun forgetPcs() {
+        pairedPcs.forgetAll()
+        _state.update { it.copy(pairedPcs = emptyList()) }
+        if (!linked && !wirelessOn) stopSelf() // Started just for this.
+    }
+
+    private fun showApprovalNotification(name: String, code: String) {
         val nm = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             nm.createNotificationChannel(
                 NotificationChannel(APPROVAL_CHANNEL_ID, getString(R.string.channel_wireless), NotificationManager.IMPORTANCE_HIGH)
             )
         }
-        fun answer(allow: Boolean, code: Int) = PendingIntent.getService(
-            this, code, Intent(this, WebcamService::class.java).setAction(ACTION_WIRELESS_ANSWER).putExtra(EXTRA_ALLOW, allow),
+        fun answer(allow: Boolean, requestCode: Int) = PendingIntent.getService(
+            this, requestCode, Intent(this, WebcamService::class.java).setAction(ACTION_WIRELESS_ANSWER).putExtra(EXTRA_ALLOW, allow),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val open = PendingIntent.getActivity(this, 2, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
@@ -276,8 +310,9 @@ class WebcamService : Service() {
             APPROVAL_NOTIFICATION_ID,
             NotificationCompat.Builder(this, APPROVAL_CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_stat_webcam)
-                .setContentTitle(getString(R.string.wireless_ask_title, name))
-                .setContentText(getString(R.string.wireless_ask_text))
+                .setContentTitle(getString(R.string.wireless_pair_title, name))
+                .setContentText(getString(R.string.wireless_pair_text, formatCode(code)))
+                .setStyle(NotificationCompat.BigTextStyle().bigText(getString(R.string.wireless_pair_text, formatCode(code))))
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(NotificationCompat.CATEGORY_CALL)
                 .setContentIntent(open)
@@ -289,8 +324,8 @@ class WebcamService : Service() {
         )
     }
 
-    /** Main thread. Uses an allowed Wi-Fi connection as the link. */
-    private fun openSocket(sock: Socket, name: String) {
+    /** Main thread. Uses a paired, encrypted Wi-Fi connection as the link. */
+    private fun openSocket(sock: Socket, secure: WifiHandshake.Result) {
         closeLink()
         try {
             sock.tcpNoDelay = true
@@ -298,21 +333,17 @@ class WebcamService : Service() {
             // (writes return at once while seconds of video queue up behind them).
             sock.sendBufferSize = 128 * 1024
         } catch (_: IOException) {}
-        val input = try { sock.getInputStream() } catch (e: IOException) { null }
-        val out = try { sock.getOutputStream() } catch (e: IOException) { null }
-        if (input == null || out == null) {
-            try { sock.close() } catch (_: IOException) {}
-            return
-        }
         socket = sock
-        startLink(out, input, wirelessPc = name)
+        startLink(secure.output, secure.input, wirelessPc = secure.pcName)
+        if (secure.newlyPaired) _state.update { it.copy(pairedPcs = pairedPcs.names()) }
         wifiLock = getSystemService(WifiManager::class.java)?.createWifiLock(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) WifiManager.WIFI_MODE_FULL_LOW_LATENCY
             else @Suppress("DEPRECATION") WifiManager.WIFI_MODE_FULL_HIGH_PERF,
             "MyCam:stream",
         )?.apply { setReferenceCounted(false); acquire() }
-        Log.i(TAG, "Wi-Fi link from $name (${sock.inetAddress.hostAddress})")
+        Log.i(TAG, "Wi-Fi link to ${secure.pcName} (${sock.inetAddress.hostAddress}), encrypted")
     }
+
 
     private fun goForeground(): Boolean {
         if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -714,8 +745,8 @@ class WebcamService : Service() {
         cameraThread.quitSafely()
         wireless?.stop()
         wireless = null
-        pendingClient?.first?.let { try { it.close() } catch (_: IOException) {} }
-        pendingClient = null
+        pendingAnswer?.invoke(false) // Unblocks a pairing that is waiting for the user.
+        pendingAnswer = null
         closeLink()
         wakeLock?.release()
         wakeLock = null
@@ -744,6 +775,10 @@ class WebcamService : Service() {
         const val EXTRA_ON = "on"
         const val ACTION_WIRELESS_ANSWER = "io.github.whoissaaif.mycam.WIRELESS_ANSWER"
         const val EXTRA_ALLOW = "allow"
+        const val ACTION_FORGET_PCS = "io.github.whoissaaif.mycam.FORGET_PCS"
+
+        /** "554294" -> "554 294", easier to compare between screens. */
+        fun formatCode(code: String) = if (code.length == 6) code.substring(0, 3) + " " + code.substring(3) else code
         private const val APPROVAL_CHANNEL_ID = "wireless"
         private const val APPROVAL_NOTIFICATION_ID = 2
         private const val APPROVAL_TIMEOUT_MS = 60_000L

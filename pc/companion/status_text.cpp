@@ -23,8 +23,13 @@ StatusView DescribeStatus(const LinkStatus& s, bool cameraRegistered) {
         return {L"No phone connected", L"Plug in your Android phone with a USB cable.", kIconDisconnected};
     case LinkState::Waiting:
         if (s.wireless) {
-            return {L"Phone found on Wi-Fi", L"Tap Allow on " + (s.phoneName.empty() ? std::wstring(L"the phone") : s.phoneName) + L".",
-                    kIconDisconnected};
+            const std::wstring phone = s.phoneName.empty() ? std::wstring(L"the phone") : s.phoneName;
+            if (!s.pairingCode.empty()) {
+                return {L"Pair with " + phone + L"? Code " + s.pairingCode,
+                        L"If the phone shows the same code, tap Allow on it. Paired phones connect without asking.",
+                        kIconDisconnected};
+            }
+            return {L"Phone found on Wi-Fi", L"Connecting to " + phone + L"…", kIconDisconnected};
         }
         return {L"Phone found", L"Open MyCam on the phone, and tap OK if it asks.", kIconDisconnected};
     case LinkState::Idle:

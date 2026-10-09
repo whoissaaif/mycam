@@ -2,6 +2,7 @@
 #include <atomic>
 #include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <set>
 #include <string>
@@ -19,6 +20,11 @@ struct libusb_device_handle;
 struct libusb_transfer;
 
 namespace mycam {
+
+namespace wifi { class RecordKey; }
+
+// Forgets every phone paired over Wi-Fi (they must pair again with a code). Settings window.
+void ForgetPairedPhones();
 
 enum class LinkState {
     NoDriver,    // UsbDk is not installed; we cannot talk to phones.
@@ -39,6 +45,7 @@ struct LinkStatus {
     bool wireless = false;        // The current phone is connected over Wi-Fi (else USB).
     bool wirelessSearch = false;  // "Find phones on Wi-Fi" is on.
     std::wstring phoneName;       // Wi-Fi phones: the name the phone announced.
+    std::wstring pairingCode;     // Pairing a Wi-Fi phone: the 6-digit code both screens must show.
 };
 
 // Owns all USB traffic. Run() blocks on the calling (worker) thread until Quit() is called.
@@ -93,7 +100,11 @@ private:
     void NetScanOnce();
     bool EnsureUdp();
     void BroadcastProbe();
-    void RunTcpSession(uintptr_t socket, const std::string& phoneName);
+    // How a Wi-Fi session ended, for when to try that phone again.
+    enum class WifiEnd { Ran, Refused, NeedsPairing, Failed };
+    WifiEnd RunTcpSession(uintptr_t socket, const std::string& phoneName, bool forcePair);
+    WifiEnd Handshake(uintptr_t socket, bool forcePair); // Pairing / paired proof, then sets wifiTx_/wifiRx_.
+    bool ReceiveRecords(uintptr_t socket);               // Decrypts what arrived and feeds the parser.
     bool UsbPhoneArrived(); // During a Wi-Fi session: a phone was plugged in (the cable takes over).
     bool SendTcp(const uint8_t* data, size_t size);
 
@@ -126,7 +137,10 @@ private:
     uintptr_t udp_ = ~uintptr_t(0);       // SOCKET for discovery (INVALID_SOCKET when closed).
     uintptr_t tcp_ = ~uintptr_t(0);       // SOCKET of the current Wi-Fi session.
     uint64_t lastProbe_ = 0;
-    struct NetPhone { uint16_t port = 0; std::string name; uint64_t lastSeen = 0, retryAfter = 0; };
+    struct NetPhone { uint16_t port = 0; std::string name; uint64_t lastSeen = 0, retryAfter = 0; bool forcePair = false; };
+    // Encrypted Wi-Fi session (PROTOCOL.md "Wireless security"): record keys per direction, received bytes.
+    std::shared_ptr<wifi::RecordKey> wifiTx_, wifiRx_;
+    std::vector<uint8_t> wifiRxBuf_;
     std::map<uint32_t, NetPhone> netPhones_; // By IPv4 address (network order), from discovery answers.
 
     libusb_context* ctx_ = nullptr;       // UsbDk backend: switches phones into accessory mode.

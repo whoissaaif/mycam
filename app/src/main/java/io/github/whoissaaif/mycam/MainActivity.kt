@@ -98,7 +98,7 @@ class MainActivity : ComponentActivity() {
                 } else {
                     WebcamScreen(
                         state = state, onFacing = ::setFacing, onPause = ::setPaused, onCommand = ::sendCommand,
-                        onDim = { dimmed = true }, onWireless = ::setWireless, onAnswerPc = ::answerPc,
+                        onDim = { dimmed = true }, onWireless = ::setWireless, onAnswerPc = ::answerPc, onForgetPcs = ::forgetPcs,
                     )
                 }
             }
@@ -226,6 +226,10 @@ class MainActivity : ComponentActivity() {
         if (on) ContextCompat.startForegroundService(this, intent)
         else if (WebcamService.state.value.wirelessOn) startService(intent)
         else getSharedPreferences(WebcamService.PREFS, MODE_PRIVATE).edit().putBoolean(WebcamService.PREF_WIRELESS, false).apply()
+    }
+
+    private fun forgetPcs() {
+        startService(Intent(this, WebcamService::class.java).setAction(WebcamService.ACTION_FORGET_PCS))
     }
 
     private fun answerPc(allow: Boolean) {

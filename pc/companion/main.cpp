@@ -108,8 +108,10 @@ void UpdateTray() {
     if (s.state == LinkState::NoDriver && g_shownStatus.state != LinkState::NoDriver) {
         Notify(view.headline.c_str(), view.detail);
     } else if (isConnected && !wasConnected) {
-        Notify(L"Phone connected", L"Choose “MyCam” as the camera in any app.");
-    } else if (s.state == LinkState::Waiting && g_shownStatus.state != LinkState::Waiting) {
+        Notify(s.wireless ? L"Phone connected over Wi-Fi" : L"Phone connected", L"Choose “MyCam” as the camera in any app.");
+    } else if (!s.pairingCode.empty() && s.pairingCode != g_shownStatus.pairingCode) {
+        Notify(view.headline.c_str(), view.detail); // "Pair with …? Code 554 294": compare it with the phone.
+    } else if (s.state == LinkState::Waiting && g_shownStatus.state != LinkState::Waiting && !s.wireless) {
         Notify(L"Phone found", L"Tap OK on your phone to open MyCam (tick “Always” so you're never asked again).");
     }
     g_shownStatus = s;

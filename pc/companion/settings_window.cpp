@@ -39,7 +39,7 @@ enum Id {
     kNone = 0, kPause, kBack, kFront,
     kQ720, kQ1080, kQ4K, kFps30, kFps60, kFps120, kZoomOut, kZoomIn, kZoomReset, kEvDown, kEvUp, kFocusAuto, kFocusLock,
     kTorch, kAuto,
-    kMirror, kFill, kAutostart, kWireless, kReconnect, kOpenLog, kClose, kTitleClose, kTitleMin };
+    kMirror, kFill, kAutostart, kWireless, kReconnect, kOpenLog, kForgetPhones, kClose, kTitleClose, kTitleMin };
 enum class Kind { Segment, Checkbox, Link, Button, TitleClose, TitleMin };
 
 struct Element {
@@ -124,7 +124,8 @@ struct SettingsWindow::Impl {
         elements.push_back({kAutostart, Kind::Checkbox, Rect(x, 638, 300, 20), L"Start MyCam with Windows"});
         elements.push_back({kWireless, Kind::Checkbox, Rect(x, 662, 330, 20), L"Find phones on Wi-Fi (beta)"});
         elements.push_back({kReconnect, Kind::Link, Rect(x, 696, 110, 20), L"Reconnect phone"});
-        elements.push_back({kOpenLog, Kind::Link, Rect(x + 130, 696, 110, 20), L"Open log folder"});
+        elements.push_back({kForgetPhones, Kind::Link, Rect(x + 235, 696, 140, 20), L"Forget Wi-Fi phones"});
+        elements.push_back({kOpenLog, Kind::Link, Rect(x + 120, 696, 105, 20), L"Open log folder"});
         const float bottom = kHeight - kFrame;
         elements.push_back({kClose, Kind::Button, Rect(kWidth - kFrame - 12 - 86, bottom - kCommandH + 11, 86, 24), L"Close"});
     }
@@ -577,6 +578,7 @@ struct SettingsWindow::Impl {
         case kWireless: model->setWireless(!model->wireless()); break;
         case kReconnect: model->reconnect(); break;
         case kOpenLog: model->openLogFolder(); break;
+        case kForgetPhones: ForgetPairedPhones(); break; // They pair again (with a code) next time.
         case kClose:
         case kTitleClose: DestroyWindow(hwnd); return;
         case kTitleMin: ShowWindow(hwnd, SW_MINIMIZE); return;
@@ -588,7 +590,7 @@ struct SettingsWindow::Impl {
     void MoveFocus(int step) {
         static const Id order[] = {kPause, kBack, kFront, kQ720, kQ1080, kQ4K, kFps30, kFps60, kFps120, kZoomOut, kZoomIn, kZoomReset,
                                    kEvDown, kEvUp, kFocusAuto, kFocusLock, kTorch, kAuto, kMirror, kFill, kAutostart, kWireless,
-                                   kReconnect, kOpenLog, kClose};
+                                   kReconnect, kOpenLog, kForgetPhones, kClose};
         constexpr int n = int(sizeof(order) / sizeof(order[0]));
         int i = 0;
         for (int k = 0; k < n; ++k) if (order[k] == focus) i = k;

@@ -80,7 +80,7 @@ class WirelessServer(private val context: Context, private val onClient: (Socket
             }
             discovery = socket
             val buf = ByteArray(512)
-            val reply = "${Protocol.WIRELESS_HERE} ${Protocol.WIRELESS_TCP_PORT} ${deviceName()}".toByteArray()
+            val reply = "${Protocol.WIRELESS_HERE} ${Protocol.WIRELESS_TCP_PORT} ${deviceName(context)}".toByteArray()
             while (running) {
                 val packet = DatagramPacket(buf, buf.size)
                 socket.receive(packet)
@@ -95,14 +95,16 @@ class WirelessServer(private val context: Context, private val onClient: (Socket
         }
     }
 
-    private fun deviceName(): String {
-        val userName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1)
-            Settings.Global.getString(context.contentResolver, Settings.Global.DEVICE_NAME) else null
-        return (userName?.takeIf { it.isNotBlank() } ?: "${Build.MANUFACTURER} ${Build.MODEL}").take(64)
-    }
 
     companion object {
         private const val TAG = "WirelessServer"
+
+        /** The phone's name as the user set it (Settings > About), else maker and model. */
+        fun deviceName(context: Context): String {
+            val userName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1)
+                Settings.Global.getString(context.contentResolver, Settings.Global.DEVICE_NAME) else null
+            return (userName?.takeIf { it.isNotBlank() } ?: "${Build.MANUFACTURER} ${Build.MODEL}").take(64)
+        }
 
         /**
          * This phone's IPv4 address on Wi-Fi (or its own hotspot), for showing in the app; null if it has none.

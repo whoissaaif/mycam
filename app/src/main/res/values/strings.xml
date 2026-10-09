@@ -64,8 +64,11 @@
     <string name="wireless_hint_on">This phone is %1$s. On the PC, turn on “Find phones on Wi-Fi” in MyCam settings.</string>
     <string name="wireless_hint_no_wifi">Connect this phone to Wi-Fi (or turn on its hotspot for the PC).</string>
     <string name="wireless_connected">Connected over Wi-Fi to %1$s</string>
-    <string name="wireless_ask_title">Allow %1$s to use this camera?</string>
-    <string name="wireless_ask_text">A PC on your Wi-Fi wants to use MyCam.</string>
+    <string name="wireless_pair_title">Pair with %1$s?</string>
+    <string name="wireless_pair_text">Code %1$s. Check that MyCam on the PC shows the same code, then allow. Paired PCs connect without asking.</string>
+    <string name="wireless_code_label">Code on the PC must be</string>
+    <string name="wireless_paired">Paired: %1$s</string>
+    <string name="wireless_forget">Forget paired PCs</string>
     <string name="wireless_allow">Allow</string>
     <string name="wireless_deny">Don’t allow</string>
     <string name="channel_wireless">Wireless connection requests</string>
