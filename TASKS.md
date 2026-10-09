@@ -9,8 +9,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 
 ## Now
 
-- [ ] Create the release key (`tools\create-release-key.ps1`) and back it up [4.2]
-- [ ] Release 1.2.0 (signed APK + installer); on the phone, uninstall the old `com.example.mycam` app once, then install 1.2.0
+- [ ] Install 1.2.0: on the phone, uninstall the old `com.example.mycam` app once, then install 1.2.0
 - [ ] Test the remaining scenarios [2.3]
   - [ ] Pause / Resume from the phone's notification
   - [ ] Pause survives unplug and replug
@@ -40,7 +39,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 
 ## Done
 
-- [x] Package name `io.github.whoissaaif.mycam` and release signing setup [4.2] (1.2.0)
+- [x] Package name `io.github.whoissaaif.mycam`, release key created, signed release [4.2] (1.2.0)
 - [x] Ad brief for the motion designer (shared doc)
 - [x] Wired phone-as-webcam: Android Open Accessory + Windows 11 virtual camera (1.0)
 - [x] Fixes from first real-phone testing: MediaTek config, WinUSB streaming, reliable reads, logging (1.0)
@@ -58,6 +57,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 
 | Version | Date | What changed |
 |---|---|---|
+| 1.2.0 | 2026-10-09 | Package `io.github.whoissaaif.mycam` (new app on phones), signed with the release key, 1.5 MB APK. |
 | 1.1.1 | 2026-10-09 | The phone's "get the app" link points to the GitHub repo. First GitHub release (exe + apk). |
 | 1.1.0 | 2026-10-09 | Pause on phone and PC, auto-pause on Windows lock, status pictures, Aero phone app. |
 | 1.0.0 | 2026-10-09 | First installer: tray status icons, Aero settings window, Inno Setup. |
