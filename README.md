@@ -7,11 +7,6 @@
 Plug the phone into a Windows 11 PC and it shows up as a camera called **MyCam** in Zoom, Teams, OBS,
 browsers, and the Windows Camera app. Both the front and back cameras work.
 
-<p>
-  <img src="docs/screenshots/phone-streaming.png" alt="MyCam phone app streaming" width="260">
-  <img src="docs/screenshots/camera-status-frames.png" alt="Camera paused and Waiting pictures shown to other apps" width="540">
-</p>
-
 * **Wired only, plug and play.** No Wi-Fi, and no Developer Options or USB debugging.
 * **Privacy first.** Pause from the phone, its notification, or the PC tray. The camera also turns off by itself
   while Windows is locked. Other apps then see a "Camera paused" picture instead of you.
