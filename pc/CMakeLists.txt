@@ -39,6 +39,7 @@ target_link_libraries(MyCamVCam PRIVATE mfplat mfuuid advapi32 runtimeobject)
 add_executable(MyCamCompanion WIN32
     companion/main.cpp
     companion/phone_link.cpp
+    companion/aoa_transport.cpp
     companion/decoder.cpp
     companion/frame_writer.cpp
     companion/packet_parser.cpp
