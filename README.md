@@ -1,5 +1,9 @@
 # MyCam: use your Android phone as a wired USB webcam
 
+<p align="center">
+  <img src="docs/media/mycam-demo.gif" alt="MyCam demo: plug in your phone and it becomes your webcam" width="800">
+</p>
+
 Plug the phone into a Windows 11 PC and it shows up as a camera called **MyCam** in Zoom, Teams, OBS,
 browsers, and the Windows Camera app. Both the front and back cameras work.
 
