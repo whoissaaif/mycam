@@ -41,7 +41,8 @@ fun VideoSection(settings: CameraStreamer.Settings, info: Protocol.CameraInfo?, 
         modifier = Modifier.fillMaxWidth(),
     )
     AeroCheckbox(
-        stringResource(R.string.video_60fps), checked = settings.fps >= 60, enabled = has60,
+        stringResource(if (has60) R.string.video_60fps else R.string.video_60fps_unsupported),
+        checked = settings.fps >= 60 && has60, enabled = has60,
         onCheckedChange = { onCommand(Protocol.CMD_SET_FPS, if (it) 60 else 30) },
     )
     if (info != null && info.width > 0) {
@@ -119,6 +120,22 @@ fun ControlsSection(settings: CameraStreamer.Settings, info: Protocol.CameraInfo
             onCheckedChange = { onCommand(Protocol.CMD_SET_TORCH, if (it) 1 else 0) },
         )
     }
+
+    // Auto: one tap back to the defaults (1x zoom, normal brightness, auto focus, torch off).
+    val atDefaults = info.zoomX100 == 100.coerceIn(info.zoomMinX100, info.zoomMaxX100) && info.ev == 0 &&
+        info.flags and (Protocol.CAM_TORCH_ON or Protocol.CAM_FOCUS_LOCKED) == 0
+    Spacer(Modifier.height(16.dp))
+    AeroButton(
+        stringResource(R.string.controls_auto),
+        onClick = {
+            onCommand(Protocol.CMD_SET_ZOOM, 10)
+            onCommand(Protocol.CMD_SET_EXPOSURE, 0)
+            onCommand(Protocol.CMD_SET_FOCUS, 0)
+            onCommand(Protocol.CMD_SET_TORCH, 0)
+        },
+        enabled = !atDefaults,
+        modifier = Modifier.fillMaxWidth(),
+    )
 }
 
 private fun format(v: Float): String =

@@ -264,22 +264,42 @@ class CameraStreamer(
         )
     }
 
-    /** Capture-to-encoded latency on the phone (sensor timestamp vs now, same clock), logged every 5 s. */
+    /**
+     * Capture-to-encoded latency on the phone, logged every 5 s. The frame timestamp is the sensor time; which
+     * clock that uses varies by phone (the reported source isn't always right), so compare against both
+     * candidate clocks and use the one that gives a plausible value.
+     */
     private fun measureLatency(ptsUs: Long) {
-        val nowUs = (if (realtimeTimestamps) SystemClock.elapsedRealtimeNanos() else System.nanoTime()) / 1000
-        val latency = nowUs - ptsUs
-        if (latency in 0..1_000_000) {
+        val realtime = SystemClock.elapsedRealtimeNanos() / 1000 - ptsUs
+        val monotonic = System.nanoTime() / 1000 - ptsUs
+        val preferred = if (realtimeTimestamps) realtime else monotonic
+        val other = if (realtimeTimestamps) monotonic else realtime
+        val latency = if (preferred in 0..2_000_000) preferred else other
+        if (latency in 0..2_000_000) {
             latencySumUs += latency
             latencyCount++
         }
         val nowMs = SystemClock.elapsedRealtime()
-        if (nowMs - lastLatencyLog >= 5000 && latencyCount > 0) {
-            listener.onLog("latency: capture to encoded avg ${latencySumUs / latencyCount / 1000} ms over $latencyCount frames")
+        if (nowMs - lastLatencyLog >= 5000) {
+            if (latencyCount > 0) {
+                listener.onLog("latency: capture to encoded avg ${latencySumUs / latencyCount / 1000} ms over $latencyCount frames")
+            } else {
+                listener.onLog("latency: timestamps not comparable (realtime diff ${realtime / 1000} ms, monotonic ${monotonic / 1000} ms)")
+            }
             latencySumUs = 0
             latencyCount = 0
             lastLatencyLog = nowMs
         }
     }
+
+    /** Changes the encoder bitrate live (used to adapt to what the USB link can carry). */
+    fun setBitrate(bitsPerSecond: Int) {
+        encoder?.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_VIDEO_BITRATE, bitsPerSecond) })
+    }
+
+    /** The bitrate chosen for the current mode, before any adaptation. */
+    val targetBitrate: Int get() = bitrateFor(width, height, fps)
+    val frameIntervalMs: Int get() = 1000 / fps
 
     private fun encoderFormat(lowLatencyExtras: Boolean): MediaFormat =
         MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {

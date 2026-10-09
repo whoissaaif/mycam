@@ -77,6 +77,13 @@ class WebcamService : Service() {
     private var bytesSent = 0L
     private var lastStatsLog = 0L
 
+    // Adaptive streaming: keep the bitrate within what the USB link can carry (camera thread only).
+    private var linkBitrate = 0           // Current encoder bitrate.
+    private var dropUntilKey = false
+    private var framesDropped = 0
+    private var lastBitrateChange = 0L
+    private var slowestWriteMs = 0L       // Slowest frame write since the last bitrate change.
+
     private val detachReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val detached = IntentCompat.getParcelableExtra(intent, UsbManager.EXTRA_ACCESSORY, UsbAccessory::class.java)
@@ -368,12 +375,20 @@ class WebcamService : Service() {
             }
 
             override fun onFrame(data: ByteArray, ptsUs: Long, keyFrame: Boolean) {
+                // Behind: frames are skipped until the next key frame, so the backlog never builds up
+                // (H.264 can't drop single frames without breaking the picture until the next key frame).
+                if (dropUntilKey) {
+                    if (!keyFrame) { framesDropped++; return }
+                    dropUntilKey = false
+                }
+                val t0 = SystemClock.elapsedRealtime()
                 send(Protocol.TYPE_FRAME, if (keyFrame) Protocol.FLAG_KEYFRAME else 0, ptsUs, data)
+                adaptToLink(SystemClock.elapsedRealtime() - t0, keyFrame)
                 framesSent++
                 bytesSent += data.size
                 val now = SystemClock.elapsedRealtime()
                 if (framesSent == 1 || now - lastStatsLog > 5000) {
-                    remoteLog("sent $framesSent frames, ${bytesSent / 1024} KB so far")
+                    remoteLog("sent $framesSent frames (${bytesSent / 1024} KB), dropped $framesDropped, bitrate ${linkBitrate / 1_000_000} Mbps")
                     lastStatsLog = now
                 }
             }
@@ -387,6 +402,11 @@ class WebcamService : Service() {
             }
         })
         streamer = s
+        linkBitrate = 0 // Set from the streamer's target on the first frame.
+        dropUntilKey = false
+        framesDropped = 0
+        slowestWriteMs = 0
+        lastBitrateChange = SystemClock.elapsedRealtime()
         s.start()
     }
 
@@ -396,6 +416,39 @@ class WebcamService : Service() {
         lastConfig = null
         _state.update { it.copy(streaming = false, resolution = "") }
         sendState()
+    }
+
+    /**
+     * A frame write that takes longer than its time slot means the USB link (the PC reads as fast as it can)
+     * is carrying less than the encoder produces. Then: skip to the next key frame and lower the bitrate by
+     * a quarter. When writes stay fast for 5 s, raise the bitrate back towards the mode's target.
+     */
+    private fun adaptToLink(writeMs: Long, keyFrame: Boolean) {
+        val s = streamer ?: return
+        if (linkBitrate == 0) linkBitrate = s.targetBitrate
+        val slot = s.frameIntervalMs.toLong()
+        val now = SystemClock.elapsedRealtime()
+        // Key frames are several times larger, so they get more room before counting as "behind".
+        if (writeMs > slot * (if (keyFrame) 4 else 2) && now - lastBitrateChange > 1000) {
+            linkBitrate = (linkBitrate * 3 / 4).coerceAtLeast(MIN_BITRATE)
+            s.setBitrate(linkBitrate)
+            dropUntilKey = true
+            s.requestKeyFrame()
+            remoteLog("link behind (frame write took $writeMs ms): bitrate now ${linkBitrate / 1000} kbps, skipping to next key frame")
+            lastBitrateChange = now
+            slowestWriteMs = 0
+            return
+        }
+        slowestWriteMs = maxOf(slowestWriteMs, if (keyFrame) writeMs / 4 else writeMs)
+        if (now - lastBitrateChange > 5000 && linkBitrate < s.targetBitrate) {
+            if (slowestWriteMs < slot / 2) {
+                linkBitrate = (linkBitrate * 115 / 100).coerceAtMost(s.targetBitrate)
+                s.setBitrate(linkBitrate)
+                remoteLog("link has room: bitrate now ${linkBitrate / 1000} kbps")
+            }
+            lastBitrateChange = now
+            slowestWriteMs = 0
+        }
     }
 
     private fun sendState() {
@@ -467,6 +520,7 @@ class WebcamService : Service() {
         private const val TAG = "WebcamService"
         private const val CHANNEL_ID = "webcam"
         private const val NOTIFICATION_ID = 1
+        private const val MIN_BITRATE = 2_000_000
         const val PREFS = "mycam"
         const val PREF_FACING = "facing"
         const val ACTION_SET_FACING = "io.github.whoissaaif.mycam.SET_FACING"

@@ -37,7 +37,7 @@ constexpr float kTitleH = 30, kFrame = 7, kCommandH = 46;
 
 enum Id {
     kNone = 0, kPause, kBack, kFront,
-    kQ720, kQ1080, kQ4K, kFps60, kZoomOut, kZoomIn, kZoomReset, kEvDown, kEvUp, kFocusAuto, kFocusLock, kTorch,
+    kQ720, kQ1080, kQ4K, kFps60, kZoomOut, kZoomIn, kZoomReset, kEvDown, kEvUp, kFocusAuto, kFocusLock, kTorch, kAuto,
     kMirror, kFill, kAutostart, kReconnect, kOpenLog, kClose, kTitleClose };
 enum class Kind { Segment, Checkbox, Link, Button, TitleClose };
 
@@ -113,6 +113,7 @@ struct SettingsWindow::Impl {
         elements.push_back({kFocusAuto, Kind::Segment, Rect(cx, 410, 70, 26), L"Auto"});
         elements.push_back({kFocusLock, Kind::Segment, Rect(cx + 69, 410, 70, 26), L"Lock"});
         elements.push_back({kTorch, Kind::Checkbox, Rect(x, 446, 300, 20), L"Torch (phone light)"});
+        elements.push_back({kAuto, Kind::Button, Rect(kWidth - kFrame - 20 - 56, 309, 56, 23), L"Auto"});
         // Picture (y 494), General (y 578).
         elements.push_back({kMirror, Kind::Checkbox, Rect(x, 518, 300, 20), L"Mirror the image"});
         elements.push_back({kFill, Kind::Checkbox, Rect(x, 542, 330, 20), L"Fill the frame (crop instead of black bars)"});
@@ -152,6 +153,9 @@ struct SettingsWindow::Impl {
         case kEvUp: return known && c.evMax > c.evMin && c.ev < c.evMax;
         case kFocusAuto: case kFocusLock: return known && (c.flags & proto::kCamHasAutofocus);
         case kTorch: return known && (c.flags & proto::kCamTorchAvailable);
+        case kAuto: // Something differs from the defaults (1x, 0 EV, auto focus, torch off).
+            return known && (c.zoomX100 != std::clamp<uint16_t>(100, c.zoomMinX100, c.zoomMaxX100) || c.ev != 0 ||
+                             (c.flags & (proto::kCamTorchOn | proto::kCamFocusLocked)));
         default: return true;
         }
     }
@@ -380,7 +384,7 @@ struct SettingsWindow::Impl {
             swprintf_s(buf, L"%s%.1f EV", ev > 0 ? L"+" : L"", ev);
             Text(c.evMax > c.evMin ? buf : L"—", fontBody.Get(), Rect(cx + 32, 374, 70, 26), ink, DWRITE_TEXT_ALIGNMENT_CENTER);
             swprintf_s(buf, L"Now %u×%u at %u fps", c.width, c.height, c.actualFps);
-            Text(buf, fontBody.Get(), Rect(x + 230, 282, 160, 20), Rgb(kSubtle), DWRITE_TEXT_ALIGNMENT_TRAILING);
+            Text(buf, fontBody.Get(), Rect(kWidth - kFrame - 20 - 170, 282, 170, 20), Rgb(kSubtle), DWRITE_TEXT_ALIGNMENT_TRAILING);
         } else {
             Text(L"—", fontBody.Get(), Rect(cx + 32, 338, 70, 26), ink, DWRITE_TEXT_ALIGNMENT_CENTER);
             Text(L"—", fontBody.Get(), Rect(cx + 32, 374, 70, 26), ink, DWRITE_TEXT_ALIGNMENT_CENTER);
@@ -470,7 +474,13 @@ struct SettingsWindow::Impl {
                              : e.id == kFps60  ? (c.valid && c.fps >= 60)
                              : e.id == kTorch  ? (c.valid && (c.flags & proto::kCamTorchOn))
                                                : model->autostart();
-                DrawCheckbox(e, checked, Enabled(e.id));
+                if (e.id == kFps60 && c.valid && c.width > 0 && !(c.flags & proto::kCamHas60Fps)) {
+                    Element unsupported = e; // Say why it's off rather than leaving a silent gray box.
+                    unsupported.text = L"60 fps (not supported by this phone)";
+                    DrawCheckbox(unsupported, false, false);
+                } else {
+                    DrawCheckbox(e, checked, Enabled(e.id));
+                }
                 break;
             }
             case Kind::Link: DrawLink(e); break;
@@ -518,6 +528,12 @@ struct SettingsWindow::Impl {
         case kFocusAuto: model->command(proto::kCmdSetFocus, 0); break;
         case kFocusLock: model->command(proto::kCmdSetFocus, 1); break;
         case kTorch: model->command(proto::kCmdSetTorch, (model->status().camera.flags & proto::kCamTorchOn) ? 0 : 1); break;
+        case kAuto:
+            model->command(proto::kCmdSetZoom, 10);
+            model->command(proto::kCmdSetExposure, 0);
+            model->command(proto::kCmdSetFocus, 0);
+            model->command(proto::kCmdSetTorch, 0);
+            break;
         case kAutostart: model->setAutostart(!model->autostart()); break;
         case kReconnect: model->reconnect(); break;
         case kOpenLog: model->openLogFolder(); break;
@@ -530,7 +546,7 @@ struct SettingsWindow::Impl {
 
     void MoveFocus(int step) {
         static const Id order[] = {kPause, kBack, kFront, kQ720, kQ1080, kQ4K, kFps60, kZoomOut, kZoomIn, kZoomReset,
-                                   kEvDown, kEvUp, kFocusAuto, kFocusLock, kTorch, kMirror, kFill, kAutostart,
+                                   kEvDown, kEvUp, kFocusAuto, kFocusLock, kTorch, kAuto, kMirror, kFill, kAutostart,
                                    kReconnect, kOpenLog, kClose};
         constexpr int n = int(sizeof(order) / sizeof(order[0]));
         int i = 0;

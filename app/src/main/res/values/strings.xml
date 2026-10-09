@@ -36,6 +36,8 @@
     <!-- Video and camera controls -->
     <string name="section_video">Video</string>
     <string name="video_60fps">60 frames per second (smoother)</string>
+    <string name="video_60fps_unsupported">60 fps (not supported by this phone)</string>
+    <string name="controls_auto">Auto (reset zoom, brightness, focus and torch)</string>
     <string name="video_actual">Now: %1$s at %2$d fps</string>
     <string name="section_controls">Camera controls</string>
     <string name="controls_unknown">Zoom, exposure, focus and torch appear once the camera has started.</string>
