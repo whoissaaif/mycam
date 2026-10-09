@@ -148,8 +148,6 @@ void H264Decoder::EmitFrame(IMFSample* sample) {
     if (FAILED(sample->ConvertToContiguousBuffer(&buffer))) return;
 
     const uint32_t w = width_ & ~1u, h = height_ & ~1u;
-    packed_.resize(size_t(w) * h * 3 / 2);
-
     ComPtr<IMF2DBuffer> buffer2d;
     BYTE* base = nullptr;
     LONG pitch = 0;
@@ -161,18 +159,12 @@ void H264Decoder::EmitFrame(IMFSample* sample) {
         if (length < DWORD(pitch) * codedHeight_ * 3 / 2) { buffer->Unlock(); return; }
     }
 
-    // NV12: Y plane of codedHeight rows, then interleaved UV plane.
-    const BYTE* srcY = base;
-    const BYTE* srcUV = base + size_t(pitch) * codedHeight_;
-    uint8_t* dstY = packed_.data();
-    uint8_t* dstUV = dstY + size_t(w) * h;
-    for (uint32_t y = 0; y < h; ++y) memcpy(dstY + size_t(y) * w, srcY + size_t(y) * pitch, w);
-    for (uint32_t y = 0; y < h / 2; ++y) memcpy(dstUV + size_t(y) * w, srcUV + size_t(y) * pitch, w);
+    // NV12: Y plane of codedHeight rows, then interleaved UV plane. Handed over in place (no copy here):
+    // the frame writer copies it straight into shared memory.
+    onFrame_(Nv12View{base, base + size_t(pitch) * codedHeight_, pitch, w, h});
 
     if (locked2d) buffer2d->Unlock2D();
     else buffer->Unlock();
-
-    onFrame_(packed_.data(), w, h);
 }
 
 } // namespace mycam

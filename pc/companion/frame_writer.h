@@ -15,6 +15,9 @@ public:
 
     void SetPhoneState(uint32_t state);
     void Write(const uint8_t* nv12, uint32_t width, uint32_t height, uint32_t rotation, bool mirror, bool fill = false);
+    // Same, from separate Y and UV planes with a row pitch (decoder output, no intermediate copy).
+    void WritePlanes(const uint8_t* y, const uint8_t* uv, ptrdiff_t pitch, uint32_t width, uint32_t height,
+                     uint32_t rotation, bool mirror, bool fill);
 
 private:
     bool EnsureMapping();

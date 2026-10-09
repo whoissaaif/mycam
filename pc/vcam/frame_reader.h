@@ -15,6 +15,9 @@ public:
     // Renders into dst (NV12, `pitch` bytes per row, UV plane starts at dst + pitch * height).
     void Render(uint8_t* dst, LONG pitch, UINT32 width, UINT32 height);
 
+    // True if the companion has published a frame we have not rendered yet (cheap; no copy).
+    bool HasNewFrame();
+
 private:
     bool EnsureMapping();
     bool CopyLatest();

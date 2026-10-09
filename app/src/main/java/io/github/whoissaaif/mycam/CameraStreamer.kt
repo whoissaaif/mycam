@@ -16,6 +16,7 @@ import android.media.MediaFormat
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
+import android.os.SystemClock
 import android.util.Log
 import android.util.Range
 import android.util.Size
@@ -77,6 +78,10 @@ class CameraStreamer(
     private var height = 0
     private var fps = 30
     private var sensorOrientation = 0
+    private var realtimeTimestamps = false // Sensor timestamps use elapsedRealtime (else the monotonic clock).
+    private var latencySumUs = 0L
+    private var latencyCount = 0
+    private var lastLatencyLog = 0L
 
     @SuppressLint("MissingPermission") // Caller checks CAMERA permission before starting.
     fun start() {
@@ -87,6 +92,8 @@ class CameraStreamer(
             }
             val chars = cameraManager.getCameraCharacteristics(cameraId)
             sensorOrientation = chars.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
+            realtimeTimestamps = chars.get(CameraCharacteristics.SENSOR_INFO_TIMESTAMP_SOURCE) ==
+                CameraMetadata.SENSOR_INFO_TIMESTAMP_SOURCE_REALTIME
             val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)!!
             val sizes = map.getOutputSizes(MediaCodec::class.java) ?: emptyArray()
             val aeRanges = chars.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
@@ -257,6 +264,23 @@ class CameraStreamer(
         )
     }
 
+    /** Capture-to-encoded latency on the phone (sensor timestamp vs now, same clock), logged every 5 s. */
+    private fun measureLatency(ptsUs: Long) {
+        val nowUs = (if (realtimeTimestamps) SystemClock.elapsedRealtimeNanos() else System.nanoTime()) / 1000
+        val latency = nowUs - ptsUs
+        if (latency in 0..1_000_000) {
+            latencySumUs += latency
+            latencyCount++
+        }
+        val nowMs = SystemClock.elapsedRealtime()
+        if (nowMs - lastLatencyLog >= 5000 && latencyCount > 0) {
+            listener.onLog("latency: capture to encoded avg ${latencySumUs / latencyCount / 1000} ms over $latencyCount frames")
+            latencySumUs = 0
+            latencyCount = 0
+            lastLatencyLog = nowMs
+        }
+    }
+
     private fun encoderFormat(lowLatencyExtras: Boolean): MediaFormat =
         MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
@@ -267,6 +291,7 @@ class CameraStreamer(
                 // Keep output steady when the scene is static, and minimise encoder buffering.
                 setLong(MediaFormat.KEY_REPEAT_PREVIOUS_FRAME_AFTER, 1_000_000L / fps)
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) setInteger(MediaFormat.KEY_LATENCY, 1)
+                setInteger(MediaFormat.KEY_PRIORITY, 0) // Real-time priority.
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) setInteger(MediaFormat.KEY_PREPEND_HEADER_TO_SYNC_FRAMES, 1)
             }
         }
@@ -296,6 +321,7 @@ class CameraStreamer(
                                 listener.onConfig(width, height, sensorOrientation, facing, ByteArray(0))
                             }
                             listener.onFrame(bytes, info.presentationTimeUs, key)
+                            measureLatency(info.presentationTimeUs)
                         }
                     }
                     codec.releaseOutputBuffer(index, false)

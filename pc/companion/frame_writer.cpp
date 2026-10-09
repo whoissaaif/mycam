@@ -45,6 +45,11 @@ void FrameWriter::SetPhoneState(uint32_t state) {
 }
 
 void FrameWriter::Write(const uint8_t* nv12, uint32_t width, uint32_t height, uint32_t rotation, bool mirror, bool fill) {
+    WritePlanes(nv12, nv12 + size_t(width) * height, width, width, height, rotation, mirror, fill);
+}
+
+void FrameWriter::WritePlanes(const uint8_t* y, const uint8_t* uv, ptrdiff_t pitch, uint32_t width, uint32_t height,
+                              uint32_t rotation, bool mirror, bool fill) {
     if (width > kMaxWidth || height > kMaxHeight || !EnsureMapping()) return;
     auto* hdr = static_cast<SharedHeader*>(view_);
     if (hdr->magic != kSharedMagic) return;
@@ -55,7 +60,15 @@ void FrameWriter::Write(const uint8_t* nv12, uint32_t width, uint32_t height, ui
     hdr->rotation = rotation;
     hdr->mirror = mirror ? 1 : 0;
     hdr->fill = fill ? 1 : 0;
-    memcpy(FrameData(view_), nv12, size_t(width) * height * 3 / 2);
+    uint8_t* dst = FrameData(view_);
+    if (pitch == ptrdiff_t(width)) {
+        memcpy(dst, y, size_t(width) * height);
+        memcpy(dst + size_t(width) * height, uv, size_t(width) * height / 2);
+    } else {
+        for (uint32_t r = 0; r < height; ++r) memcpy(dst + size_t(r) * width, y + r * pitch, width);
+        uint8_t* dstUV = dst + size_t(width) * height;
+        for (uint32_t r = 0; r < height / 2; ++r) memcpy(dstUV + size_t(r) * width, uv + r * pitch, width);
+    }
     hdr->frameTick = GetTickCount64();
     InterlockedIncrement(&hdr->seq); // Even: stable.
 }

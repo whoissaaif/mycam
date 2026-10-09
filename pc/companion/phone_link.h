@@ -78,7 +78,7 @@ private:
 
     bool SendCommand(uint8_t cmd, uint8_t arg = 0);
     void HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const uint8_t* payload, uint32_t length);
-    void OnDecodedFrame(const uint8_t* nv12, uint32_t width, uint32_t height);
+    void OnDecodedFrame(const H264Decoder::Nv12View& frame);
     void Publish();
     void OnInTransfer(libusb_transfer* transfer);
     void LogStats(uint64_t now);
@@ -130,6 +130,7 @@ private:
 
     // Diagnostics, logged every few seconds.
     uint64_t statBytes_ = 0, statPackets_ = 0, statFrames_ = 0, statDecoded_ = 0, statDecodeErrors_ = 0;
+    double statDecodeMs_ = 0; // Total decode time in the current stats window (latency measurement).
     uint64_t lastStats_ = 0;
 
     H264Decoder decoder_;

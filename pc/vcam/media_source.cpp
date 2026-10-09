@@ -217,13 +217,14 @@ void MediaStream::StopThread() {
 void MediaStream::DeliveryLoop() {
     HANDLE timer = CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
     if (!timer) timer = CreateWaitableTimerW(nullptr, FALSE, nullptr);
-    LONGLONG next = MFGetSystemTime();
+    // Poll every 2 ms and hand a new phone frame to the app as soon as it arrives, instead of on a fixed
+    // tick (which added up to one frame of delay). Without new frames, repeat the last one at the app's
+    // frame rate; never deliver faster than 3/4 of the frame interval.
+    constexpr LONGLONG kPoll = 20'000; // 2 ms in 100 ns units
+    LONGLONG lastDelivery = 0;
     for (;;) {
-        next += frameDuration_;
-        LONGLONG wait = next - MFGetSystemTime();
-        if (wait < 0) { next = MFGetSystemTime(); wait = 0; } // Fell behind; don't burst.
         LARGE_INTEGER due;
-        due.QuadPart = -wait;
+        due.QuadPart = -kPoll;
         SetWaitableTimer(timer, &due, 0, nullptr, nullptr, FALSE);
         HANDLE handles[] = {wake_, timer};
         WaitForMultipleObjects(2, handles, FALSE, INFINITE);
@@ -231,10 +232,14 @@ void MediaStream::DeliveryLoop() {
         std::lock_guard<std::recursive_mutex> lock(lock_);
         if (!running_) break;
         if (state_ != MF_STREAM_STATE_RUNNING || pendingTokens_.empty()) continue;
+        const LONGLONG now = MFGetSystemTime(), since = now - lastDelivery;
+        const bool due_ = since >= frameDuration_ || (since >= frameDuration_ * 3 / 4 && reader_.HasNewFrame());
+        if (!due_) continue;
         ComPtr<IUnknown> token = pendingTokens_.front();
         pendingTokens_.pop_front();
         HRESULT hr = DeliverSample(token.Get());
         if (FAILED(hr)) queue_->QueueEventParamVar(MEError, GUID_NULL, hr, nullptr);
+        lastDelivery = now;
     }
     CloseHandle(timer);
 }

@@ -403,10 +403,12 @@ void PhoneLink::LogStats(uint64_t now) {
     if (now - lastStats_ < 3000) return;
     double secs = (now - lastStats_) / 1000.0;
     if (statBytes_ || startSent_) {
-        Log("stats: %.0f KB/s, %llu packets, %llu video frames in, %llu decoded, %llu decode errors, app using camera=%d",
+        Log("stats: %.0f KB/s, %llu packets, %llu video frames in, %llu decoded, %llu decode errors, "
+            "decode+copy avg %.1f ms, app using camera=%d",
             statBytes_ / 1024.0 / secs, statPackets_, statFrames_, statDecoded_, statDecodeErrors_,
-            int(writer_.ConsumerActive(kConsumerWindowMs)));
+            statFrames_ ? statDecodeMs_ / statFrames_ : 0.0, int(writer_.ConsumerActive(kConsumerWindowMs)));
     }
+    statDecodeMs_ = 0;
     statBytes_ = statPackets_ = statFrames_ = statDecoded_ = statDecodeErrors_ = 0;
     lastStats_ = now;
 }
@@ -442,7 +444,7 @@ void PhoneLink::HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const u
         if (!decoder_.Ready() || w != configWidth_ || h != configHeight_) {
             configWidth_ = w;
             configHeight_ = h;
-            HRESULT hr = decoder_.Init(w, h, [this](const uint8_t* f, uint32_t fw, uint32_t fh) { OnDecodedFrame(f, fw, fh); });
+            HRESULT hr = decoder_.Init(w, h, [this](const H264Decoder::Nv12View& f) { OnDecodedFrame(f); });
             Log("decoder: init %ux%u -> 0x%08X", w, h, unsigned(hr));
         }
         Log("phone: config %ux%u sensor=%d facing=%d csd=%u bytes", w, h, sensorOrientation_, int(payload[6]), unsigned(csd_.size()));
@@ -468,7 +470,7 @@ void PhoneLink::HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const u
             // No config received (some encoders only put SPS/PPS inside key frames). The decoder reads
             // the real size from the SPS and reports a format change, so the size here is only a hint.
             uint32_t w = configWidth_ ? configWidth_ : 1920, h = configHeight_ ? configHeight_ : 1080;
-            HRESULT hr = decoder_.Init(w, h, [this](const uint8_t* f, uint32_t fw, uint32_t fh) { OnDecodedFrame(f, fw, fh); });
+            HRESULT hr = decoder_.Init(w, h, [this](const H264Decoder::Nv12View& f) { OnDecodedFrame(f); });
             Log("decoder: init without config (%ux%u hint) -> 0x%08X", w, h, unsigned(hr));
             if (FAILED(hr)) return;
             waitKeyFrame_ = true;
@@ -482,6 +484,8 @@ void PhoneLink::HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const u
             return;
         }
         HRESULT hr;
+        LARGE_INTEGER t0, t1, freq;
+        QueryPerformanceCounter(&t0);
         if (key && !csd_.empty()) {
             // Always hand SPS/PPS to the decoder with a key frame so it can (re)start cleanly.
             scratch_.assign(csd_.begin(), csd_.end());
@@ -490,6 +494,9 @@ void PhoneLink::HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const u
         } else {
             hr = decoder_.Decode(payload, length, ptsUs);
         }
+        QueryPerformanceCounter(&t1);
+        QueryPerformanceFrequency(&freq);
+        statDecodeMs_ += (t1.QuadPart - t0.QuadPart) * 1000.0 / freq.QuadPart; // Decode + copy to shared memory.
         if (FAILED(hr)) {
             if (statDecodeErrors_++ < 3) Log("decoder: frame (key=%d, %u bytes) failed 0x%08X", int(key), length, unsigned(hr));
             waitKeyFrame_ = true;
@@ -534,14 +541,14 @@ void PhoneLink::HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const u
     }
 }
 
-void PhoneLink::OnDecodedFrame(const uint8_t* nv12, uint32_t width, uint32_t height) {
+void PhoneLink::OnDecodedFrame(const H264Decoder::Nv12View& frame) {
     // Camera2's JPEG-orientation rule: how far to rotate the sensor image clockwise to look upright.
     int rotation = status_.facing == proto::kFacingFront ? (sensorOrientation_ - deviceRotation_ + 360) % 360
                                                          : (sensorOrientation_ + deviceRotation_) % 360;
     rotation = (rotation + 45) / 90 * 90 % 360;
     ++statDecoded_;
     if (phonePaused_ || lockPaused_) return; // Privacy: nothing reaches the camera while paused or locked.
-    writer_.Write(nv12, width, height, uint32_t(rotation), mirror_, fill_);
+    writer_.WritePlanes(frame.y, frame.uv, frame.pitch, frame.width, frame.height, uint32_t(rotation), mirror_, fill_);
     lastFrameTick_ = GetTickCount64();
 }
 

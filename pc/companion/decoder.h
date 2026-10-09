@@ -14,8 +14,14 @@ namespace mycam {
 // Media Foundation decoder.
 class H264Decoder {
 public:
-    // Receives NV12 (stride == width) frames.
-    using FrameCallback = std::function<void(const uint8_t* nv12, uint32_t width, uint32_t height)>;
+    // A decoded NV12 frame, valid only during the callback: Y and UV planes with a shared row pitch.
+    struct Nv12View {
+        const uint8_t* y;
+        const uint8_t* uv;
+        ptrdiff_t pitch;
+        uint32_t width, height;
+    };
+    using FrameCallback = std::function<void(const Nv12View&)>;
 
     ~H264Decoder();
 
@@ -37,7 +43,6 @@ private:
     uint32_t codedWidth_ = 0, codedHeight_ = 0; // Buffer dimensions (may include padding rows).
     uint32_t width_ = 0, height_ = 0;           // Visible area.
     LONG stride_ = 0;
-    std::vector<uint8_t> packed_;
 };
 
 } // namespace mycam

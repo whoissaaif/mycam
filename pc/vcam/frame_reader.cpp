@@ -93,4 +93,11 @@ void FrameReader::Render(uint8_t* dst, LONG pitch, UINT32 width, UINT32 height) 
     if (have) DrawFittedNV12(frame_.data(), frameWidth_, frameHeight_, rotation_, mirror_, dst, pitch, width, height, fill_);
 }
 
+
+bool FrameReader::HasNewFrame() {
+    if (!EnsureMapping()) return false;
+    const LONG seq = static_cast<SharedHeader*>(view_)->seq;
+    return !(seq & 1) && seq != lastSeq_;
+}
+
 } // namespace mycam
