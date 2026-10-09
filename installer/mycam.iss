@@ -5,7 +5,7 @@
 ;   ISCC /DSIGN "/Smycam=signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /a $f" mycam.iss
 
 #ifndef AppVersion
-  #define AppVersion "1.2.0"
+  #define AppVersion "1.3.0"
 #endif
 #ifndef BuildDir
   #define BuildDir "..\pc\build-release\Release"
