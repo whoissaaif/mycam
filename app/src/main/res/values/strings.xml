@@ -37,6 +37,7 @@
     <string name="section_video">Video</string>
     <string name="video_fps_hint">60 and 120 fps are smoother but need good light. Rates this camera can’t do are greyed out.</string>
     <string name="video_fps_unsupported">This camera does 30 fps at this quality.</string>
+    <string name="video_fps_unknown">60 and 120 fps become available once the camera has started, if this phone supports them.</string>
     <string name="controls_auto">Auto (reset zoom, brightness, focus and torch)</string>
     <string name="video_actual">Now: %1$s at %2$d fps</string>
     <string name="section_controls">Camera controls</string>

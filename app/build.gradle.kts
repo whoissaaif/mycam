@@ -22,8 +22,8 @@ android {
         applicationId = "io.github.whoissaaif.mycam"
         minSdk = 24
         targetSdk = 37
-        versionCode = 6
-        versionName = "1.3.2"
+        versionCode = 7
+        versionName = "1.3.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -44,7 +44,6 @@ android {
             signingConfig = signingConfigs.findByName("release")
             optimization {
                 enable = true
-                packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
             }
         }
     }
