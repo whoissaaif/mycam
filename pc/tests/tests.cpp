@@ -12,6 +12,7 @@
 
 #include "../companion/packet_parser.h"
 #include "../companion/protocol.h"
+#include "../companion/usbmux_proto.h"
 #include "../vcam/frame_transform.h"
 
 using namespace mycam;
@@ -185,6 +186,77 @@ void TestParserReentrant(std::map<std::string, Bytes>& golden) {
 
 // --- Frame transform -------------------------------------------------------------------------
 
+// --- usbmuxd ---------------------------------------------------------------------------------
+
+void TestUsbmuxHeader() {
+    std::string payload = "abc";
+    Bytes packet = usbmux::EncodePacket(0x11223344, payload);
+    CHECK((Bytes(packet.begin(), packet.begin() + 16) == Hex("13000000 01000000 08000000 44332211")));
+    usbmux::Header h;
+    CHECK(usbmux::DecodeHeader(packet.data(), packet.size(), &h));
+    CHECK(h.length == 19);
+    CHECK(h.version == usbmux::kVersionPlist);
+    CHECK(h.type == usbmux::kTypePlist);
+    CHECK(h.tag == 0x11223344);
+}
+
+void TestUsbmuxBuildPlists() {
+    std::string listen = usbmux::BuildListenPlist();
+    CHECK(listen.find("<key>MessageType</key><string>Listen</string>") != std::string::npos);
+    CHECK(listen.find("<key>ClientVersionString</key><string>MyCam</string>") != std::string::npos);
+    CHECK(listen.find("<key>ProgName</key><string>MyCam</string>") != std::string::npos);
+
+    std::string connect = usbmux::BuildConnectPlist(42, 5000);
+    CHECK(connect.find("<key>MessageType</key><string>Connect</string>") != std::string::npos);
+    CHECK(connect.find("<key>DeviceID</key><integer>42</integer>") != std::string::npos);
+    CHECK(connect.find("<key>PortNumber</key><integer>34835</integer>") != std::string::npos); // htons(5000)
+}
+
+std::string Plist(const std::string& body) {
+    return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+           "<plist version=\"1.0\"><dict>" + body + "</dict></plist>";
+}
+
+void TestUsbmuxParseMessages() {
+    usbmux::Message msg;
+    CHECK(usbmux::ParseMessage(Plist("<key>MessageType</key><string>Result</string>"
+                                     "<key>Number</key><integer>0</integer>"), &msg));
+    CHECK(msg.messageType == "Result" && msg.number == 0);
+
+    msg = {};
+    CHECK(usbmux::ParseMessage(Plist("<key>DeviceID</key><integer>7</integer>"
+                                     "<key>MessageType</key><string>Attached</string>"
+                                     "<key>Properties</key><dict>"
+                                     "<key>SerialNumber</key><string>abc123</string>"
+                                     "<key>ConnectionType</key><string>USB</string>"
+                                     "</dict>"), &msg));
+    CHECK(msg.messageType == "Attached" && msg.deviceId == 7);
+    CHECK(msg.serialNumber == "abc123" && msg.connectionType == "USB");
+
+    msg = {};
+    CHECK(usbmux::ParseMessage(Plist("<key>DeviceID</key><integer>7</integer>"
+                                     "<key>MessageType</key><string>Detached</string>"), &msg));
+    CHECK(msg.messageType == "Detached" && msg.deviceId == 7);
+}
+
+void TestUsbmuxPacketReader() {
+    Bytes a = usbmux::EncodePacket(1, "one");
+    Bytes b = usbmux::EncodePacket(2, "two");
+    Bytes both = a;
+    both.insert(both.end(), b.begin(), b.end());
+
+    usbmux::PacketReader reader;
+    std::vector<std::string> payloads;
+    reader.Feed(both.data(), 5, [&](const usbmux::Header&, const std::string& p) { payloads.push_back(p); });
+    CHECK(payloads.empty());
+    reader.Feed(both.data() + 5, 9, [&](const usbmux::Header&, const std::string& p) { payloads.push_back(p); });
+    CHECK(payloads.empty());
+    reader.Feed(both.data() + 14, both.size() - 14, [&](const usbmux::Header&, const std::string& p) { payloads.push_back(p); });
+    CHECK(payloads.size() == 2);
+    CHECK(payloads.size() == 2 && payloads[0] == "one" && payloads[1] == "two");
+    CHECK(reader.Buffered() == 0);
+}
+
 // A w x h NV12 image whose luma is a unique value per pixel (y * w + x + 1) and whose chroma pairs
 // encode their UV coordinates, so every sampled pixel can be traced back.
 Bytes MakeImage(int w, int h) {
@@ -325,6 +397,10 @@ int main() {
     printf("parser splits/batches\n");     withGolden(TestParserSplitsAndBatches);
     printf("parser resyncs\n");            withGolden(TestParserResyncs);
     printf("parser re-entrant\n");         withGolden(TestParserReentrant);
+    printf("usbmux header\n");             TestUsbmuxHeader();
+    printf("usbmux plist build\n");        TestUsbmuxBuildPlists();
+    printf("usbmux plist parse\n");        TestUsbmuxParseMessages();
+    printf("usbmux packet reader\n");      TestUsbmuxPacketReader();
     printf("transform identity\n");        TestIdentity();
     printf("transform rotations\n");       TestRotations();
     printf("transform mirror\n");          TestMirror();

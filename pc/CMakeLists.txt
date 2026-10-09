@@ -40,6 +40,8 @@ add_executable(MyCamCompanion WIN32
     companion/main.cpp
     companion/phone_link.cpp
     companion/aoa_transport.cpp
+    companion/usbmux_transport.cpp
+    companion/usbmux_proto.cpp
     companion/decoder.cpp
     companion/frame_writer.cpp
     companion/packet_parser.cpp
@@ -53,7 +55,7 @@ add_executable(MyCamCompanion WIN32
     companion/companion.rc
     companion/companion.manifest
 )
-target_link_libraries(MyCamCompanion PRIVATE usb mfplat mfuuid mfsensorgroup ole32 shell32 advapi32 setupapi newdev cfgmgr32
+target_link_libraries(MyCamCompanion PRIVATE usb mfplat mfuuid mfsensorgroup ole32 shell32 advapi32 setupapi newdev cfgmgr32 ws2_32
     comctl32 d2d1 dwrite windowscodecs dwmapi wtsapi32)
 
 # --- Developer tools (not shipped; install.ps1 copies only the two binaries above) -------------------
@@ -69,7 +71,7 @@ endif()
 option(MYCAM_BUILD_TESTS "Build unit tests" ON)
 if(MYCAM_BUILD_TESTS)
     enable_testing()
-    add_executable(mycam_tests tests/tests.cpp companion/packet_parser.cpp vcam/frame_transform.cpp)
+    add_executable(mycam_tests tests/tests.cpp companion/packet_parser.cpp companion/usbmux_proto.cpp vcam/frame_transform.cpp)
     target_compile_definitions(mycam_tests PRIVATE MYCAM_GOLDEN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../protocol/golden.txt")
     add_test(NAME mycam_tests COMMAND mycam_tests)
 endif()
