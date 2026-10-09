@@ -307,7 +307,7 @@ cost and risk for this project.
 
 ---
 
-## 11. Wireless option (L): 🟡 phase 1 built on branch `wireless` (1.4.0-beta1), needs a test
+## 11. Wireless option (L): 🟡 phases 1 and 2 built on branch `wireless` (1.4.0-beta3); a few tests left before merging
 
 MyCam is wired-only by design (plug and play, no setup, no lag spikes, phone charges while streaming).
 A wireless mode would be an **optional** second way to connect, with the cable staying the default.
@@ -335,14 +335,14 @@ A wireless mode would be an **optional** second way to connect, with the cable s
 | Starting | App opens itself when plugged in | Open MyCam on the phone and turn on Wireless |
 | Windows | Nothing extra | Nothing extra: the PC only connects out, so there is no firewall prompt |
 
-**Phase 1 (built; first test passed 2026-10-10, CMF Phone 1 / Android 16):** found in ~1 s, Allow on the phone, 1080p30 live through the virtual camera, phone-side delay ~106 ms, PC decode ~8 ms. Still to test: refusing, cable takeover, 60/120 fps and 4K over Wi-Fi, a busy network. To fix: the "Waiting for the phone" picture still says "Connect your phone with a USB cable".
+**Phase 1 (tested 2026-10-10, CMF Phone 1 / Android 16):** found in ~1 s, 1080p30 live through the virtual camera, phone-side delay ~106 ms, PC decode ~8 ms. The "Waiting for the phone" picture now mentions Wi-Fi.
 
 Design: UDP discovery + TCP on the phone ("Use over Wi-Fi" switch) and PC
 ("Find phones on Wi-Fi"); the phone asks "Allow <PC>?" for every new connection (in the app and as a
 notification); the cable always wins; Wi-Fi lock and a small send buffer on the phone keep delay low; the PC
 side shares one single-threaded session loop with USB (no new threads). No pairing or encryption yet.
 
-**Phase 2 (before merging to main):** one-time pairing and TLS, as below.
+**Phase 2 (built and tested 2026-10-10):** one-time pairing with a 6-digit code compared on both screens (with a commitment, as in Bluetooth numeric comparison), then P-256 ECDH + HKDF + AES-256-GCM for every session; paired PCs connect without asking. Details in PROTOCOL.md "Wireless security". Tested live: pairing (codes matched), encrypted 1080p stream (0 decode errors), paired reconnect in 40 ms with no prompt, PC forgot the phone -> paired again with a new code, "Don't allow" -> no retry for 2 minutes. Interop proven with JDK-generated vectors in both test suites. Still to test before merging: cable takeover, 60/120 fps and 4K over Wi-Fi, a busy network.
 
 **Work items**
 - [ ] Phone: TCP server/client mode in the streaming service, mDNS advertising, pairing screen, battery warning

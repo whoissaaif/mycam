@@ -40,7 +40,7 @@ function Status-Frame([string]$kind, [string]$title, [string]$subtitle) {
 }
 
 $paused = Status-Frame 'paused' 'Camera paused' 'Video is turned off for now.'
-$waiting = Status-Frame 'waiting' 'Waiting for the phone' 'Connect your phone with a USB cable and open MyCam.'
+$waiting = Status-Frame 'waiting' 'Waiting for the phone' 'Connect your phone with a USB cable, or over Wi-Fi, and open MyCam.'
 $paused.Save((Join-Path $resDir 'frame_paused.png'), [System.Drawing.Imaging.ImageFormat]::Png)
 $waiting.Save((Join-Path $resDir 'frame_waiting.png'), [System.Drawing.Imaging.ImageFormat]::Png)
 

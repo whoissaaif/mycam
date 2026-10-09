@@ -114,15 +114,66 @@ The phone answers (unicast, to the sender's address and port) only while "Use ov
 remembers the PC name per IP address to show it when that PC connects. A phone that hasn't answered for 6 s
 is forgotten.
 
-**Session (TCP, port 47800).** The PC connects and sends `HELLO` (every 2 s, as over USB). The phone asks its
-user "Allow <pc name> to use this camera?" and doesn't read or answer anything until then:
-- Allowed: the phone answers `HELLO` and the session continues exactly as over USB.
-- Refused, or no answer within 60 s: the phone closes the connection. A PC that got no `HELLO` waits 2 minutes
-  before connecting to that phone again; after a working session drops, it retries after 2 s.
+**Session (TCP, port 47800).** The PC connects and runs the handshake below. After it, both directions
+carry the usual packets and commands (the same bytes as over USB) inside encrypted records, and the session
+continues exactly as over USB (`HELLO` every 2 s until answered, and so on).
 
 One PC at a time. A USB connection always wins: the phone closes a Wi-Fi session when a cable link opens,
 and the PC ends a Wi-Fi session when a phone is plugged in so the cable can take over.
 
-**Phase 1 limits (to be fixed before this leaves beta):** no pairing and no encryption. Approval is per
-connection (remembered by IP until the phone's MyCam service stops), and the video isn't encrypted on the
-network. Phase 2 adds one-time pairing and TLS (IMPROVEMENTS.md 11).
+**Retries.** The phone refused, or nobody answered within 60 s: the PC waits 2 minutes before trying that
+phone again. A working session dropped: 2 s. The phone couldn't be reached: 10 s.
+
+## Wireless security (1.4)
+
+Every Wi-Fi session is authenticated and encrypted. A new PC must be **paired** once: both screens show
+the same 6-digit code, and the user allows it on the phone. A paired PC connects without asking.
+
+Primitives: P-256 ECDH (public keys as `04 | X | Y`, the shared secret is the X coordinate, big-endian),
+SHA-256, HMAC-SHA256, HKDF-SHA256 (RFC 5869), AES-256-GCM with a 16-byte tag. `protocol/golden.txt` has
+vectors for all of them (`wifi.*`, generated with the JDK), checked by both test suites.
+
+**Handshake messages** (before encryption): `u16 length (type + body) | u8 type | body`, big-endian.
+
+| Type | Name | Direction | Body |
+|---|---|---|---|
+| 1 | CLIENT_HELLO | PC → phone | `"MCHS"`, u8 version (1), u8 flags (bit 0: force pairing), PC id (16), ephemeral public key (65), Npc (16), u8 name length, PC name (UTF-8) |
+| 2 | SERVER_HELLO | phone → PC | phone id (16), ephemeral public key (65), Nph (16), u8 mode (0 paired, 1 pairing), [pairing: commitment (32)], u8 name length, phone name |
+| 3 | NONCE_A | PC → phone | Na (16), pairing only |
+| 4 | NONCE_B | phone → PC | Nb (16), pairing only |
+| 5 | PC_FINISHED | PC → phone | HMAC (32) |
+| 6 | PHONE_FINISHED | phone → PC | HMAC (32) |
+| 7 | REJECT | either | u8 reason (1 refused or timed out, 2 proof failed, 3 busy) |
+
+Ids are random 16-byte values each side makes once. `z` = ECDH of the two ephemeral keys. The transcript `H`
+is SHA-256 of messages 1 to 4 exactly as sent (length, type and body).
+
+**Paired** (the phone knows a pairing key `K` for this PC id, and the PC didn't set "force pairing"):
+SERVER_HELLO has mode 0, then both sides derive the session keys and exchange FINISHED. If the PC doesn't
+have `K` for that phone any more, it sends REJECT and reconnects with "force pairing". If the phone's proof
+check fails (it re-paired or forgot this PC), the PC forgets its key and pairs again.
+
+**Pairing** (numeric comparison, as in Bluetooth): the phone picks Nb and sends the commitment
+`SHA-256("MyCam commit v1" | Nb | phonePub | pcPub)` in SERVER_HELLO, before it sees Na. The PC sends Na, the
+phone reveals Nb, and the PC checks the commitment. Both sides show
+`code = (first 4 bytes of SHA-256(pcPub | phonePub | Na | Nb), as u32) mod 1,000,000` (6 digits). The
+commitment means someone in between can't choose keys that make the codes match. The PC sends PC_FINISHED,
+the phone checks it and asks the user. Only after "Allow" does the phone store `K` and send PHONE_FINISHED.
+The PC then stores `K` too: the phone in its private app storage, the PC protected with DPAPI under
+`HKCU\Software\MyCam\PairedPhones`.
+
+    K (pairing) = HKDF(ikm = z, salt = Na | Nb, info = "MyCam pair v1", 32)
+    session     = HKDF(ikm = z | K, salt = Npc | Nph, info = "MyCam session v1", 96)
+                = PC-to-phone key (32) | phone-to-PC key (32) | finished key kFin (32)
+    PC_FINISHED    = HMAC(kFin, "PC" | H)
+    PHONE_FINISHED = HMAC(kFin, "PH" | H)
+
+Each session uses fresh ephemeral keys, so a leaked pairing key doesn't reveal earlier sessions' video.
+
+**Records** (after both FINISHED messages): `u32 BE ciphertext length | AES-256-GCM ciphertext | tag`.
+The nonce is `u32 direction (0 PC to phone, 1 phone to PC) | u64 counter`, big-endian. The counter starts at 0
+in each direction and goes up by one per record. A record that fails its tag check (tampered, replayed,
+reordered or the wrong key) ends the session. The phone sends one record per packet; the maximum record is 16 MiB.
+
+**Forgetting:** "Forget paired PCs" on the phone and "Forget Wi-Fi phones" on the PC delete the keys; the
+next connection pairs again with a new code.
