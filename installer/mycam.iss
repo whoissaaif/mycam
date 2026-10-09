@@ -1,11 +1,11 @@
-; MyCam installer (Inno Setup 6). Build with installer\build.ps1, which compiles the PC side, fetches
+﻿; MyCam installer (Inno Setup 6). Build with installer\build.ps1, which compiles the PC side, fetches
 ; the UsbDk driver package and runs ISCC. Replaces pc\install.ps1 for end users.
 ;
 ; Code signing (optional): pass a sign tool to ISCC, e.g.
 ;   ISCC /DSIGN "/Smycam=signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /a $f" mycam.iss
 
 #ifndef AppVersion
-  #define AppVersion "1.1.1"
+  #define AppVersion "1.2.0"
 #endif
 #ifndef BuildDir
   #define BuildDir "..\pc\build-release\Release"

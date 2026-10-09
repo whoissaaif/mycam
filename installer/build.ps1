@@ -1,4 +1,4 @@
-<#
+﻿<#
   Builds the MyCam installer: installer\output\MyCam-Setup-<version>.exe
     powershell -ExecutionPolicy Bypass -File installer\build.ps1 [-Version 1.0.0]
 
@@ -6,7 +6,7 @@
   2. Downloads the UsbDk driver package (hash-checked) and its license into installer\redist.
   3. Compiles installer\mycam.iss with Inno Setup 6 (winget install JRSoftware.InnoSetup).
 #>
-param([string]$Version = '1.1.1')
+param([string]$Version = '1.2.0')
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path "$PSScriptRoot\.."
 
