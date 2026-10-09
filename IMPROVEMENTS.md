@@ -335,7 +335,9 @@ A wireless mode would be an **optional** second way to connect, with the cable s
 | Starting | App opens itself when plugged in | Open MyCam on the phone and turn on Wireless |
 | Windows | Nothing extra | Nothing extra: the PC only connects out, so there is no firewall prompt |
 
-**Phase 1 (built, needs a test):** UDP discovery + TCP on the phone ("Use over Wi-Fi" switch) and PC
+**Phase 1 (built; first test passed 2026-10-10, CMF Phone 1 / Android 16):** found in ~1 s, Allow on the phone, 1080p30 live through the virtual camera, phone-side delay ~106 ms, PC decode ~8 ms. Still to test: refusing, cable takeover, 60/120 fps and 4K over Wi-Fi, a busy network. To fix: the "Waiting for the phone" picture still says "Connect your phone with a USB cable".
+
+Design: UDP discovery + TCP on the phone ("Use over Wi-Fi" switch) and PC
 ("Find phones on Wi-Fi"); the phone asks "Allow <PC>?" for every new connection (in the app and as a
 notification); the cable always wins; Wi-Fi lock and a small send buffer on the phone keep delay low; the PC
 side shares one single-threaded session loop with USB (no new threads). No pairing or encryption yet.
