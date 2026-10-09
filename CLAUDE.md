@@ -78,6 +78,26 @@ TASKS.md.
 - Track work in TASKS.md (status + Releases + Decisions tables) and IMPROVEMENTS.md (section numbers
   are referenced from TASKS.md). Update both when something lands.
 
+## Wireless (branch `wireless`, 1.4.0-beta)
+
+- **Phone:** `WirelessServer.kt` (UDP discovery on 47801, TCP on 47800), `WifiHandshake.kt` (pairing and
+  proof, `PairedPcs` storage), `WifiCrypto.kt` (ECDH, HKDF, AES-GCM, `SecureInput/OutputStream`).
+  `WebcamService` runs a generic link: a USB accessory or a socket.
+- **PC:** `phone_link_wifi.cpp` (discovery, handshake, encrypted records, DPAPI key storage in
+  `HKCU\Software\MyCam\PairedPhones`) and `wifi_crypto.cpp` (CNG). One single-threaded `SessionLoop` serves
+  both USB and Wi-Fi. Keep it that way: Aiyan's two-thread version deadlocks.
+- The wire format is specified in PROTOCOL.md "Wireless transport" / "Wireless security". The `wifi.*`
+  vectors in golden.txt were generated with the JDK (the generator is a one-off, not in the repo). Both test
+  suites check them.
+- **Testing Wi-Fi:** unplug the cable, because a plugged-in phone always takes over, and use wireless adb.
+  adb on USB blocks MyCam's USB access.
+
+## Releasing
+
+- Test the **release** APK on a real phone before publishing: R8 only runs on release builds (1.3.2
+  crashed on launch because of R8's `packageScope`, now removed).
+- After `MyCamCompanion.exe --quit`, wait for the process to exit before starting it again (single instance).
+
 ## Works on every phone
 
 MyCam must not be tuned to the test phone. Every option in either UI comes from what the connected phone
