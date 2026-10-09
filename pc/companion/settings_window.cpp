@@ -32,14 +32,14 @@ constexpr UINT32 kLinkHot = 0x3399FF;
 constexpr UINT32 kRule = 0xE2E2E2;
 
 // Layout in DIPs.
-constexpr float kWidth = 420, kHeight = 756;
+constexpr float kWidth = 420, kHeight = 780;
 constexpr float kTitleH = 30, kFrame = 7, kCommandH = 46;
 
 enum Id {
     kNone = 0, kPause, kBack, kFront,
     kQ720, kQ1080, kQ4K, kFps30, kFps60, kFps120, kZoomOut, kZoomIn, kZoomReset, kEvDown, kEvUp, kFocusAuto, kFocusLock,
     kTorch, kAuto,
-    kMirror, kFill, kAutostart, kReconnect, kOpenLog, kClose, kTitleClose, kTitleMin };
+    kMirror, kFill, kAutostart, kWireless, kReconnect, kOpenLog, kClose, kTitleClose, kTitleMin };
 enum class Kind { Segment, Checkbox, Link, Button, TitleClose, TitleMin };
 
 struct Element {
@@ -122,8 +122,9 @@ struct SettingsWindow::Impl {
         elements.push_back({kMirror, Kind::Checkbox, Rect(x, 554, 300, 20), L"Mirror the image"});
         elements.push_back({kFill, Kind::Checkbox, Rect(x, 578, 330, 20), L"Fill the frame (crop instead of black bars)"});
         elements.push_back({kAutostart, Kind::Checkbox, Rect(x, 638, 300, 20), L"Start MyCam with Windows"});
-        elements.push_back({kReconnect, Kind::Link, Rect(x, 672, 110, 20), L"Reconnect phone"});
-        elements.push_back({kOpenLog, Kind::Link, Rect(x + 130, 672, 110, 20), L"Open log folder"});
+        elements.push_back({kWireless, Kind::Checkbox, Rect(x, 662, 330, 20), L"Find phones on Wi-Fi (beta)"});
+        elements.push_back({kReconnect, Kind::Link, Rect(x, 696, 110, 20), L"Reconnect phone"});
+        elements.push_back({kOpenLog, Kind::Link, Rect(x + 130, 696, 110, 20), L"Open log folder"});
         const float bottom = kHeight - kFrame;
         elements.push_back({kClose, Kind::Button, Rect(kWidth - kFrame - 12 - 86, bottom - kCommandH + 11, 86, 24), L"Close"});
     }
@@ -514,6 +515,7 @@ struct SettingsWindow::Impl {
                 bool checked = e.id == kMirror ? model->mirror()
                              : e.id == kFill   ? model->fill()
                              : e.id == kTorch  ? (c.valid && (c.flags & proto::kCamTorchOn))
+                             : e.id == kWireless ? model->wireless()
                                                : model->autostart();
                 DrawCheckbox(e, checked, Enabled(e.id));
                 break;
@@ -572,6 +574,7 @@ struct SettingsWindow::Impl {
             model->command(proto::kCmdSetTorch, 0);
             break;
         case kAutostart: model->setAutostart(!model->autostart()); break;
+        case kWireless: model->setWireless(!model->wireless()); break;
         case kReconnect: model->reconnect(); break;
         case kOpenLog: model->openLogFolder(); break;
         case kClose:
@@ -584,7 +587,7 @@ struct SettingsWindow::Impl {
 
     void MoveFocus(int step) {
         static const Id order[] = {kPause, kBack, kFront, kQ720, kQ1080, kQ4K, kFps30, kFps60, kFps120, kZoomOut, kZoomIn, kZoomReset,
-                                   kEvDown, kEvUp, kFocusAuto, kFocusLock, kTorch, kAuto, kMirror, kFill, kAutostart,
+                                   kEvDown, kEvUp, kFocusAuto, kFocusLock, kTorch, kAuto, kMirror, kFill, kAutostart, kWireless,
                                    kReconnect, kOpenLog, kClose};
         constexpr int n = int(sizeof(order) / sizeof(order[0]));
         int i = 0;

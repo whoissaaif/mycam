@@ -13,6 +13,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.hardware.usb.UsbAccessory
 import android.hardware.usb.UsbManager
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
@@ -30,6 +31,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import java.io.FileInputStream
+import java.io.InputStream
+import java.io.OutputStream
+import java.net.Socket
 import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.ByteBuffer
@@ -54,6 +58,16 @@ class WebcamService : Service() {
         val error: String? = null,
         /** PowerManager.THERMAL_STATUS_* (0 = none); the UI warns from MODERATE up. */
         val thermal: Int = 0,
+        /** Wireless mode is on (the phone can be found and connected to over Wi-Fi). */
+        val wirelessOn: Boolean = false,
+        /** The current link is Wi-Fi (else USB). */
+        val wireless: Boolean = false,
+        /** This phone's address on Wi-Fi, shown so the user can tell which network it is on. */
+        val wirelessAddress: String? = null,
+        /** A PC that connected over Wi-Fi and is waiting for the user to allow it. */
+        val pendingPc: String? = null,
+        /** Name of the PC connected over Wi-Fi. */
+        val wirelessPc: String? = null,
     )
 
     private lateinit var cameraThread: HandlerThread
@@ -63,10 +77,23 @@ class WebcamService : Service() {
     private var thermalListener: Any? = null // PowerManager.OnThermalStatusChangedListener (API 29+).
     private var wakeLock: PowerManager.WakeLock? = null
 
+    // The link to the PC: a USB accessory or (wireless mode) a TCP socket. Opened and closed on the main thread.
     private var accessory: UsbAccessory? = null
     private var pfd: ParcelFileDescriptor? = null
-    private var output: FileOutputStream? = null
+    private var socket: Socket? = null
+    @Volatile private var output: OutputStream? = null
+    @Volatile private var linked = false
+    @Volatile private var linkId = 0 // Bumped per link, so a late "read ended" from an old link is ignored.
     private var readerThread: Thread? = null
+    private var foreground = false
+
+    // Wireless mode (main thread).
+    private val main by lazy { Handler(mainLooper) }
+    private var wireless: WirelessServer? = null
+    private var wirelessOn = false
+    private var wifiLock: WifiManager.WifiLock? = null
+    private var pendingClient: Pair<Socket, String>? = null
+    private val approvedPcs = mutableSetOf<String>() // IP addresses allowed since the service started.
 
     // Owned by the camera thread.
     private var wantStreaming = false
@@ -92,9 +119,10 @@ class WebcamService : Service() {
     private val detachReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val detached = IntentCompat.getParcelableExtra(intent, UsbManager.EXTRA_ACCESSORY, UsbAccessory::class.java)
-            if (detached == null || detached == accessory) {
+            if (accessory != null && (detached == null || detached == accessory)) {
                 Log.i(TAG, "Accessory detached")
-                stopSelf()
+                val id = linkId
+                camera.post { onLinkLost(id) }
             }
         }
     }
@@ -155,6 +183,14 @@ class WebcamService : Service() {
                 camera.post { setPaused(p) }
                 return START_NOT_STICKY
             }
+            ACTION_WIRELESS -> {
+                setWireless(intent.getBooleanExtra(EXTRA_ON, false))
+                return START_NOT_STICKY
+            }
+            ACTION_WIRELESS_ANSWER -> {
+                answerPc(intent.getBooleanExtra(EXTRA_ALLOW, false))
+                return START_NOT_STICKY
+            }
         }
 
         val acc = intent?.let { IntentCompat.getParcelableExtra(it, UsbManager.EXTRA_ACCESSORY, UsbAccessory::class.java) }
@@ -163,8 +199,119 @@ class WebcamService : Service() {
             return START_NOT_STICKY
         }
         if (acc != null && acc != accessory) openAccessory(acc)
-        else if (accessory == null) stopSelf()
+        else if (!linked && !wirelessOn) stopSelf()
         return START_NOT_STICKY
+    }
+
+    // --- Wireless mode (IMPROVEMENTS.md 11, phase 1) -------------------------------------------------
+
+    /** Main thread. Turns wireless mode on (findable on Wi-Fi, accepting PCs) or off. */
+    private fun setWireless(on: Boolean) {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(PREF_WIRELESS, on).apply()
+        if (on == wirelessOn) return
+        if (on) {
+            if (!goForeground()) { stopSelf(); return }
+            wirelessOn = true
+            wireless = WirelessServer(this) { sock, name -> main.post { offerPc(sock, name) } }.also { it.start() }
+            _state.update { it.copy(wirelessOn = true, wirelessAddress = WirelessServer.localAddress(this)) }
+        } else {
+            wirelessOn = false
+            wireless?.stop()
+            wireless = null
+            answerPc(false)
+            _state.update { it.copy(wirelessOn = false, wirelessAddress = null) }
+            if (socket != null) {
+                val id = linkId
+                camera.post { onLinkLost(id) }
+            } else if (!linked) {
+                stopSelf()
+            }
+        }
+        updateNotification()
+    }
+
+    /** Main thread. A PC connected over Wi-Fi: ask the user, unless it was allowed earlier or USB is in use. */
+    private fun offerPc(sock: Socket, name: String) {
+        val ip = sock.inetAddress.hostAddress ?: ""
+        if (!wirelessOn || linked || pendingClient != null) {
+            // The cable wins, and only one PC at a time.
+            try { sock.close() } catch (_: IOException) {}
+            return
+        }
+        if (ip in approvedPcs) { openSocket(sock, name); return }
+        pendingClient = sock to name
+        _state.update { it.copy(pendingPc = name) }
+        showApprovalNotification(name)
+        // Nobody answered: refuse, so a PC can't wait on the phone forever.
+        main.postDelayed({ if (pendingClient?.first === sock) answerPc(false) }, APPROVAL_TIMEOUT_MS)
+    }
+
+    /** Main thread. The user allowed or refused the waiting PC. */
+    private fun answerPc(allow: Boolean) {
+        val (sock, name) = pendingClient ?: return
+        pendingClient = null
+        _state.update { it.copy(pendingPc = null) }
+        getSystemService(NotificationManager::class.java).cancel(APPROVAL_NOTIFICATION_ID)
+        if (allow && wirelessOn && !linked) {
+            sock.inetAddress.hostAddress?.let { approvedPcs += it }
+            openSocket(sock, name)
+        } else {
+            try { sock.close() } catch (_: IOException) {}
+        }
+    }
+
+    private fun showApprovalNotification(name: String) {
+        val nm = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            nm.createNotificationChannel(
+                NotificationChannel(APPROVAL_CHANNEL_ID, getString(R.string.channel_wireless), NotificationManager.IMPORTANCE_HIGH)
+            )
+        }
+        fun answer(allow: Boolean, code: Int) = PendingIntent.getService(
+            this, code, Intent(this, WebcamService::class.java).setAction(ACTION_WIRELESS_ANSWER).putExtra(EXTRA_ALLOW, allow),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val open = PendingIntent.getActivity(this, 2, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        nm.notify(
+            APPROVAL_NOTIFICATION_ID,
+            NotificationCompat.Builder(this, APPROVAL_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_stat_webcam)
+                .setContentTitle(getString(R.string.wireless_ask_title, name))
+                .setContentText(getString(R.string.wireless_ask_text))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_CALL)
+                .setContentIntent(open)
+                .setAutoCancel(true)
+                .setTimeoutAfter(APPROVAL_TIMEOUT_MS)
+                .addAction(0, getString(R.string.wireless_deny), answer(false, 3))
+                .addAction(0, getString(R.string.wireless_allow), answer(true, 4))
+                .build(),
+        )
+    }
+
+    /** Main thread. Uses an allowed Wi-Fi connection as the link. */
+    private fun openSocket(sock: Socket, name: String) {
+        closeLink()
+        try {
+            sock.tcpNoDelay = true
+            // A small send buffer keeps delay low: a big one hides a slow network from the adaptive bitrate
+            // (writes return at once while seconds of video queue up behind them).
+            sock.sendBufferSize = 128 * 1024
+        } catch (_: IOException) {}
+        val input = try { sock.getInputStream() } catch (e: IOException) { null }
+        val out = try { sock.getOutputStream() } catch (e: IOException) { null }
+        if (input == null || out == null) {
+            try { sock.close() } catch (_: IOException) {}
+            return
+        }
+        socket = sock
+        startLink(out, input, wirelessPc = name)
+        wifiLock = getSystemService(WifiManager::class.java)?.createWifiLock(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+            else @Suppress("DEPRECATION") WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+            "MyCam:stream",
+        )?.apply { setReferenceCounted(false); acquire() }
+        Log.i(TAG, "Wi-Fi link from $name (${sock.inetAddress.hostAddress})")
     }
 
     private fun goForeground(): Boolean {
@@ -185,6 +332,7 @@ class WebcamService : Service() {
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
+            foreground = true
             true
         } catch (e: Exception) {
             Log.e(TAG, "startForeground failed", e)
@@ -204,8 +352,8 @@ class WebcamService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_webcam)
-            .setContentTitle(getString(if (paused) R.string.notification_title_paused else R.string.notification_title))
-            .setContentText(getString(if (paused) R.string.notification_text_paused else R.string.notification_text))
+            .setContentTitle(getString(when { paused -> R.string.notification_title_paused; !linked && wirelessOn -> R.string.notification_title_wireless; else -> R.string.notification_title }))
+            .setContentText(getString(when { paused -> R.string.notification_text_paused; !linked && wirelessOn -> R.string.notification_text_wireless; else -> R.string.notification_text }))
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -218,31 +366,39 @@ class WebcamService : Service() {
     }
 
     private fun updateNotification() {
-        if (accessory == null) return
+        if (!foreground) return
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification())
     }
 
     private fun openAccessory(acc: UsbAccessory) {
-        closeAccessory()
+        // The cable wins over Wi-Fi: drop a wireless link (and any PC waiting for approval).
+        answerPc(false)
+        closeLink()
         val usb = getSystemService(UsbManager::class.java)
         val fd = try { usb.openAccessory(acc) } catch (e: SecurityException) { null }
         if (fd == null) {
             _state.update { it.copy(error = getString(R.string.error_open_accessory)) }
-            stopSelf()
+            if (!wirelessOn) stopSelf()
             return
         }
         accessory = acc
         pfd = fd
-        output = FileOutputStream(fd.fileDescriptor)
-        val input = FileInputStream(fd.fileDescriptor)
-        _state.update { it.copy(connected = true, error = null) }
-        orientationListener?.takeIf { it.canDetectOrientation() }?.enable()
-        acquireWakeLock()
-
-        readerThread = Thread({ readLoop(input) }, "accessory-reader").apply { start() }
+        startLink(FileOutputStream(fd.fileDescriptor), FileInputStream(fd.fileDescriptor), wirelessPc = null)
     }
 
-    private fun readLoop(input: FileInputStream) {
+    /** Main thread. Common start of a USB or Wi-Fi link: reader thread, sensors, wake lock, UI state. */
+    private fun startLink(out: OutputStream, input: InputStream, wirelessPc: String?) {
+        val id = ++linkId
+        output = out
+        linked = true
+        _state.update { it.copy(connected = true, error = null, wireless = wirelessPc != null, wirelessPc = wirelessPc) }
+        orientationListener?.takeIf { it.canDetectOrientation() }?.enable()
+        acquireWakeLock()
+        updateNotification()
+        readerThread = Thread({ readLoop(input, id) }, if (wirelessPc != null) "wifi-reader" else "accessory-reader").apply { start() }
+    }
+
+    private fun readLoop(input: InputStream, id: Int) {
         // AOA reads must use a buffer of at least 16 KiB or some kernels fail the transfer.
         val buf = ByteArray(16384)
         val parser = Protocol.CommandParser()
@@ -253,11 +409,24 @@ class WebcamService : Service() {
                 for (c in parser.feed(buf, n)) camera.post { handleCommand(c.cmd, c.arg) }
             }
         } catch (e: IOException) {
-            Log.i(TAG, "Accessory read ended: ${e.message}")
+            Log.i(TAG, "Link read ended: ${e.message}")
         }
-        camera.post {
-            // The PC side went away (companion closed or cable pulled).
-            if (accessory != null) stopSelf()
+        // The PC side went away (companion closed, cable pulled or Wi-Fi lost).
+        camera.post { onLinkLost(id) }
+    }
+
+    /**
+     * Camera thread. The link [id] ended: turn the camera off and close it. The service stays up while
+     * wireless mode is on (a PC may connect again); otherwise it stops, as before.
+     */
+    private fun onLinkLost(id: Int) {
+        if (id != linkId || !linked) return
+        wantStreaming = false
+        stopStreamer()
+        main.post {
+            if (id != linkId) return@post
+            closeLink()
+            if (!wirelessOn) stopSelf()
         }
     }
 
@@ -364,7 +533,7 @@ class WebcamService : Service() {
     }
 
     private fun startStreamer() {
-        if (accessory == null) return
+        if (!linked) return
         remoteLog("starting ${if (facing == Protocol.FACING_FRONT) "front" else "back"} camera")
         framesSent = 0
         bytesSent = 0L
@@ -513,13 +682,22 @@ class WebcamService : Service() {
         }
     }
 
-    private fun closeAccessory() {
+    /** Closes the current link (USB or Wi-Fi), if any. */
+    private fun closeLink() {
+        linked = false
         readerThread?.interrupt()
         readerThread = null
         try { pfd?.close() } catch (_: IOException) {}
+        try { socket?.close() } catch (_: IOException) {}
         pfd = null
+        socket = null
         output = null
         accessory = null
+        wifiLock?.release()
+        wifiLock = null
+        orientationListener?.disable()
+        _state.update { it.copy(connected = false, streaming = false, resolution = "", wireless = false, wirelessPc = null) }
+        updateNotification()
     }
 
     override fun onDestroy() {
@@ -534,7 +712,11 @@ class WebcamService : Service() {
             streamer = null
         }
         cameraThread.quitSafely()
-        closeAccessory()
+        wireless?.stop()
+        wireless = null
+        pendingClient?.first?.let { try { it.close() } catch (_: IOException) {} }
+        pendingClient = null
+        closeLink()
         wakeLock?.release()
         wakeLock = null
         _state.update { UiState(facing = facing, paused = paused, camera = camSettings) }
@@ -557,6 +739,14 @@ class WebcamService : Service() {
         const val ACTION_COMMAND = "io.github.whoissaaif.mycam.COMMAND"
         const val EXTRA_CMD = "cmd"
         const val EXTRA_ARG = "arg"
+        const val PREF_WIRELESS = "wireless"
+        const val ACTION_WIRELESS = "io.github.whoissaaif.mycam.WIRELESS"
+        const val EXTRA_ON = "on"
+        const val ACTION_WIRELESS_ANSWER = "io.github.whoissaaif.mycam.WIRELESS_ANSWER"
+        const val EXTRA_ALLOW = "allow"
+        private const val APPROVAL_CHANNEL_ID = "wireless"
+        private const val APPROVAL_NOTIFICATION_ID = 2
+        private const val APPROVAL_TIMEOUT_MS = 60_000L
 
         fun loadCameraSettings(prefs: android.content.SharedPreferences) = CameraStreamer.Settings(
             quality = prefs.getInt("quality", Protocol.QUALITY_1080P),

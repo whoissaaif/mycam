@@ -15,6 +15,12 @@ import java.nio.ByteOrder
 object Protocol {
     const val VERSION = 3
 
+    // Wireless transport (1.4, PROTOCOL.md "Wireless transport"): UDP discovery, then the same packets over TCP.
+    const val WIRELESS_DISCOVERY_PORT = 47801
+    const val WIRELESS_TCP_PORT = 47800
+    const val WIRELESS_ASK = "MYCAM?1"   // PC -> broadcast: "MYCAM?1 <pc name>"
+    const val WIRELESS_HERE = "MYCAM!1"  // phone -> PC: "MYCAM!1 <tcp port> <phone name>"
+
     const val PACKET_MAGIC = 0x4D43414D // 'MCAM'
     const val HEADER_SIZE = 20
 

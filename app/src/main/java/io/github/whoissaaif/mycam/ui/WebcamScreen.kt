@@ -2,6 +2,7 @@ package io.github.whoissaaif.mycam.ui
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,6 +26,8 @@ import androidx.compose.ui.unit.dp
 import io.github.whoissaaif.mycam.Protocol
 import io.github.whoissaaif.mycam.R
 import io.github.whoissaaif.mycam.WebcamService
+import io.github.whoissaaif.mycam.ui.aero.AeroButton
+import io.github.whoissaaif.mycam.ui.aero.AeroCheckbox
 import io.github.whoissaaif.mycam.ui.aero.AeroSegmented
 import io.github.whoissaaif.mycam.ui.aero.BadgeKind
 import io.github.whoissaaif.mycam.ui.aero.CommandArea
@@ -45,10 +48,18 @@ private fun describe(state: WebcamService.UiState): StatusView = when {
     state.streaming -> StatusView(
         R.drawable.status_streaming, stringResource(R.string.status_streaming),
         stringResource(if (state.facing == Protocol.FACING_FRONT) R.string.camera_front else R.string.camera_back) +
-            " · " + state.resolution,
+            " · " + state.resolution + if (state.wireless) " · Wi-Fi" else "",
         live = true,
     )
+    state.connected && state.wireless -> StatusView(
+        R.drawable.status_ready, stringResource(R.string.status_idle),
+        stringResource(R.string.wireless_connected, state.wirelessPc ?: ""),
+    )
     state.connected -> StatusView(R.drawable.status_ready, stringResource(R.string.status_idle), stringResource(R.string.status_idle_detail))
+    state.wirelessOn -> StatusView(
+        R.drawable.status_disconnected, stringResource(R.string.status_wireless_waiting),
+        stringResource(R.string.status_wireless_waiting_detail),
+    )
     else -> StatusView(R.drawable.status_disconnected, stringResource(R.string.status_disconnected), stringResource(R.string.status_disconnected_detail))
 }
 
@@ -61,6 +72,8 @@ fun WebcamScreen(
     modifier: Modifier = Modifier,
     onCommand: (Int, Int) -> Unit = { _, _ -> },
     onDim: () -> Unit = {},
+    onWireless: (Boolean) -> Unit = {},
+    onAnswerPc: (Boolean) -> Unit = {},
 ) {
     val view = describe(state)
     Column(modifier.fillMaxSize().background(Aero.Body)) {
@@ -72,6 +85,19 @@ fun WebcamScreen(
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 20.dp, vertical = 24.dp),
         ) {
+            // A PC on the Wi-Fi asks to use the camera: nothing streams until the user allows it.
+            state.pendingPc?.let { pc ->
+                Text(stringResource(R.string.wireless_ask_title, pc), style = MaterialTheme.typography.titleMedium, color = Aero.MainInstruction)
+                Spacer(Modifier.height(4.dp))
+                Text(stringResource(R.string.wireless_ask_text), style = MaterialTheme.typography.bodyMedium, color = Aero.Subtle)
+                Spacer(Modifier.height(10.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    AeroButton(stringResource(R.string.wireless_allow), onClick = { onAnswerPc(true) }, modifier = Modifier.width(120.dp))
+                    AeroButton(stringResource(R.string.wireless_deny), onClick = { onAnswerPc(false) }, modifier = Modifier.width(120.dp))
+                }
+                Spacer(Modifier.height(24.dp))
+            }
+
             // Status, like a Win7 task dialog: big icon, blue main instruction, gray detail.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Image(painterResource(view.icon), contentDescription = null, modifier = Modifier.size(72.dp))
@@ -131,11 +157,30 @@ fun WebcamScreen(
             VideoSection(state.camera, state.cameraInfo, onCommand)
             Spacer(Modifier.height(32.dp))
             ControlsSection(state.camera, state.cameraInfo, onCommand)
+
+            Spacer(Modifier.height(32.dp))
+            SectionHeading(stringResource(R.string.section_wireless))
+            Spacer(Modifier.height(8.dp))
+            AeroCheckbox(stringResource(R.string.wireless_toggle), checked = state.wirelessOn, onCheckedChange = onWireless)
+            Text(
+                when {
+                    !state.wirelessOn -> stringResource(R.string.wireless_hint_off)
+                    state.wirelessAddress == null -> stringResource(R.string.wireless_hint_no_wifi)
+                    else -> stringResource(R.string.wireless_hint_on, state.wirelessAddress)
+                },
+                style = MaterialTheme.typography.bodyMedium, color = Aero.Subtle,
+            )
         }
 
         CommandArea {
             Text(
-                stringResource(if (state.connected) R.string.footer_connected else R.string.footer_disconnected),
+                stringResource(
+                    when {
+                        state.connected && state.wireless -> R.string.footer_wireless
+                        state.connected -> R.string.footer_connected
+                        else -> R.string.footer_disconnected
+                    }
+                ),
                 style = MaterialTheme.typography.bodyMedium,
                 color = Aero.Subtle,
             )

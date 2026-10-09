@@ -56,6 +56,24 @@
     <string name="heat_warm">Your phone is getting warm. A lower quality or taking it out of its case helps.</string>
     <string name="heat_hot">Your phone is hot. Lower the quality or pause for a while, or Android may slow the camera down.</string>
 
+    <!-- Wireless mode (IMPROVEMENTS.md 11) -->
+    <string name="section_wireless">Wireless (beta)</string>
+    <string name="wireless_toggle">Use over Wi-Fi</string>
+    <string name="wireless_hint_off">Connect without a cable: the phone and the PC must be on the same Wi-Fi. The cable is faster and charges the phone.</string>
+    <string name="wireless_hint_on">This phone is %1$s. On the PC, turn on “Find phones on Wi-Fi” in MyCam settings.</string>
+    <string name="wireless_hint_no_wifi">Connect this phone to Wi-Fi (or turn on its hotspot for the PC).</string>
+    <string name="wireless_connected">Connected over Wi-Fi to %1$s</string>
+    <string name="wireless_ask_title">Allow %1$s to use this camera?</string>
+    <string name="wireless_ask_text">A PC on your Wi-Fi wants to use MyCam.</string>
+    <string name="wireless_allow">Allow</string>
+    <string name="wireless_deny">Don’t allow</string>
+    <string name="channel_wireless">Wireless connection requests</string>
+    <string name="notification_title_wireless">MyCam over Wi-Fi is on</string>
+    <string name="notification_text_wireless">Waiting for a PC on this Wi-Fi</string>
+    <string name="status_wireless_waiting">Waiting for your PC</string>
+    <string name="status_wireless_waiting_detail">Over Wi-Fi. The camera turns on when an app on the PC uses MyCam.</string>
+    <string name="footer_wireless">Connected to your PC over Wi-Fi</string>
+
     <!-- Footer -->
     <string name="footer_connected">Connected to your PC over USB</string>
     <string name="footer_disconnected">Not connected</string>

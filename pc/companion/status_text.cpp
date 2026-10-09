@@ -16,14 +16,23 @@ StatusView DescribeStatus(const LinkStatus& s, bool cameraRegistered) {
     case LinkState::NoDriver:
         return {L"USB driver missing", L"Run the MyCam installer again to set up the USB driver.", kIconError};
     case LinkState::Searching:
+        if (s.wirelessSearch) {
+            return {L"No phone connected",
+                    L"Plug in your phone, or turn on “Use over Wi-Fi” in MyCam on the phone (same Wi-Fi).", kIconDisconnected};
+        }
         return {L"No phone connected", L"Plug in your Android phone with a USB cable.", kIconDisconnected};
     case LinkState::Waiting:
+        if (s.wireless) {
+            return {L"Phone found on Wi-Fi", L"Tap Allow on " + (s.phoneName.empty() ? std::wstring(L"the phone") : s.phoneName) + L".",
+                    kIconDisconnected};
+        }
         return {L"Phone found", L"Open MyCam on the phone, and tap OK if it asks.", kIconDisconnected};
     case LinkState::Idle:
-        return {L"Ready", camera + L". Choose “MyCam” as the camera in any app.", kIconReady};
+        return {L"Ready", camera + (s.wireless ? L" · Wi-Fi" : L"") + L". Choose “MyCam” as the camera in any app.", kIconReady};
     case LinkState::Streaming: {
         std::wstring detail = camera;
         if (s.width) detail += L" · " + std::to_wstring(s.width) + L" × " + std::to_wstring(s.height);
+        if (s.wireless) detail += L" · Wi-Fi";
         return {L"Streaming", detail, kIconStreaming};
     }
     case LinkState::PhoneError:

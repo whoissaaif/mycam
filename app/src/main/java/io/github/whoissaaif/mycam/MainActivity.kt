@@ -49,7 +49,12 @@ class MainActivity : ComponentActivity() {
         val acc = pendingAccessory
         pendingAccessory = null
         if (results[Manifest.permission.CAMERA] == true && acc != null) startWebcam(acc)
+        if (pendingWireless && granted(Manifest.permission.CAMERA)) setWireless(true)
+        pendingWireless = false
     }
+
+    /** Wireless was switched on before camera access was granted. */
+    private var pendingWireless = false
 
     private val usbPermissionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -93,7 +98,7 @@ class MainActivity : ComponentActivity() {
                 } else {
                     WebcamScreen(
                         state = state, onFacing = ::setFacing, onPause = ::setPaused, onCommand = ::sendCommand,
-                        onDim = { dimmed = true },
+                        onDim = { dimmed = true }, onWireless = ::setWireless, onAnswerPc = ::answerPc,
                     )
                 }
             }
@@ -151,6 +156,13 @@ class MainActivity : ComponentActivity() {
                 askedOnLaunch = true
                 requestPermissions.launch(needed.toTypedArray())
             }
+            // Wireless mode was on last time: be findable again while the app is open.
+            val prefs = getSharedPreferences(WebcamService.PREFS, MODE_PRIVATE)
+            if (prefs.getBoolean(WebcamService.PREF_WIRELESS, false) && !WebcamService.state.value.wirelessOn &&
+                granted(Manifest.permission.CAMERA)
+            ) {
+                setWireless(true)
+            }
             return
         }
         if (usb.hasPermission(acc)) {
@@ -201,6 +213,29 @@ class MainActivity : ComponentActivity() {
     }
 
     /** Pause or resume. With a PC connected the service applies it (and tells the PC); otherwise it is saved. */
+    /** Wireless mode on/off. The service runs it (and keeps running while it is on). */
+    private fun setWireless(on: Boolean) {
+        if (on && !granted(Manifest.permission.CAMERA)) {
+            pendingWireless = true
+            requestPermissions.launch(missingPermissions().toTypedArray())
+            return
+        }
+        val intent = Intent(this, WebcamService::class.java)
+            .setAction(WebcamService.ACTION_WIRELESS)
+            .putExtra(WebcamService.EXTRA_ON, on)
+        if (on) ContextCompat.startForegroundService(this, intent)
+        else if (WebcamService.state.value.wirelessOn) startService(intent)
+        else getSharedPreferences(WebcamService.PREFS, MODE_PRIVATE).edit().putBoolean(WebcamService.PREF_WIRELESS, false).apply()
+    }
+
+    private fun answerPc(allow: Boolean) {
+        startService(
+            Intent(this, WebcamService::class.java)
+                .setAction(WebcamService.ACTION_WIRELESS_ANSWER)
+                .putExtra(WebcamService.EXTRA_ALLOW, allow)
+        )
+    }
+
     private fun setPaused(paused: Boolean) {
         if (WebcamService.state.value.connected) {
             startService(

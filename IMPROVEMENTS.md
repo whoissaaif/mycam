@@ -307,7 +307,7 @@ cost and risk for this project.
 
 ---
 
-## 11. Wireless option (L): ⏳
+## 11. Wireless option (L): 🟡 phase 1 built on branch `wireless` (1.4.0-beta1), needs a test
 
 MyCam is wired-only by design (plug and play, no setup, no lag spikes, phone charges while streaming).
 A wireless mode would be an **optional** second way to connect, with the cable staying the default.
@@ -333,7 +333,14 @@ A wireless mode would be an **optional** second way to connect, with the cable s
 | Quality | Up to 4K / 120 fps | 1080p30 recommended; 4K and 120 fps only on strong 5 GHz Wi-Fi |
 | Battery | Phone charges | Phone drains: warn in the app, keep the dim screen (4.1) |
 | Starting | App opens itself when plugged in | Open MyCam on the phone and turn on Wireless |
-| Windows | Nothing extra | Firewall prompt the first time (allow on private networks) |
+| Windows | Nothing extra | Nothing extra: the PC only connects out, so there is no firewall prompt |
+
+**Phase 1 (built, needs a test):** UDP discovery + TCP on the phone ("Use over Wi-Fi" switch) and PC
+("Find phones on Wi-Fi"); the phone asks "Allow <PC>?" for every new connection (in the app and as a
+notification); the cable always wins; Wi-Fi lock and a small send buffer on the phone keep delay low; the PC
+side shares one single-threaded session loop with USB (no new threads). No pairing or encryption yet.
+
+**Phase 2 (before merging to main):** one-time pairing and TLS, as below.
 
 **Work items**
 - [ ] Phone: TCP server/client mode in the streaming service, mDNS advertising, pairing screen, battery warning

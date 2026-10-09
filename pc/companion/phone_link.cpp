@@ -1,5 +1,7 @@
 #include "phone_link.h"
 
+#include <winsock2.h>
+
 #include <libusb.h>
 #include <string.h>
 
@@ -54,26 +56,32 @@ void PhoneLink::Run() {
         ok = false;
     }
     Log("usb: UsbDk helper %s, libusb %s", usbdk ? "found" : "MISSING", ok ? "ready" : "FAILED");
-    if (!ok) {
-        status_.state = LinkState::NoDriver;
-        Publish();
-        return;
-    }
-    if (libusb_init_context(&winusbCtx_, nullptr, 0) != LIBUSB_SUCCESS) winusbCtx_ = nullptr;
-    status_.state = LinkState::Searching;
+    // Without UsbDk, USB phones can't be used, but Wi-Fi phones still can.
+    usbReady_ = ok;
+    if (ok && libusb_init_context(&winusbCtx_, nullptr, 0) != LIBUSB_SUCCESS) winusbCtx_ = nullptr;
+    WSADATA wsa;
+    WSAStartup(MAKEWORD(2, 2), &wsa);
+    status_.state = ok ? LinkState::Searching : LinkState::NoDriver;
     Publish();
 
     while (!quit_) {
-        ScanOnce();
+        if (usbReady_) ScanOnce();          // Runs a whole USB session when a phone is plugged in.
+        if (!quit_) NetScanOnce();          // Runs a whole Wi-Fi session when a phone answers (if enabled).
+        if (!usbReady_ && status_.state == LinkState::Searching && !wireless_) {
+            status_.state = LinkState::NoDriver;
+            Publish();
+        }
+        if (status_.wirelessSearch != wireless_) Publish(); // Status text mentions Wi-Fi when it's on.
         for (int i = 0; i < 10 && !quit_; ++i) {
             SyncLockPaused();
             WriteStatusFrame(GetTickCount64()); // "Waiting for the phone" while none is connected.
             Sleep(100);
         }
     }
+    WSACleanup();
     if (winusbCtx_) libusb_exit(winusbCtx_);
     winusbCtx_ = nullptr;
-    libusb_exit(ctx_);
+    if (ctx_) libusb_exit(ctx_);
     ctx_ = nullptr;
 }
 
@@ -144,6 +152,26 @@ void PhoneLink::ScanOnce() {
             Publish();
         }
     }
+}
+
+// During a Wi-Fi session: a phone was just plugged in (or is in accessory mode), so the cable should take
+// over. Phones already asked once (probed_) don't count, so a phone left plugged in that refused doesn't
+// keep ending the Wi-Fi session.
+bool PhoneLink::UsbPhoneArrived() {
+    if (!usbReady_) return false;
+    if (AccessoryNeedsDriver()) return true;
+    libusb_device** list = nullptr;
+    ssize_t count = libusb_get_device_list(ctx_, &list);
+    if (count < 0) return false;
+    bool arrived = false;
+    for (ssize_t i = 0; i < count && !arrived; ++i) {
+        libusb_device_descriptor desc;
+        if (libusb_get_device_descriptor(list[i], &desc) != LIBUSB_SUCCESS) continue;
+        arrived = (desc.idVendor == kGoogleVid && IsAccessoryPid(desc.idProduct)) ||
+                  (!probed_.count(DeviceKey(list[i], desc)) && LooksLikeAndroid(list[i]));
+    }
+    libusb_free_device_list(list, 1);
+    return arrived;
 }
 
 bool PhoneLink::LooksLikeAndroid(libusb_device* dev) {
@@ -260,16 +288,7 @@ void PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx) {
         return;
     }
 
-    parser_.Reset();
-    gotHello_ = startSent_ = phoneStreaming_ = false;
-    waitKeyFrame_ = true;
-    csd_.clear();
-    decoder_.Reset();
-    status_ = LinkStatus{};
-    status_.state = LinkState::Waiting;
-    writer_.SetPhoneState(kPhoneWaiting);
-    Publish();
-
+    BeginSession(false, "");
     Log("session: accessory opened via %s (in 0x%02x, out 0x%02x)", ctx == ctx_ ? "UsbDk" : "WinUSB", epIn_, epOut_);
 
     // Keep several reads queued with no timeout. Timed-out reads get cancelled, and with UsbDk a
@@ -282,7 +301,6 @@ void PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx) {
     std::vector<libusb_transfer*> transfers;
     sessionEnding_ = sessionError_ = false;
     inFlight_ = 0;
-    statBytes_ = statPackets_ = statFrames_ = statDecoded_ = statDecodeErrors_ = 0;
     for (auto& b : buffers) {
         libusb_transfer* t = libusb_alloc_transfer(0);
         libusb_fill_bulk_transfer(t, handle_, epIn_, b.data(), kReadSize,
@@ -293,6 +311,54 @@ void PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx) {
         transfers.push_back(t);
     }
 
+    const bool reconnect = SessionLoop([this] {
+        timeval tv = {0, 100000};
+        libusb_handle_events_timeout_completed(sessionCtx_, &tv, nullptr);
+    });
+    // Forces the phone out of accessory mode; it re-enumerates and we switch it back.
+    if (reconnect) libusb_reset_device(handle_);
+    LeaveSession();
+
+    sessionEnding_ = true;
+    for (libusb_transfer* t : transfers) libusb_cancel_transfer(t);
+    for (int i = 0; i < 50 && inFlight_ > 0; ++i) {
+        timeval tv = {0, 20000};
+        libusb_handle_events_timeout_completed(sessionCtx_, &tv, nullptr);
+    }
+    if (inFlight_ == 0) {
+        for (libusb_transfer* t : transfers) libusb_free_transfer(t);
+    } // else: leak rather than free transfers libusb still owns.
+    libusb_release_interface(handle_, 0);
+    libusb_close(handle_);
+    handle_ = nullptr;
+    ResetAfterSession();
+}
+
+void PhoneLink::BeginSession(bool wireless, const std::string& phoneName) {
+    parser_.Reset();
+    gotHello_ = startSent_ = phoneStreaming_ = false;
+    waitKeyFrame_ = true;
+    keyFrameWanted_ = false;
+    csd_.clear();
+    decoder_.Reset();
+    status_ = LinkStatus{};
+    status_.state = LinkState::Waiting;
+    status_.wireless = wireless;
+    if (!phoneName.empty()) {
+        int n = MultiByteToWideChar(CP_UTF8, 0, phoneName.c_str(), int(phoneName.size()), nullptr, 0);
+        status_.phoneName.resize(n);
+        MultiByteToWideChar(CP_UTF8, 0, phoneName.c_str(), int(phoneName.size()), status_.phoneName.data(), n);
+    }
+    writer_.SetPhoneState(kPhoneWaiting);
+    sessionError_ = false;
+    statBytes_ = statPackets_ = statFrames_ = statDecoded_ = statDecodeErrors_ = 0;
+    Publish();
+}
+
+// The protocol for one connected phone, the same over USB and Wi-Fi: HELLO until it answers, then START /
+// STOP as apps use the camera, plus queued commands. `pump` waits up to 100 ms for data from the phone and
+// feeds it in (or sets sessionError_). Everything runs on this thread, so sends never race with reads.
+bool PhoneLink::SessionLoop(const std::function<void()>& pump) {
     SendCommand(proto::kCmdHello);
     uint64_t lastHello = GetTickCount64();
     uint64_t lastConsumer = 0;
@@ -301,18 +367,13 @@ void PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx) {
     lastStats_ = lastHello;
 
     while (!quit_ && !sessionError_) {
-        timeval tv = {0, 100000};
-        libusb_handle_events_timeout_completed(sessionCtx_, &tv, nullptr);
+        pump();
 
         uint64_t now = GetTickCount64();
         LogStats(now);
         SyncLockPaused();
         WriteStatusFrame(now);
-        if (reconnect_.exchange(false)) {
-            // Forces the phone out of accessory mode; it re-enumerates and we switch it back.
-            libusb_reset_device(handle_);
-            break;
-        }
+        if (reconnect_.exchange(false)) return true;
         if (!gotHello_) {
             if (now - lastHello > 2000) {
                 SendCommand(proto::kCmdHello);
@@ -360,38 +421,35 @@ void PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx) {
             lastStop = now;
         }
     }
-    Log("session: ending (quit=%d, error=%d)", int(quit_.load()), int(sessionError_));
+    return false;
+}
 
+void PhoneLink::LeaveSession() {
+    Log("session: ending (quit=%d, error=%d)", int(quit_.load()), int(sessionError_));
     // Companion exiting: turn the phone camera off rather than leaving it blocked on a full pipe.
     if (quit_ && startSent_) SendCommand(proto::kCmdStop);
+}
 
-    sessionEnding_ = true;
-    for (libusb_transfer* t : transfers) libusb_cancel_transfer(t);
-    for (int i = 0; i < 50 && inFlight_ > 0; ++i) {
-        timeval tv = {0, 20000};
-        libusb_handle_events_timeout_completed(sessionCtx_, &tv, nullptr);
-    }
-    if (inFlight_ == 0) {
-        for (libusb_transfer* t : transfers) libusb_free_transfer(t);
-    } // else: leak rather than free transfers libusb still owns.
+void PhoneLink::ResetAfterSession() {
     decoder_.Reset();
-    libusb_release_interface(handle_, 0);
-    libusb_close(handle_);
-    handle_ = nullptr;
     phonePaused_ = phoneStreaming_ = false;
     writer_.SetPhoneState(kPhoneNone);
     status_ = LinkStatus{};
     Publish();
 }
 
+void PhoneLink::FeedBytes(const uint8_t* data, size_t size) {
+    statBytes_ += size;
+    parser_.Feed(data, size, [this](const Packet& p) {
+        ++statPackets_;
+        HandlePacket(p.type, p.flags, p.ptsUs, p.payload, p.length);
+    });
+}
+
 void PhoneLink::OnInTransfer(libusb_transfer* t) {
     if (t->status == LIBUSB_TRANSFER_COMPLETED || t->status == LIBUSB_TRANSFER_TIMED_OUT) {
         if (t->actual_length > 0) {
-            statBytes_ += t->actual_length;
-            parser_.Feed(t->buffer, size_t(t->actual_length), [this](const Packet& p) {
-                ++statPackets_;
-                HandlePacket(p.type, p.flags, p.ptsUs, p.payload, p.length);
-            });
+            FeedBytes(t->buffer, size_t(t->actual_length));
         }
         if (!sessionEnding_ && libusb_submit_transfer(t) == LIBUSB_SUCCESS) return;
     } else if (t->status != LIBUSB_TRANSFER_CANCELLED) {
@@ -418,6 +476,7 @@ void PhoneLink::LogStats(uint64_t now) {
 bool PhoneLink::SendCommand(uint8_t cmd, uint8_t arg) {
     uint8_t packet[proto::kCommandSize];
     proto::MakeCommand(packet, proto::Command(cmd), arg);
+    if (tcp_ != ~uintptr_t(0)) return SendTcp(packet, sizeof(packet));
     int sent = 0;
     int r = libusb_bulk_transfer(handle_, epOut_, packet, sizeof(packet), &sent, 1000);
     if (r != LIBUSB_SUCCESS || sent != int(sizeof(packet))) {
@@ -556,6 +615,7 @@ void PhoneLink::OnDecodedFrame(const H264Decoder::Nv12View& frame) {
 
 void PhoneLink::Publish() {
     status_.lockPaused = lockPaused_;
+    status_.wirelessSearch = wireless_;
     if (onStatus_) onStatus_(status_);
 }
 

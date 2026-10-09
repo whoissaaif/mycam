@@ -54,6 +54,7 @@ PhoneLink* g_link = nullptr;
 SettingsWindow* g_settings = nullptr;
 bool g_mirror = false;
 bool g_fill = false;
+bool g_wireless = false; // "Find phones on Wi-Fi" (beta)
 
 std::mutex g_statusLock;
 LinkStatus g_status;
@@ -124,6 +125,12 @@ void SetFill(bool fill) {
     g_fill = fill;
     g_link->SetFill(fill);
     WriteSetting(L"Fill", fill);
+}
+
+void SetWireless(bool on) {
+    g_wireless = on;
+    g_link->SetWireless(on);
+    WriteSetting(L"Wireless", on);
 }
 
 // Windows locked or asleep: keep the phone camera off (privacy). Separate from the user's own pause.
@@ -340,6 +347,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
 
     g_mirror = ReadSetting(L"Mirror", 0) != 0;
     g_fill = ReadSetting(L"Fill", 0) != 0;
+    g_wireless = ReadSetting(L"Wireless", 0) != 0;
     PhoneLink link([](const LinkStatus& s) {
         {
             std::lock_guard<std::mutex> lock(g_statusLock);
@@ -349,6 +357,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     }, [] { PostMessageW(g_hwnd, WM_NEED_DRIVER, 0, 0); });
     link.SetMirror(g_mirror);
     link.SetFill(g_fill);
+    link.SetWireless(g_wireless);
     link.SetStatusImages(LoadStatusImage(kImagePaused), LoadStatusImage(kImageWaiting));
     g_link = &link;
 
@@ -367,6 +376,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         [] { return g_fill; },
         SetFill,
         [](uint8_t cmd, uint8_t arg) { g_link->RequestCommand(cmd, arg); },
+        [] { return g_wireless; },
+        SetWireless,
     });
     g_settings = &settings;
     UpdateTray();

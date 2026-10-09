@@ -98,3 +98,31 @@ either way (`RESUME`). While paused it reports `STATE(paused)`, keeps its camera
 
 The PC's automatic pause while Windows is locked is PC-only: the PC simply stops asking for video
 (`STOP`) and never sends `START` until unlock. It does not change the phone's pause state.
+
+## Wireless transport (1.4, beta)
+
+The same packets and commands can run over TCP instead of the USB accessory. The phone is the server and
+the PC always connects, so Windows never needs an inbound firewall rule.
+
+**Discovery (UDP, port 47801).** While "Find phones on Wi-Fi" is on, the PC broadcasts every 2 s, to the
+directed broadcast address of each of its IPv4 networks and to 255.255.255.255:
+
+    PC -> broadcast:   MYCAM?1 <pc name>            (ASCII/UTF-8, no terminator)
+    phone -> PC:       MYCAM!1 <tcp port> <phone name>
+
+The phone answers (unicast, to the sender's address and port) only while "Use over Wi-Fi" is on. It
+remembers the PC name per IP address to show it when that PC connects. A phone that hasn't answered for 6 s
+is forgotten.
+
+**Session (TCP, port 47800).** The PC connects and sends `HELLO` (every 2 s, as over USB). The phone asks its
+user "Allow <pc name> to use this camera?" and doesn't read or answer anything until then:
+- Allowed: the phone answers `HELLO` and the session continues exactly as over USB.
+- Refused, or no answer within 60 s: the phone closes the connection. A PC that got no `HELLO` waits 2 minutes
+  before connecting to that phone again; after a working session drops, it retries after 2 s.
+
+One PC at a time. A USB connection always wins: the phone closes a Wi-Fi session when a cable link opens,
+and the PC ends a Wi-Fi session when a phone is plugged in so the cable can take over.
+
+**Phase 1 limits (to be fixed before this leaves beta):** no pairing and no encryption. Approval is per
+connection (remembered by IP until the phone's MyCam service stops), and the video isn't encrypted on the
+network. Phase 2 adds one-time pairing and TLS (IMPROVEMENTS.md 11).

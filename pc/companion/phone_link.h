@@ -1,6 +1,7 @@
 #pragma once
 #include <atomic>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <set>
 #include <string>
@@ -35,6 +36,9 @@ struct LinkStatus {
     uint32_t width = 0, height = 0;
     bool lockPaused = false; // Windows is locked or asleep: MyCam keeps the phone camera off.
     proto::CameraInfo camera; // v3: phone video settings + what its camera supports (valid once received).
+    bool wireless = false;        // The current phone is connected over Wi-Fi (else USB).
+    bool wirelessSearch = false;  // "Find phones on Wi-Fi" is on.
+    std::wstring phoneName;       // Wi-Fi phones: the name the phone announced.
 };
 
 // Owns all USB traffic. Run() blocks on the calling (worker) thread until Quit() is called.
@@ -59,6 +63,8 @@ public:
         commands_.push_back({cmd, arg});
     }
     void RequestReconnect() { reconnect_ = true; }
+    // Wireless mode (beta): also look for phones on the local network and connect over Wi-Fi.
+    void SetWireless(bool on) { wireless_ = on; }
     // Pause / resume the camera (the phone stores the choice). Needs a connected phone.
     void RequestPause(bool pause) { pendingPause_ = pause ? 1 : 0; }
     // Windows locked / asleep: keep the phone camera off until unlocked. Independent of RequestPause.
@@ -75,6 +81,21 @@ private:
     void SwitchToAccessory(libusb_device* dev);
     void RunSession(libusb_device* dev, libusb_context* ctx);
     libusb_device* FindAccessory(libusb_context* ctx);
+
+    // Shared by USB and Wi-Fi sessions (all on the worker thread).
+    void BeginSession(bool wireless, const std::string& phoneName);
+    bool SessionLoop(const std::function<void()>& pump); // True if a reconnect was asked for.
+    void LeaveSession();      // Before the link closes: STOP the camera if the companion is quitting.
+    void ResetAfterSession(); // After the link closed.
+    void FeedBytes(const uint8_t* data, size_t size);
+
+    // Wireless (Wi-Fi) transport: UDP discovery, then the same protocol over TCP. PROTOCOL.md "Wireless".
+    void NetScanOnce();
+    bool EnsureUdp();
+    void BroadcastProbe();
+    void RunTcpSession(uintptr_t socket, const std::string& phoneName);
+    bool UsbPhoneArrived(); // During a Wi-Fi session: a phone was plugged in (the cable takes over).
+    bool SendTcp(const uint8_t* data, size_t size);
 
     bool SendCommand(uint8_t cmd, uint8_t arg = 0);
     void HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const uint8_t* payload, uint32_t length);
@@ -99,6 +120,14 @@ private:
     std::atomic<bool> lockPaused_{false};
     Nv12Image pausedImage_, waitingImage_;
     uint64_t lastStatusFrame_ = 0;
+
+    std::atomic<bool> wireless_{false};
+    bool usbReady_ = false;
+    uintptr_t udp_ = ~uintptr_t(0);       // SOCKET for discovery (INVALID_SOCKET when closed).
+    uintptr_t tcp_ = ~uintptr_t(0);       // SOCKET of the current Wi-Fi session.
+    uint64_t lastProbe_ = 0;
+    struct NetPhone { uint16_t port = 0; std::string name; uint64_t lastSeen = 0, retryAfter = 0; };
+    std::map<uint32_t, NetPhone> netPhones_; // By IPv4 address (network order), from discovery answers.
 
     libusb_context* ctx_ = nullptr;       // UsbDk backend: switches phones into accessory mode.
     libusb_context* winusbCtx_ = nullptr; // WinUSB backend: streams from accessory-mode phones (WinUSB-bound).

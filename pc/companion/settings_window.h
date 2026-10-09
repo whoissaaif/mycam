@@ -24,6 +24,8 @@ struct SettingsModel {
     std::function<bool()> fill;
     std::function<void(bool)> setFill;
     std::function<void(uint8_t, uint8_t)> command; // v3 camera command (proto::Command, arg)
+    std::function<bool()> wireless;                // "Find phones on Wi-Fi" (beta)
+    std::function<void(bool)> setWireless;
 };
 
 class SettingsWindow {
