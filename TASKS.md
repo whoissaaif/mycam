@@ -36,6 +36,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [ ] Code-sign the installer and companion [5.3]
 - [ ] Decide public vs. private repo before sharing builds [8]
 - [ ] Play Store assets (512 px icon, feature graphic), if publishing there [7.3]
+- [ ] iPhone support: iOS app + usbmux transport on the PC (future; needs a Mac, an iPhone, Apple Developer account) [9]
 
 ## Done
 

@@ -181,11 +181,52 @@ The UI was built directly in the chosen style and reviewed from screenshots inst
 
 - ✅ GitHub repo (private): https://github.com/whoissaaif/mycam (MIT license).
 - ✅ Commit history uses a GitHub no-reply email; `inspo/` and raw screenshots are excluded.
-- ✅ Release **v1.1.1** with `MyCam-Setup-1.1.1.exe` and `MyCam-1.1.1.apk`.
-- ⏳ Release checklist: bump versions (`app/build.gradle.kts`, `installer/mycam.iss`), run
-  `installer\build.ps1`, build the APK, tag `vX.Y.Z`, then `gh release create`.
+- ✅ Releases **v1.1.1** and **v1.2.0** (installer + APK; 1.2.0 is signed with the release key).
+- ✅ Release checklist in [TASKS.md](TASKS.md#releases).
 - ⏳ Decide public vs. private before sharing (download links and the phone's "get the app" link only
   work for you while the repo is private).
+
+---
+
+## 9. iPhone support (L): ⏳ future
+
+Bring MyCam to iPhone, wired over USB to the same Windows 11 PC app. Planned for after the Android
+version is polished.
+
+**How it would work**
+- iPhones have no Android Open Accessory equivalent. Instead, use Apple's own USB channel: Windows talks
+  to iPhones through Apple Mobile Device Support (installed with Apple's free **Apple Devices** app or
+  iTunes). The iPhone app listens on a TCP port; the PC companion connects to it over the cable through
+  that service, using libimobiledevice's `libusbmuxd` (LGPL-2.1). No jailbreak, no Wi-Fi.
+- iPhone app (Swift / SwiftUI): AVFoundation capture → VideoToolbox hardware H.264 → the existing MyCam
+  wire protocol (`protocol/PROTOCOL.md`), so the PC side decodes it unchanged.
+- PC companion: a new transport next to the USB accessory code (`phone_link.cpp`), picked by phone type.
+
+**What carries over:** the virtual camera DLL, H.264 decoding, pause and lock-pause, status pictures,
+tray and settings window, installer, and the protocol and its tests. Roughly 60% of the PC side.
+
+**Differences from Android (to explain to users)**
+
+| | Android | iPhone |
+|---|---|---|
+| Starting | The app opens itself when plugged in | Open MyCam on the phone each time |
+| Phone locked or app in the background | Keeps streaming | Stops: iOS doesn't let apps use the camera in the background, so the app stays open and keeps the screen awake |
+| PC setup | MyCam installer | MyCam installer + Apple Devices app; "Trust This Computer" on the phone the first time |
+
+**Needs before starting**
+- A Mac with Xcode (iPhone apps can't be built on Windows; a cloud Mac is a fallback).
+- An iPhone for testing.
+- Apple Developer Program ($99/year) for TestFlight / App Store; without it, builds run only on your own
+  phone and expire after 7 days.
+
+**Work items**
+- [ ] iPhone app: capture, encoder, protocol, pause, front/back camera, Aero design in SwiftUI
+- [ ] PC: usbmux transport (detect iPhone, connect, reconnect), installer check for Apple Devices
+- [ ] Installer / docs: Apple Devices requirement and the first-time "Trust" prompt
+- [ ] Testing on real iPhones (lock, background, unplug/replug, both phone types on one PC)
+- [ ] App Store review and listing (privacy text for camera use)
+
+Continuity Camera (Apple's built-in iPhone webcam) only works with Macs, so it doesn't help on Windows.
 
 ---
 
