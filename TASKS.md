@@ -9,13 +9,13 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 
 ## Now
 
-- [ ] Install 1.2.0: on the phone, uninstall the old `com.example.mycam` app once, then install 1.2.0
+- [x] Clean install test: removed everything, installed 1.2.0 from the GitHub release, first-use flow and streaming work
 - [ ] Test the remaining scenarios [2.3]
   - [ ] Pause / Resume from the phone's notification
   - [ ] Pause survives unplug and replug
   - [ ] PC sleep and resume while streaming
   - [ ] Companion crash or kill mid-stream, then restart
-  - [ ] A phone that has never been connected (first-use prompts)
+  - [x] A phone that has never been connected (first-use prompts): passed in the clean install test
   - [ ] Two phones plugged in at once
   - [ ] Phone low-battery / battery-saver mode
 
@@ -34,6 +34,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [ ] Lower latency: GPU decode, fewer copies, latency measurement [3.4]
 - [ ] Screen-reader support for the settings window (UI Automation) [5.2]
 - [ ] Code-sign the installer and companion [5.3]
+- [ ] Uninstaller: remove UsbDk completely (service + UsbDk.sys stay behind after msiexec) [5.3]
+- [ ] Test a clean install on a different PC (Sandbox needs CPU virtualization enabled in firmware) [2.3]
 - [ ] Decide public vs. private repo before sharing builds [8]
 - [ ] Play Store assets (512 px icon, feature graphic), if publishing there [7.3]
 - [ ] iPhone support: iOS app + usbmux transport on the PC (future; needs a Mac, an iPhone, Apple Developer account) [9]

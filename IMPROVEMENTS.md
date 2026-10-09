@@ -14,10 +14,16 @@ Status: ✅ done · 🟡 partly done · ⏳ to do. Day-to-day tracking lives in 
 | Pause / resume (phone and PC) | ✅ Works | 1.1.0, user test 2026-10-09 |
 | Windows locked while streaming | ✅ Pauses, resumes on unlock | Fixed in 1.1.0 (was a privacy issue); user test 2026-10-09 |
 | Install, upgrade, uninstall (installer) | ✅ Works | Tested on this PC, 2026-10-09 |
+| **Clean install** from the GitHub release (no MyCam, no UsbDk, no phone driver binding) | ✅ Works | 1.2.0, 2026-10-09: installer brought UsbDk, first-use phone switch + WinUSB prompt worked, streaming 1080p, 0 decode errors |
+| Signed release APK (R8-shrunk, 1.5 MB) | ✅ Works | 1.2.0 on the phone, back and front camera |
+
+The shipped binaries depend only on DLLs that are part of Windows (checked with `dumpbin`): no Visual C++
+runtime, nothing from the build tools. Windows 11 **N** editions need the Media Feature Pack (video codecs).
+A test on a *different* PC is still worth doing; Windows Sandbox can't run here because CPU virtualization
+is off in this PC's firmware.
 
 Still untested: pause from the phone's **notification**, pause **surviving unplug/replug**, PC sleep and
-resume, killing or crashing the companion mid-stream, two phones plugged in at once, and a phone that has
-never been connected before (the first-use UAC flow).
+resume, killing or crashing the companion mid-stream, and two phones plugged in at once.
 
 ---
 
@@ -115,6 +121,10 @@ Inno Setup wizard with Aero artwork (`installer/`, built by `installer/build.ps1
 needed, registers the camera, offers "Start with Windows", and lists MyCam in Settings → Apps. Upgrades
 close the running companion cleanly; the uninstaller asks before removing UsbDk.
 - ⏳ **Code signing.** Needs a code-signing certificate; `mycam.iss` is ready for it (`/DSIGN`).
+- ⏳ **Remove UsbDk completely.** UsbDk's own uninstaller (`msiexec /x`) unhooks it from USB but leaves its
+  service and `UsbDk.sys` behind, even after a restart (inert, but not clean). When the user chooses
+  "Also remove UsbDk", the uninstaller should also run `sc delete UsbDk` and delete
+  `%WINDIR%\System32\drivers\UsbDk.sys` (found in the clean-install test, 2026-10-09).
 - Licensing: libusb is LGPL-2.1 and statically linked, so anyone given the binaries must also be able to
   get the source. The GitHub repo is private: if you share builds, share the source too (or make the repo
   public).
