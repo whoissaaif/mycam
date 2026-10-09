@@ -16,6 +16,7 @@ Get-Process MyCamCompanion -ErrorAction SilentlyContinue | Stop-Process -Force
 Remove-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'MyCam' -ErrorAction SilentlyContinue
 Remove-Item 'HKCU:\Software\MyCam' -Recurse -ErrorAction SilentlyContinue
 if (Test-Path "$dest\MyCamVCam.dll") { & regsvr32.exe /s /u "$dest\MyCamVCam.dll" }
+& schtasks.exe /Delete /TN 'MyCam phone driver' /F 2>$null | Out-Null
 Restart-Service FrameServer -Force -ErrorAction SilentlyContinue
 Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue
 

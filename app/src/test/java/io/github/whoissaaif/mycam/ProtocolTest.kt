@@ -55,6 +55,15 @@ class ProtocolTest {
                 ).encode(),
             ),
         )
+        val all = Protocol.FPS_30 or Protocol.FPS_60 or Protocol.FPS_120
+        val withModes = Protocol.CameraInfo(
+            Protocol.QUALITY_1080P, 120, 100, 100, 1000, 0, -12, 12, 33,
+            Protocol.CAM_TORCH_AVAILABLE or Protocol.CAM_HAS_60FPS or Protocol.CAM_HAS_4K or Protocol.CAM_HAS_120FPS,
+            1920, 1080, 120, fpsModes = listOf(all, all, Protocol.FPS_30),
+        )
+        assertArrayEquals(golden.getValue("packet.camera_modes"), Protocol.packet(Protocol.TYPE_CAMERA, 0, 0, withModes.encode()))
+        assertEquals(Protocol.FPS_30, withModes.fpsMask(Protocol.QUALITY_4K)) // 4K: 60/120 must not be offered.
+        assertEquals(all, withModes.fpsMask(Protocol.QUALITY_1080P))
     }
 
     @Test
@@ -69,6 +78,7 @@ class ProtocolTest {
             "command.resume" to Protocol.Command(Protocol.CMD_RESUME, 0),
             "command.quality_4k" to Protocol.Command(Protocol.CMD_SET_QUALITY, Protocol.QUALITY_4K),
             "command.fps_60" to Protocol.Command(Protocol.CMD_SET_FPS, 60),
+            "command.fps_120" to Protocol.Command(Protocol.CMD_SET_FPS, 120),
             "command.zoom_2x" to Protocol.Command(Protocol.CMD_SET_ZOOM, 20),
             "command.exposure_m2" to Protocol.Command(Protocol.CMD_SET_EXPOSURE, (-2).toByte().toInt() and 0xFF),
             "command.torch_on" to Protocol.Command(Protocol.CMD_SET_TORCH, 1),

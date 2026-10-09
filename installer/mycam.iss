@@ -5,7 +5,7 @@
 ;   ISCC /DSIGN "/Smycam=signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /a $f" mycam.iss
 
 #ifndef AppVersion
-  #define AppVersion "1.3.1"
+  #define AppVersion "1.3.2"
 #endif
 #ifndef BuildDir
   #define BuildDir "..\pc\build-release\Release"
@@ -67,6 +67,9 @@ Filename: "{sys}\msiexec.exe"; Parameters: "/i ""{app}\redist\{#UsbDkMsi}"" /qn 
     StatusMsg: "Installing the UsbDk USB driver..."; Check: not UsbDkInstalled; Flags: runhidden waituntilterminated
 Filename: "{sys}\regsvr32.exe"; Parameters: "/s ""{app}\MyCamVCam.dll"""; \
     StatusMsg: "Registering the MyCam camera..."; Flags: runhidden waituntilterminated
+; Lets new phones get Windows' WinUSB driver later without a UAC prompt (a SYSTEM task users may only start).
+Filename: "{app}\MyCamCompanion.exe"; Parameters: "--register-task"; \
+    StatusMsg: "Setting up phone drivers..."; Flags: runhidden waituntilterminated
 Filename: "{app}\MyCamCompanion.exe"; Parameters: "--settings"; Description: "Open MyCam now"; \
     Flags: nowait postinstall skipifsilent runasoriginaluser
 
@@ -74,6 +77,7 @@ Filename: "{app}\MyCamCompanion.exe"; Parameters: "--settings"; Description: "Op
 Filename: "{app}\MyCamCompanion.exe"; Parameters: "--quit"; RunOnceId: "QuitMyCam"; Flags: runhidden waituntilterminated
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM MyCamCompanion.exe"; RunOnceId: "KillMyCam"; Flags: runhidden waituntilterminated
 Filename: "{sys}\regsvr32.exe"; Parameters: "/s /u ""{app}\MyCamVCam.dll"""; RunOnceId: "UnregisterMyCam"; Flags: runhidden waituntilterminated
+Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""MyCam phone driver"" /F"; RunOnceId: "DeleteDriverTask"; Flags: runhidden waituntilterminated
 ; Windows' camera service may still have the DLL loaded; restart it so the file can be deleted.
 Filename: "{sys}\net.exe"; Parameters: "stop FrameServer /y"; RunOnceId: "StopFrameServer"; Flags: runhidden waituntilterminated
 

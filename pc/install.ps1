@@ -49,6 +49,9 @@ if (Test-Path "$dest\MyCamVCam.dll") {
 Copy-Item "$BuildDir\MyCamCompanion.exe", "$BuildDir\MyCamVCam.dll" $dest -Force
 $r = Start-Process regsvr32.exe -ArgumentList "/s `"$dest\MyCamVCam.dll`"" -Wait -PassThru
 if ($r.ExitCode -ne 0) { throw "Registering MyCamVCam.dll failed (regsvr32 exit $($r.ExitCode))." }
+# Scheduled task that sets up new phones' USB driver without a UAC prompt.
+$r = Start-Process "$dest\MyCamCompanion.exe" -ArgumentList '--register-task' -Wait -PassThru
+if ($r.ExitCode -ne 0) { Write-Warning 'Could not register the phone driver task; new phones will ask for admin once.' }
 
 # --- 3. Autostart + launch ------------------------------------------------------------------------
 Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'MyCam' -Value "`"$dest\MyCamCompanion.exe`""

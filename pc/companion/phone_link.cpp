@@ -274,7 +274,9 @@ void PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx) {
 
     // Keep several reads queued with no timeout. Timed-out reads get cancelled, and with UsbDk a
     // cancelled read can drop bytes that were already in flight, which corrupts the stream.
-    constexpr int kQueued = 4;
+    // Frames are decoded inside the read callback, so queue enough reads (256 KB) to hold a whole 4K frame:
+    // otherwise the phone's write stalls while a frame decodes, and that delay backs up into its camera.
+    constexpr int kQueued = 16;
     constexpr int kReadSize = 16384; // Matches the phone's accessory request size.
     std::vector<std::vector<uint8_t>> buffers(kQueued, std::vector<uint8_t>(kReadSize));
     std::vector<libusb_transfer*> transfers;

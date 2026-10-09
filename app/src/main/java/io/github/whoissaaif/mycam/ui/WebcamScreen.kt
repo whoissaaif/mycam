@@ -60,6 +60,7 @@ fun WebcamScreen(
     onPause: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
     onCommand: (Int, Int) -> Unit = { _, _ -> },
+    onDim: () -> Unit = {},
 ) {
     val view = describe(state)
     Column(modifier.fillMaxSize().background(Aero.Body)) {
@@ -87,6 +88,10 @@ fun WebcamScreen(
                     Text(view.detail, style = MaterialTheme.typography.bodyMedium, color = Aero.Subtle)
                 }
             }
+            heatWarning(state.thermal)?.let { (text, _) ->
+                Spacer(Modifier.height(12.dp))
+                Text(text, style = MaterialTheme.typography.bodyMedium, color = Aero.PausedDark)
+            }
 
             Spacer(Modifier.height(28.dp))
             if (state.paused) {
@@ -101,6 +106,13 @@ fun WebcamScreen(
                     description = stringResource(R.string.action_pause_detail),
                     onClick = { onPause(true) },
                 ) { GlossyBadge(BadgeKind.Pause, 40.dp) }
+            }
+            if (state.streaming && !state.paused) {
+                CommandLink(
+                    title = stringResource(R.string.action_dim_title),
+                    description = stringResource(R.string.action_dim_detail),
+                    onClick = onDim,
+                ) { GlossyBadge(BadgeKind.Dim, 40.dp) }
             }
 
             Spacer(Modifier.height(32.dp))

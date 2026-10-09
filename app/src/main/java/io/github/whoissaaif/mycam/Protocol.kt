@@ -49,7 +49,7 @@ object Protocol {
     const val CMD_PAUSE = 6 // v2
     const val CMD_RESUME = 7 // v2
     const val CMD_SET_QUALITY = 8  // v3: arg QUALITY_*
-    const val CMD_SET_FPS = 9      // v3: arg 30 or 60
+    const val CMD_SET_FPS = 9      // v3: arg 30 or 60 (120 since 1.3.2)
     const val CMD_SET_ZOOM = 10    // v3: arg zoom x10 (5 = 0.5x .. 255 = 25.5x)
     const val CMD_SET_EXPOSURE = 11 // v3: arg signed EV steps (int8)
     const val CMD_SET_TORCH = 12   // v3: arg 0 off, 1 on
@@ -66,6 +66,12 @@ object Protocol {
     const val CAM_HAS_60FPS = 0x08
     const val CAM_HAS_4K = 0x10
     const val CAM_HAS_AUTOFOCUS = 0x20
+    const val CAM_HAS_120FPS = 0x40 // 1.3.2
+
+    // CAMERA frame-rate masks (one byte per quality, 1.3.2)
+    const val FPS_30 = 0x01
+    const val FPS_60 = 0x02
+    const val FPS_120 = 0x04
 
     fun packet(type: Int, flags: Int, ptsUs: Long, payload: ByteArray, offset: Int = 0, length: Int = payload.size): ByteArray {
         val buf = ByteBuffer.allocate(HEADER_SIZE + length).order(ByteOrder.BIG_ENDIAN)
@@ -81,19 +87,28 @@ object Protocol {
 
     data class Command(val cmd: Int, val arg: Int)
 
-    /** Phone camera settings and what the active camera supports (TYPE_CAMERA payload, 18 bytes). */
+    /**
+     * Phone camera settings and what the camera supports (TYPE_CAMERA payload: 18 bytes, plus since 1.3.2 three
+     * FPS_* masks saying which frame rates work at 720p, 1080p and 4K; older PCs ignore the extra bytes).
+     */
     data class CameraInfo(
         val quality: Int, val fps: Int,
         val zoomX100: Int, val zoomMinX100: Int, val zoomMaxX100: Int,
         val ev: Int, val evMin: Int, val evMax: Int, val evStepX100: Int,
         val flags: Int, val width: Int, val height: Int, val actualFps: Int,
+        val fpsModes: List<Int> = emptyList(),
     ) {
-        fun encode(): ByteArray = ByteBuffer.allocate(18).order(ByteOrder.BIG_ENDIAN)
+        fun encode(): ByteArray = ByteBuffer.allocate(18 + fpsModes.size).order(ByteOrder.BIG_ENDIAN)
             .put(quality.toByte()).put(fps.toByte())
             .putShort(zoomX100.toShort()).putShort(zoomMinX100.toShort()).putShort(zoomMaxX100.toShort())
             .put(ev.toByte()).put(evMin.toByte()).put(evMax.toByte()).put(evStepX100.toByte())
             .put(flags.toByte()).putShort(width.toShort()).putShort(height.toShort()).put(actualFps.toByte())
+            .apply { fpsModes.forEach { put(it.toByte()) } }
             .array()
+
+        /** FPS_* bits that work at [quality]; derived from the older flags if the masks are missing. */
+        fun fpsMask(quality: Int): Int = fpsModes.getOrNull(quality)
+            ?: (FPS_30 or (if (flags and CAM_HAS_60FPS != 0) FPS_60 else 0) or (if (flags and CAM_HAS_120FPS != 0) FPS_120 else 0))
     }
 
     /** Splits the PC's byte stream into commands, skipping garbage until the next valid magic. */

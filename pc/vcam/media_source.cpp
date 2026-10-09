@@ -12,10 +12,11 @@ constexpr GUID kPinNameVideoCapture = {0xfb6c4281, 0x0353, 0x11d1, {0x90, 0x5f, 
 
 constexpr LONGLONG kSecond = 10'000'000; // 100 ns units
 
-// Offered to apps; the first is the default. 4K and 60 fps match the phone qualities (1.3).
+// Offered to apps; the first is the default. 4K, 60 and 120 fps match the phone modes (1.3, 120 in 1.3.2).
 struct Format { UINT32 width, height, fps; };
 constexpr Format kFormats[] = {
-    {1920, 1080, 30}, {1280, 720, 30}, {3840, 2160, 30}, {1920, 1080, 60}, {1280, 720, 60}, {640, 480, 30}, {640, 360, 30},
+    {1920, 1080, 30}, {1280, 720, 30}, {3840, 2160, 30}, {1920, 1080, 60}, {1280, 720, 60}, {1920, 1080, 120},
+    {1280, 720, 120}, {640, 480, 30}, {640, 360, 30},
 };
 
 HRESULT CreateVideoType(UINT32 width, UINT32 height, UINT32 fps, IMFMediaType** out) {

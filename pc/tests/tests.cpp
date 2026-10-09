@@ -109,6 +109,7 @@ void TestGoldenCommands(std::map<std::string, Bytes>& golden) {
         {"command.resume", proto::kCmdResume, 0},
         {"command.quality_4k", proto::kCmdSetQuality, proto::kQuality4K},
         {"command.fps_60", proto::kCmdSetFps, 60},
+        {"command.fps_120", proto::kCmdSetFps, 120},
         {"command.zoom_2x", proto::kCmdSetZoom, 20},
         {"command.exposure_m2", proto::kCmdSetExposure, uint8_t(int8_t(-2))},
         {"command.torch_on", proto::kCmdSetTorch, 1},
@@ -133,6 +134,18 @@ void TestGoldenCamera(std::map<std::string, Bytes>& golden) {
     CHECK(c.ev == 0 && c.evMin == -12 && c.evMax == 12 && c.evStepX100 == 33);
     CHECK(c.flags == (proto::kCamTorchAvailable | proto::kCamHas60Fps | proto::kCamHas4K));
     CHECK(c.width == 1920 && c.height == 1080 && c.actualFps == 30);
+    // Pre-1.3.2 payload: no per-quality masks, so they come from the overall flags (60 yes, 120 no).
+    CHECK(!c.hasFpsModes && proto::FpsMask(c, proto::kQuality4K) == (proto::kFps30Bit | proto::kFps60Bit));
+
+    payloads.clear();
+    packets = ParseAll(parser, golden["packet.camera_modes"], &payloads);
+    proto::CameraInfo m;
+    CHECK(packets.size() == 1 && proto::ParseCameraInfo(payloads[0].data(), uint32_t(payloads[0].size()), &m));
+    CHECK(m.fps == 120 && m.actualFps == 120 && (m.flags & proto::kCamHas120Fps));
+    CHECK(m.hasFpsModes);
+    CHECK(proto::FpsMask(m, proto::kQuality720p) == (proto::kFps30Bit | proto::kFps60Bit | proto::kFps120Bit));
+    CHECK(proto::FpsMask(m, proto::kQuality1080p) == (proto::kFps30Bit | proto::kFps60Bit | proto::kFps120Bit));
+    CHECK(proto::FpsMask(m, proto::kQuality4K) == proto::kFps30Bit); // 4K: 30 only, so 60/120 stay disabled.
 }
 
 void TestParserSplitsAndBatches(std::map<std::string, Bytes>& golden) {

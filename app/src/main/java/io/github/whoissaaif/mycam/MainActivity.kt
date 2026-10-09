@@ -11,16 +11,24 @@ import android.hardware.usb.UsbAccessory
 import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.Bundle
+import android.os.SystemClock
+import android.view.MotionEvent
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
+import io.github.whoissaaif.mycam.ui.DimScreen
 import io.github.whoissaaif.mycam.ui.WebcamScreen
 import io.github.whoissaaif.mycam.ui.theme.MycamTheme
+import kotlinx.coroutines.delay
 
 class MainActivity : ComponentActivity() {
 
@@ -29,6 +37,11 @@ class MainActivity : ComponentActivity() {
 
     /** Whether we already asked for permissions this launch (avoid re-asking on every new intent). */
     private var askedOnLaunch = false
+
+    /** Dimmed streaming screen (IMPROVEMENTS.md 4.1). */
+    private var dimmed by mutableStateOf(false)
+    private var lastTouch = SystemClock.elapsedRealtime()
+    private var swallowGesture = false
 
     private val requestPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -61,10 +74,45 @@ class MainActivity : ComponentActivity() {
         setContent {
             MycamTheme {
                 val state by WebcamService.state.collectAsState()
-                WebcamScreen(state = state, onFacing = ::setFacing, onPause = ::setPaused, onCommand = ::sendCommand)
+                val live = state.streaming && !state.paused
+                // Dim once the phone has been left alone for a while during a stream; any touch wakes it.
+                LaunchedEffect(live) {
+                    if (!live) { dimmed = false; return@LaunchedEffect }
+                    while (true) {
+                        if (SystemClock.elapsedRealtime() - lastTouch >= DIM_AFTER_MS) dimmed = true
+                        delay(1000)
+                    }
+                }
+                LaunchedEffect(dimmed) {
+                    window.attributes = window.attributes.apply {
+                        screenBrightness = if (dimmed) DIM_BRIGHTNESS else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
+                    }
+                }
+                if (dimmed) {
+                    DimScreen(state)
+                } else {
+                    WebcamScreen(
+                        state = state, onFacing = ::setFacing, onPause = ::setPaused, onCommand = ::sendCommand,
+                        onDim = { dimmed = true },
+                    )
+                }
             }
         }
         handleIntent(intent)
+    }
+
+    /** Any touch counts as activity; while dimmed, the whole gesture only wakes the screen. */
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        lastTouch = SystemClock.elapsedRealtime()
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN && dimmed) {
+            dimmed = false
+            swallowGesture = true
+        }
+        if (swallowGesture) {
+            if (ev.actionMasked == MotionEvent.ACTION_UP || ev.actionMasked == MotionEvent.ACTION_CANCEL) swallowGesture = false
+            return true
+        }
+        return super.dispatchTouchEvent(ev)
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -196,5 +244,7 @@ class MainActivity : ComponentActivity() {
     companion object {
         private const val ACTION_USB_PERMISSION = "io.github.whoissaaif.mycam.USB_PERMISSION"
         const val ACCESSORY_MANUFACTURER = "MyCam"
+        private const val DIM_AFTER_MS = 30_000L
+        private const val DIM_BRIGHTNESS = 0.02f
     }
 }

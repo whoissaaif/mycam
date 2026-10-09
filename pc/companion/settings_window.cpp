@@ -32,14 +32,15 @@ constexpr UINT32 kLinkHot = 0x3399FF;
 constexpr UINT32 kRule = 0xE2E2E2;
 
 // Layout in DIPs.
-constexpr float kWidth = 420, kHeight = 720;
+constexpr float kWidth = 420, kHeight = 756;
 constexpr float kTitleH = 30, kFrame = 7, kCommandH = 46;
 
 enum Id {
     kNone = 0, kPause, kBack, kFront,
-    kQ720, kQ1080, kQ4K, kFps60, kZoomOut, kZoomIn, kZoomReset, kEvDown, kEvUp, kFocusAuto, kFocusLock, kTorch, kAuto,
-    kMirror, kFill, kAutostart, kReconnect, kOpenLog, kClose, kTitleClose };
-enum class Kind { Segment, Checkbox, Link, Button, TitleClose };
+    kQ720, kQ1080, kQ4K, kFps30, kFps60, kFps120, kZoomOut, kZoomIn, kZoomReset, kEvDown, kEvUp, kFocusAuto, kFocusLock,
+    kTorch, kAuto,
+    kMirror, kFill, kAutostart, kReconnect, kOpenLog, kClose, kTitleClose, kTitleMin };
+enum class Kind { Segment, Checkbox, Link, Button, TitleClose, TitleMin };
 
 struct Element {
     Id id;
@@ -95,6 +96,7 @@ struct SettingsWindow::Impl {
         elements.clear();
         const float x = kFrame + 20;
         elements.push_back({kTitleClose, Kind::TitleClose, Rect(kWidth - kFrame - 45, 1, 43, 19), L""});
+        elements.push_back({kTitleMin, Kind::TitleMin, Rect(kWidth - kFrame - 45 - 27, 1, 28, 19), L""});
         elements.push_back({kPause, Kind::Button, Rect(kWidth - kFrame - 20 - 92, kTitleH + 22, 92, 28), L"Pause"});
         elements.push_back({kBack, Kind::Segment, Rect(x, 164, 150, 28), L"Back camera"});
         elements.push_back({kFront, Kind::Segment, Rect(x + 149, 164, 150, 28), L"Front camera"});
@@ -102,24 +104,26 @@ struct SettingsWindow::Impl {
         elements.push_back({kQ720, Kind::Segment, Rect(x, 246, 100, 28), L"720p"});
         elements.push_back({kQ1080, Kind::Segment, Rect(x + 99, 246, 100, 28), L"1080p"});
         elements.push_back({kQ4K, Kind::Segment, Rect(x + 198, 246, 100, 28), L"4K"});
-        elements.push_back({kFps60, Kind::Checkbox, Rect(x, 282, 300, 20), L"60 frames per second (smoother)"});
-        // Camera controls (y 314). Values are drawn between the buttons in Paint().
+        elements.push_back({kFps30, Kind::Segment, Rect(x, 284, 100, 26), L"30 fps"});
+        elements.push_back({kFps60, Kind::Segment, Rect(x + 99, 284, 100, 26), L"60 fps"});
+        elements.push_back({kFps120, Kind::Segment, Rect(x + 198, 284, 100, 26), L"120 fps"});
+        // Camera controls (y 350). Values are drawn between the buttons in Paint().
         const float cx = x + 120;
-        elements.push_back({kZoomOut, Kind::Button, Rect(cx, 338, 32, 26), L"−"});
-        elements.push_back({kZoomIn, Kind::Button, Rect(cx + 102, 338, 32, 26), L"+"});
-        elements.push_back({kZoomReset, Kind::Button, Rect(cx + 144, 338, 44, 26), L"1×"});
-        elements.push_back({kEvDown, Kind::Button, Rect(cx, 374, 32, 26), L"−"});
-        elements.push_back({kEvUp, Kind::Button, Rect(cx + 102, 374, 32, 26), L"+"});
-        elements.push_back({kFocusAuto, Kind::Segment, Rect(cx, 410, 70, 26), L"Auto"});
-        elements.push_back({kFocusLock, Kind::Segment, Rect(cx + 69, 410, 70, 26), L"Lock"});
-        elements.push_back({kTorch, Kind::Checkbox, Rect(x, 446, 300, 20), L"Torch (phone light)"});
-        elements.push_back({kAuto, Kind::Button, Rect(kWidth - kFrame - 20 - 56, 309, 56, 23), L"Auto"});
-        // Picture (y 494), General (y 578).
-        elements.push_back({kMirror, Kind::Checkbox, Rect(x, 518, 300, 20), L"Mirror the image"});
-        elements.push_back({kFill, Kind::Checkbox, Rect(x, 542, 330, 20), L"Fill the frame (crop instead of black bars)"});
-        elements.push_back({kAutostart, Kind::Checkbox, Rect(x, 602, 300, 20), L"Start MyCam with Windows"});
-        elements.push_back({kReconnect, Kind::Link, Rect(x, 636, 110, 20), L"Reconnect phone"});
-        elements.push_back({kOpenLog, Kind::Link, Rect(x + 130, 636, 110, 20), L"Open log folder"});
+        elements.push_back({kZoomOut, Kind::Button, Rect(cx, 374, 32, 26), L"−"});
+        elements.push_back({kZoomIn, Kind::Button, Rect(cx + 102, 374, 32, 26), L"+"});
+        elements.push_back({kZoomReset, Kind::Button, Rect(cx + 144, 374, 44, 26), L"1×"});
+        elements.push_back({kEvDown, Kind::Button, Rect(cx, 410, 32, 26), L"−"});
+        elements.push_back({kEvUp, Kind::Button, Rect(cx + 102, 410, 32, 26), L"+"});
+        elements.push_back({kFocusAuto, Kind::Segment, Rect(cx, 446, 70, 26), L"Auto"});
+        elements.push_back({kFocusLock, Kind::Segment, Rect(cx + 69, 446, 70, 26), L"Lock"});
+        elements.push_back({kTorch, Kind::Checkbox, Rect(x, 482, 300, 20), L"Torch (phone light)"});
+        elements.push_back({kAuto, Kind::Button, Rect(kWidth - kFrame - 20 - 56, 345, 56, 23), L"Auto"});
+        // Picture (y 530), General (y 614).
+        elements.push_back({kMirror, Kind::Checkbox, Rect(x, 554, 300, 20), L"Mirror the image"});
+        elements.push_back({kFill, Kind::Checkbox, Rect(x, 578, 330, 20), L"Fill the frame (crop instead of black bars)"});
+        elements.push_back({kAutostart, Kind::Checkbox, Rect(x, 638, 300, 20), L"Start MyCam with Windows"});
+        elements.push_back({kReconnect, Kind::Link, Rect(x, 672, 110, 20), L"Reconnect phone"});
+        elements.push_back({kOpenLog, Kind::Link, Rect(x + 130, 672, 110, 20), L"Open log folder"});
         const float bottom = kHeight - kFrame;
         elements.push_back({kClose, Kind::Button, Rect(kWidth - kFrame - 12 - 86, bottom - kCommandH + 11, 86, 24), L"Close"});
     }
@@ -135,6 +139,13 @@ struct SettingsWindow::Impl {
         return s.state >= LinkState::Idle && !s.lockPaused;
     }
 
+    static int EffectiveFps(const proto::CameraInfo& c) {
+        const uint8_t mask = c.width > 0 ? proto::FpsMask(c, c.quality) : proto::kFps30Bit;
+        if (c.fps >= 120 && (mask & proto::kFps120Bit)) return 120;
+        if (c.fps >= 60 && (mask & proto::kFps60Bit)) return 60;
+        return 30;
+    }
+
     // Whether a control can be used right now (connected phone, and the phone's camera supports it).
     bool Enabled(Id id) const {
         const LinkStatus s = model->status();
@@ -145,7 +156,10 @@ struct SettingsWindow::Impl {
         case kPause: return PauseEnabled();
         case kQ720: case kQ1080: return connected;
         case kQ4K: return connected && (!known || (c.flags & proto::kCamHas4K));
-        case kFps60: return connected && (!known || (c.flags & proto::kCamHas60Fps));
+        // Frame rates: only what the phone reports working at the current quality (30 until it has reported).
+        case kFps30: return connected;
+        case kFps60: return known && (proto::FpsMask(c, c.quality) & proto::kFps60Bit);
+        case kFps120: return known && (proto::FpsMask(c, c.quality) & proto::kFps120Bit);
         case kZoomOut: return known && c.zoomX100 > c.zoomMinX100;
         case kZoomIn: return known && c.zoomX100 < c.zoomMaxX100;
         case kZoomReset: return known && c.zoomX100 != 100 && c.zoomMinX100 <= 100 && c.zoomMaxX100 >= 100;
@@ -284,6 +298,29 @@ struct SettingsWindow::Impl {
         cross(Solid(Rgb(0xFFFFFF)).Get(), 2.0f);
     }
 
+    // Win7 caption "minimize": clear glass that turns light blue on hover, with a white dash near the bottom.
+    // It sits flush against the red close button, so only its left corners are rounded.
+    void DrawTitleMin(const Element& e) {
+        const D2D1_RECT_F r = e.rect;
+        const bool isHot = hot == e.id, isDown = pressed == e.id && isHot;
+        auto fill = isDown ? Vertical(r.top, r.bottom, {{0.f, Rgb(0x9DB9D9)}, {0.5f, Rgb(0x5E89BC)}, {0.51f, Rgb(0x2E5E98)}, {1.f, Rgb(0x5FA0D6)}})
+                  : isHot  ? Vertical(r.top, r.bottom, {{0.f, Rgb(0xD6E7F8)}, {0.5f, Rgb(0xA6C7EA)}, {0.51f, Rgb(0x6E9FD6)}, {1.f, Rgb(0xA9DDF8)}})
+                           : Vertical(r.top, r.bottom, {{0.f, Rgb(0xE3ECF6, 0.9f)}, {0.5f, Rgb(0xC2D5EC, 0.85f)}, {0.51f, Rgb(0xA4BEDF, 0.85f)}, {1.f, Rgb(0xC5DAF0, 0.9f)}});
+        // Rounded on the left only: draw a rounded rect wider than the button, clipped to the button.
+        rt->PushAxisAlignedClip(r, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+        D2D1_ROUNDED_RECT rr = {D2D1::RectF(r.left, r.top, r.right + 6, r.bottom), 3.5f, 3.5f};
+        rt->FillRoundedRectangle(rr, fill.Get());
+        rt->DrawRoundedRectangle(rr, Solid(Rgb(0x2A4A70, 0.85f)).Get());
+        D2D1_ROUNDED_RECT inner = {D2D1::RectF(r.left + 1, r.top + 1, r.right + 6, r.bottom - 1), 2.5f, 2.5f};
+        rt->DrawRoundedRectangle(inner, Solid(D2D1::ColorF(1, 1, 1, 0.5f)).Get());
+        rt->PopAxisAlignedClip();
+
+        // White dash with a dark outline, low in the button like Windows 7's.
+        const float cx = (r.left + r.right) / 2, y = r.bottom - 6.5f;
+        rt->FillRectangle(D2D1::RectF(cx - 5.5f, y - 2.5f, cx + 5.5f, y + 2.f), Solid(Rgb(0x1E3550, 0.85f)).Get());
+        rt->FillRectangle(D2D1::RectF(cx - 4.5f, y - 1.5f, cx + 4.5f, y + 1.f), Solid(Rgb(0xFFFFFF)).Get());
+    }
+
     // Aero push button: two-tone gloss split at the middle (IMPROVEMENTS.md 7.2 button tokens).
     void DrawAeroButton(D2D1_RECT_F r, const std::wstring& label, bool isHot, bool isDown, bool selected,
                         bool enabled = true) {
@@ -373,21 +410,21 @@ struct SettingsWindow::Impl {
         const bool known = status.state >= LinkState::Idle && c.valid && c.width > 0;
         const float x = kFrame + 20, cx = x + 120;
         const auto ink = Rgb(known ? kText : 0x838383);
-        Text(L"Zoom", fontBody.Get(), Rect(x, 338, 110, 26), ink);
-        Text(L"Brightness", fontBody.Get(), Rect(x, 374, 110, 26), ink);
-        Text(L"Focus", fontBody.Get(), Rect(x, 410, 110, 26), ink);
+        Text(L"Zoom", fontBody.Get(), Rect(x, 374, 110, 26), ink);
+        Text(L"Brightness", fontBody.Get(), Rect(x, 410, 110, 26), ink);
+        Text(L"Focus", fontBody.Get(), Rect(x, 446, 110, 26), ink);
         wchar_t buf[32];
         if (known) {
             swprintf_s(buf, L"%.1f×", c.zoomX100 / 100.0);
-            Text(buf, fontBody.Get(), Rect(cx + 32, 338, 70, 26), ink, DWRITE_TEXT_ALIGNMENT_CENTER);
+            Text(buf, fontBody.Get(), Rect(cx + 32, 374, 70, 26), ink, DWRITE_TEXT_ALIGNMENT_CENTER);
             const double ev = c.ev * c.evStepX100 / 100.0;
             swprintf_s(buf, L"%s%.1f EV", ev > 0 ? L"+" : L"", ev);
-            Text(c.evMax > c.evMin ? buf : L"—", fontBody.Get(), Rect(cx + 32, 374, 70, 26), ink, DWRITE_TEXT_ALIGNMENT_CENTER);
-            swprintf_s(buf, L"Now %u×%u at %u fps", c.width, c.height, c.actualFps);
-            Text(buf, fontBody.Get(), Rect(kWidth - kFrame - 20 - 170, 282, 170, 20), Rgb(kSubtle), DWRITE_TEXT_ALIGNMENT_TRAILING);
+            Text(c.evMax > c.evMin ? buf : L"—", fontBody.Get(), Rect(cx + 32, 410, 70, 26), ink, DWRITE_TEXT_ALIGNMENT_CENTER);
+            swprintf_s(buf, L"Now: %u×%u at %u fps", c.width, c.height, c.actualFps);
+            Text(buf, fontBody.Get(), Rect(x, 316, 300, 20), Rgb(kSubtle)); // Own row under the frame rates.
         } else {
-            Text(L"—", fontBody.Get(), Rect(cx + 32, 338, 70, 26), ink, DWRITE_TEXT_ALIGNMENT_CENTER);
             Text(L"—", fontBody.Get(), Rect(cx + 32, 374, 70, 26), ink, DWRITE_TEXT_ALIGNMENT_CENTER);
+            Text(L"—", fontBody.Get(), Rect(cx + 32, 410, 70, 26), ink, DWRITE_TEXT_ALIGNMENT_CENTER);
             Text(L"Controls appear once the phone camera has started.", fontBody.Get(), Rect(x, 466, 330, 20), Rgb(kSubtle));
         }
     }
@@ -441,9 +478,9 @@ struct SettingsWindow::Impl {
 
         SectionHeading(L"Camera", 140);
         SectionHeading(L"Video", 222);
-        SectionHeading(L"Camera controls", 314);
-        SectionHeading(L"Picture", 494);
-        SectionHeading(L"General", 578);
+        SectionHeading(L"Camera controls", 350);
+        SectionHeading(L"Picture", 530);
+        SectionHeading(L"General", 614);
         DrawControlValues(status);
 
         const bool front = status.facing == proto::kFacingFront;
@@ -451,6 +488,7 @@ struct SettingsWindow::Impl {
             const bool isHot = hot == e.id, isDown = pressed == e.id && isHot;
             switch (e.kind) {
             case Kind::TitleClose: DrawTitleClose(e); break;
+            case Kind::TitleMin: DrawTitleMin(e); break;
             case Kind::Segment: {
                 const proto::CameraInfo& c = status.camera;
                 bool selected = false;
@@ -459,6 +497,10 @@ struct SettingsWindow::Impl {
                 case kQ720: selected = c.valid && c.quality == proto::kQuality720p; break;
                 case kQ1080: selected = c.valid && c.quality == proto::kQuality1080p; break;
                 case kQ4K: selected = c.valid && c.quality == proto::kQuality4K; break;
+                // What this quality will run at: the chosen rate, or the best working one below it.
+                case kFps30: selected = c.valid && EffectiveFps(c) == 30; break;
+                case kFps60: selected = c.valid && EffectiveFps(c) == 60; break;
+                case kFps120: selected = c.valid && EffectiveFps(c) == 120; break;
                 case kFocusAuto: selected = c.valid && !(c.flags & proto::kCamFocusLocked); break;
                 case kFocusLock: selected = c.valid && (c.flags & proto::kCamFocusLocked); break;
                 default: break;
@@ -471,16 +513,9 @@ struct SettingsWindow::Impl {
                 const proto::CameraInfo& c = status.camera;
                 bool checked = e.id == kMirror ? model->mirror()
                              : e.id == kFill   ? model->fill()
-                             : e.id == kFps60  ? (c.valid && c.fps >= 60)
                              : e.id == kTorch  ? (c.valid && (c.flags & proto::kCamTorchOn))
                                                : model->autostart();
-                if (e.id == kFps60 && c.valid && c.width > 0 && !(c.flags & proto::kCamHas60Fps)) {
-                    Element unsupported = e; // Say why it's off rather than leaving a silent gray box.
-                    unsupported.text = L"60 fps (not supported by this phone)";
-                    DrawCheckbox(unsupported, false, false);
-                } else {
-                    DrawCheckbox(e, checked, Enabled(e.id));
-                }
+                DrawCheckbox(e, checked, Enabled(e.id));
                 break;
             }
             case Kind::Link: DrawLink(e); break;
@@ -515,7 +550,9 @@ struct SettingsWindow::Impl {
         case kQ720: model->command(proto::kCmdSetQuality, proto::kQuality720p); break;
         case kQ1080: model->command(proto::kCmdSetQuality, proto::kQuality1080p); break;
         case kQ4K: model->command(proto::kCmdSetQuality, proto::kQuality4K); break;
-        case kFps60: model->command(proto::kCmdSetFps, model->status().camera.fps >= 60 ? 30 : 60); break;
+        case kFps30: model->command(proto::kCmdSetFps, 30); break;
+        case kFps60: model->command(proto::kCmdSetFps, 60); break;
+        case kFps120: model->command(proto::kCmdSetFps, 120); break;
         case kZoomOut: case kZoomIn: case kZoomReset: {
             const proto::CameraInfo c = model->status().camera;
             double z = id == kZoomReset ? 1.0 : c.zoomX100 / 100.0 * (id == kZoomIn ? 1.25 : 0.8);
@@ -539,13 +576,14 @@ struct SettingsWindow::Impl {
         case kOpenLog: model->openLogFolder(); break;
         case kClose:
         case kTitleClose: DestroyWindow(hwnd); return;
+        case kTitleMin: ShowWindow(hwnd, SW_MINIMIZE); return;
         default: return;
         }
         InvalidateRect(hwnd, nullptr, FALSE);
     }
 
     void MoveFocus(int step) {
-        static const Id order[] = {kPause, kBack, kFront, kQ720, kQ1080, kQ4K, kFps60, kZoomOut, kZoomIn, kZoomReset,
+        static const Id order[] = {kPause, kBack, kFront, kQ720, kQ1080, kQ4K, kFps30, kFps60, kFps120, kZoomOut, kZoomIn, kZoomReset,
                                    kEvDown, kEvUp, kFocusAuto, kFocusLock, kTorch, kAuto, kMirror, kFill, kAutostart,
                                    kReconnect, kOpenLog, kClose};
         constexpr int n = int(sizeof(order) / sizeof(order[0]));
@@ -570,7 +608,7 @@ struct SettingsWindow::Impl {
             POINT pt = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
             ScreenToClient(hwnd, &pt);
             const float x = pt.x / scale, y = pt.y / scale;
-            if (y < kTitleH && HitTest(x, y) != kTitleClose) return HTCAPTION;
+            if (y < kTitleH && HitTest(x, y) != kTitleClose && HitTest(x, y) != kTitleMin) return HTCAPTION;
             return HTCLIENT;
         }
         case WM_PAINT: {
@@ -621,7 +659,7 @@ struct SettingsWindow::Impl {
             float x, y;
             ToDips(lp, &x, &y);
             pressed = HitTest(x, y);
-            if (pressed != kNone && pressed != kTitleClose) focus = pressed;
+            if (pressed != kNone && pressed != kTitleClose && pressed != kTitleMin) focus = pressed;
             keyboardCues = false;
             SetCapture(hwnd);
             InvalidateRect(hwnd, nullptr, FALSE);

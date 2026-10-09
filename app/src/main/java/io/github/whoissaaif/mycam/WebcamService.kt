@@ -52,12 +52,15 @@ class WebcamService : Service() {
         val facing: Int = Protocol.FACING_BACK,
         val resolution: String = "",
         val error: String? = null,
+        /** PowerManager.THERMAL_STATUS_* (0 = none); the UI warns from MODERATE up. */
+        val thermal: Int = 0,
     )
 
     private lateinit var cameraThread: HandlerThread
     private lateinit var camera: Handler
     private var streamer: CameraStreamer? = null
     private var orientationListener: OrientationEventListener? = null
+    private var thermalListener: Any? = null // PowerManager.OnThermalStatusChangedListener (API 29+).
     private var wakeLock: PowerManager.WakeLock? = null
 
     private var accessory: UsbAccessory? = null
@@ -79,6 +82,8 @@ class WebcamService : Service() {
 
     // Adaptive streaming: keep the bitrate within what the USB link can carry (camera thread only).
     private var linkBitrate = 0           // Current encoder bitrate.
+    private var linkCeiling = Int.MAX_VALUE // Don't climb back above 90% of a bitrate the link fell behind at.
+    private var linkCeilingSince = 0L
     private var dropUntilKey = false
     private var framesDropped = 0
     private var lastBitrateChange = 0L
@@ -103,6 +108,14 @@ class WebcamService : Service() {
         paused = prefs.getBoolean(PREF_PAUSED, false)
         camSettings = loadCameraSettings(prefs)
         _state.update { UiState(facing = facing, paused = paused, camera = camSettings) }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val listener = PowerManager.OnThermalStatusChangedListener { status ->
+                _state.update { it.copy(thermal = status) }
+                camera.post { remoteLog("thermal status $status") }
+            }
+            getSystemService(PowerManager::class.java).addThermalStatusListener(mainExecutor, listener)
+            thermalListener = listener
+        }
         ContextCompat.registerReceiver(
             this, detachReceiver, IntentFilter(UsbManager.ACTION_USB_ACCESSORY_DETACHED),
             ContextCompat.RECEIVER_NOT_EXPORTED,
@@ -278,7 +291,7 @@ class WebcamService : Service() {
             Protocol.CMD_PAUSE -> setPaused(true)
             Protocol.CMD_RESUME -> setPaused(false)
             Protocol.CMD_SET_QUALITY -> changeVideo(camSettings.copy(quality = arg.coerceIn(Protocol.QUALITY_720P, Protocol.QUALITY_4K)))
-            Protocol.CMD_SET_FPS -> changeVideo(camSettings.copy(fps = if (arg >= 60) 60 else 30))
+            Protocol.CMD_SET_FPS -> changeVideo(camSettings.copy(fps = if (arg >= 120) 120 else if (arg >= 60) 60 else 30))
             Protocol.CMD_SET_ZOOM -> changeControls(camSettings.copy(zoom = arg / 10f))
             Protocol.CMD_SET_EXPOSURE -> changeControls(camSettings.copy(ev = arg.toByte().toInt()))
             Protocol.CMD_SET_TORCH -> changeControls(camSettings.copy(torch = arg != 0))
@@ -403,6 +416,7 @@ class WebcamService : Service() {
         })
         streamer = s
         linkBitrate = 0 // Set from the streamer's target on the first frame.
+        linkCeiling = Int.MAX_VALUE
         dropUntilKey = false
         framesDropped = 0
         slowestWriteMs = 0
@@ -421,16 +435,24 @@ class WebcamService : Service() {
     /**
      * A frame write that takes longer than its time slot means the USB link (the PC reads as fast as it can)
      * is carrying less than the encoder produces. Then: skip to the next key frame and lower the bitrate by
-     * a quarter. When writes stay fast for 5 s, raise the bitrate back towards the mode's target.
+     * a quarter. When writes stay fast for 5 s, raise the bitrate back towards the mode's target, but not
+     * above 90% of a bitrate the link already fell behind at (climbing back there just repeats the stall).
+     * The ceiling is never below twice the floor and expires after 30 s: a stall can come from a busy PC
+     * rather than the link, and a ceiling at the floor would pin the stream at the worst quality (ISSUES.md 1).
+     * The arithmetic is in Long: 4K bitrates times 115 overflow Int, which once sent the encoder a
+     * negative bitrate and made the picture collapse every ~30 s.
      */
     private fun adaptToLink(writeMs: Long, keyFrame: Boolean) {
         val s = streamer ?: return
         if (linkBitrate == 0) linkBitrate = s.targetBitrate
         val slot = s.frameIntervalMs.toLong()
         val now = SystemClock.elapsedRealtime()
+        if (linkCeiling != Int.MAX_VALUE && now - linkCeilingSince > CEILING_EXPIRY_MS) linkCeiling = Int.MAX_VALUE
         // Key frames are several times larger, so they get more room before counting as "behind".
         if (writeMs > slot * (if (keyFrame) 4 else 2) && now - lastBitrateChange > 1000) {
-            linkBitrate = (linkBitrate * 3 / 4).coerceAtLeast(MIN_BITRATE)
+            linkCeiling = minOf(linkCeiling, (linkBitrate.toLong() * 9 / 10).toInt()).coerceAtLeast(MIN_BITRATE * 2)
+            linkCeilingSince = now
+            linkBitrate = (linkBitrate.toLong() * 3 / 4).toInt().coerceAtLeast(MIN_BITRATE)
             s.setBitrate(linkBitrate)
             dropUntilKey = true
             s.requestKeyFrame()
@@ -440,9 +462,10 @@ class WebcamService : Service() {
             return
         }
         slowestWriteMs = maxOf(slowestWriteMs, if (keyFrame) writeMs / 4 else writeMs)
-        if (now - lastBitrateChange > 5000 && linkBitrate < s.targetBitrate) {
+        val limit = minOf(s.targetBitrate, linkCeiling)
+        if (now - lastBitrateChange > 5000 && linkBitrate < limit) {
             if (slowestWriteMs < slot / 2) {
-                linkBitrate = (linkBitrate * 115 / 100).coerceAtMost(s.targetBitrate)
+                linkBitrate = (linkBitrate.toLong() * 115 / 100).coerceAtMost(limit.toLong()).toInt()
                 s.setBitrate(linkBitrate)
                 remoteLog("link has room: bitrate now ${linkBitrate / 1000} kbps")
             }
@@ -501,6 +524,10 @@ class WebcamService : Service() {
 
     override fun onDestroy() {
         unregisterReceiver(detachReceiver)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            (thermalListener as? PowerManager.OnThermalStatusChangedListener)
+                ?.let { getSystemService(PowerManager::class.java).removeThermalStatusListener(it) }
+        }
         orientationListener?.disable()
         camera.post {
             streamer?.stop()
@@ -521,6 +548,7 @@ class WebcamService : Service() {
         private const val CHANNEL_ID = "webcam"
         private const val NOTIFICATION_ID = 1
         private const val MIN_BITRATE = 2_000_000
+        private const val CEILING_EXPIRY_MS = 30_000L
         const val PREFS = "mycam"
         const val PREF_FACING = "facing"
         const val ACTION_SET_FACING = "io.github.whoissaaif.mycam.SET_FACING"

@@ -60,9 +60,16 @@ LIVE pill, Selawik font, new launcher icon (adaptive, legacy and themed).
 - ⏳ The UsbDk fallback path (first connection, before the WinUSB driver is bound) can still leave the
   phone hidden until replugged. Detect it and reset the port, or tell the user to replug.
 
-### 2.2 Fewer UAC prompts on first use (S): ⏳
-A new phone prompts twice: once at install, then again for WinUSB binding. Have the installer bind any
-phone that is plugged in, and explain the one remaining prompt in the tray balloon.
+### 2.2 Fewer UAC prompts on first use (S): 🟡 built in 1.3.2, needs a new-phone test
+A new phone used to prompt twice: once at install, then again for WinUSB binding.
+- ✅ The installer registers the scheduled task "MyCam phone driver" (runs as SYSTEM, only
+  `MyCamCompanion.exe --bind-driver`). Signed-in users may start it but not change it (verified: a non-admin
+  start works; a non-admin re-register gets "Access is denied"). The uninstaller deletes it.
+- ✅ The companion starts the task instead of asking for UAC, and only trusts it if it still points at its
+  own exe. If the task is missing, it falls back to the old one-time UAC prompt.
+- ⏳ End-to-end check: a phone that has never been connected should go straight to "Ready" with no prompt.
+  The test phone is already bound. Use another phone, or remove the accessory device in Device Manager
+  (View > Show hidden devices) and replug.
 
 ### 2.3 Test the remaining scenarios (S–M): ⏳
 See "Still untested" above, plus phone low-battery mode and Android killing the service under memory
@@ -76,7 +83,17 @@ pressure. Fix whatever breaks.
 A portrait phone gives a narrow image with black bars. Add a "Crop to fill" option that center-crops to
 16:9 (`DrawFittedNV12` in `pc/vcam/frame_transform.cpp`), with a toggle in the settings window.
 
-### 3.2 Resolution and frame-rate options (M): ✅ (1.3). 60 fps only where Camera2 offers it: the test phone (MediaTek) reports 30 fps max on all cameras and no high-speed mode, though its own camera app does 1080p60 via private vendor interfaces.
+### 3.2 Resolution and frame-rate options (M): ✅ (1.3); 30 / 60 / 120 fps via high-speed capture in 1.3.2 (needs a test)
+Correction: the test phone's back camera *does* offer a constrained high-speed mode (1080p and 720p at 120 and
+240 fps); only the normal modes stop at 30. 1.3.2 opens a high-speed session at 120 fps and the encoder keeps
+every other frame (`KEY_MAX_FPS_TO_ENCODER`, Android 10+), giving 1080p60. Short exposure (≤ 8 ms) makes it
+noisier in dim light. If the phone refuses the session, the stream falls back to 30 fps. The front camera has
+no high-speed mode, so it offers only 30 fps.
+1.3.2 also offers **120 fps** (the high-speed capture passed straight through, 30 Mbps) as a third choice on
+both apps; each choice is enabled only if the camera and encoder can do it (CAMERA flag 0x40), and the
+virtual camera offers 1080p120 and 720p120 to apps. Noise is the same at 60 and 120 (same exposure limit).
+Availability is worked out per quality (CAMERA frame-rate masks, 21-byte payload), by the same
+`modeFor()` check that starts the camera, so a phone that only does 4K30 never offers 60/120 at 4K.
 720p / 1080p / 4K, and 60 fps where the phone supports it. Add a protocol command to request a mode, and
 advertise the matching media types from the virtual camera.
 
@@ -88,13 +105,28 @@ to PC apps through `IKsControl` is a stretch goal.
 Decode on the GPU (D3D11 / DXVA) instead of the CPU, cut extra frame copies, and add a latency
 measurement (timestamp in the frame header → log).
 
+Phone-side round (built, needs a test on the phone):
+- The log splits the delay: `latency: ... (camera X ms, encoder ~Y ms)` (sensor → capture result vs.
+  sensor → encoded frame), so we know which half to attack.
+- Camera: electronic stabilisation off (it holds frames back to look ahead), fast noise reduction and
+  edge modes, where offered.
+- Encoder: no B-frames; on Android 12+ every vendor parameter with "low-latency" in its name is switched
+  on, and the full list is logged (`encoder vendor parameters: ...`) for further tuning.
+- PC: 16 queued USB reads (256 KB) instead of 4, so a 4K frame no longer stalls the phone's write while
+  the previous frame decodes.
+
 ---
 
 ## 4. Phone app
 
-### 4.1 Dim the screen while streaming (S): ⏳
-A dark aurora "streaming" screen keeps the phone cooler, saves battery and is more private. Show a warning
-when the phone gets hot (`PowerManager.getCurrentThermalStatus`).
+### 4.1 Dim the screen while streaming (S): 🟡 built, needs a test on the phone
+- After 30 s untouched while streaming (or the new "Dim the screen" command link) the app shows a nearly
+  black screen at 2 % brightness; it drifts every minute against OLED burn-in. Any touch wakes it (that
+  touch does nothing else).
+- Heat: the service listens to `PowerManager` thermal status (Android 10+), warns on both screens from
+  MODERATE up, and copies changes to the PC log.
+Original plan: a dark aurora "streaming" screen keeps the phone cooler, saves battery and is more private,
+with a warning when the phone gets hot.
 
 ### 4.2 Branding and release signing (S): ✅ (1.2.0)
 - ✅ Real app icon (Aero webcam, adaptive + legacy + themed).
@@ -161,7 +193,7 @@ The tokens are implemented in code and shared by both apps: `app/.../ui/theme/Co
 | Text | `#000000`, secondary `#5A5A5A`, link `#0066CC` |
 | Type | Segoe UI (PC), Selawik (phone, OFL) |
 
-### 7.3 Assets: 🟡
+### 7.3 Assets: ✅
 All drawn from scratch by scripts in `design/tools/` (shared library `aero_draw.ps1`).
 
 | Asset | Status |
@@ -173,8 +205,8 @@ All drawn from scratch by scripts in `design/tools/` (shared library `aero_draw.
 | Phone UI kit (Compose: header, buttons, command link, badges, LIVE pill) | ✅ |
 | Settings window chrome | ✅ |
 | Installer art (wizard panel, header) | ✅ |
-| Dimmed streaming screen | ⏳ with 4.1 |
-| Play Store 512 px icon and feature graphic | ⏳ only if publishing to the Play Store |
+| Dimmed streaming screen (night aurora, crescent-moon "Dim" badge) | ✅ `ui/DimScreen.kt` (with 4.1) |
+| Play Store 512 px icon and 1024×500 feature graphic | ✅ `design/assets/store/` (`make_store_art.ps1`) |
 
 ### 7.4 Mockups: skipped
 The UI was built directly in the chosen style and reviewed from screenshots instead.

@@ -35,8 +35,8 @@
 
     <!-- Video and camera controls -->
     <string name="section_video">Video</string>
-    <string name="video_60fps">60 frames per second (smoother)</string>
-    <string name="video_60fps_unsupported">60 fps (not supported by this phone)</string>
+    <string name="video_fps_hint">60 and 120 fps are smoother but need good light. Rates this camera can’t do are greyed out.</string>
+    <string name="video_fps_unsupported">This camera does 30 fps at this quality.</string>
     <string name="controls_auto">Auto (reset zoom, brightness, focus and torch)</string>
     <string name="video_actual">Now: %1$s at %2$d fps</string>
     <string name="section_controls">Camera controls</string>
@@ -47,6 +47,14 @@
     <string name="focus_auto">Auto</string>
     <string name="focus_lock">Lock</string>
     <string name="control_torch">Torch (light)</string>
+
+    <!-- Dimmed streaming screen (IMPROVEMENTS.md 4.1) -->
+    <string name="action_dim_title">Dim the screen</string>
+    <string name="action_dim_detail">Keeps the phone cooler and the screen private. Tap anywhere to wake it.</string>
+    <string name="dim_title">Streaming to your PC</string>
+    <string name="dim_hint">Tap anywhere to wake the screen</string>
+    <string name="heat_warm">Your phone is getting warm. A lower quality or taking it out of its case helps.</string>
+    <string name="heat_hot">Your phone is hot. Lower the quality or pause for a while, or Android may slow the camera down.</string>
 
     <!-- Footer -->
     <string name="footer_connected">Connected to your PC over USB</string>

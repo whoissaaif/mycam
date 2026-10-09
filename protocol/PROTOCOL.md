@@ -44,7 +44,7 @@ match the manufacturer and model.
 | 3 | ORIENT | u16 device rotation, degrees clockwise (0/90/180/270) |
 | 4 | STATE | u8 state (0 idle, 1 streaming, 2 error, 3 paused [v2]), u8 facing |
 | 5 | LOG | UTF-8 text; the PC writes it to `mycam.log` |
-| 6 | CAMERA | [v3] 18 bytes: u8 quality (0 720p, 1 1080p, 2 4K), u8 fps (30/60), u16 zoom×100, u16 zoomMin×100, u16 zoomMax×100, i8 ev, i8 evMin, i8 evMax, u8 evStep×100, u8 flags, u16 width, u16 height, u8 actual fps. Flags: 0x01 torch available, 0x02 torch on, 0x04 focus locked, 0x08 60 fps available, 0x10 4K available, 0x20 autofocus. Width 0 = capabilities not known yet (camera not started since connecting). Sent after HELLO and whenever a setting changes. |
+| 6 | CAMERA | [v3] 18 bytes: u8 quality (0 720p, 1 1080p, 2 4K), u8 fps (30/60/120), u16 zoom×100, u16 zoomMin×100, u16 zoomMax×100, i8 ev, i8 evMin, i8 evMax, u8 evStep×100, u8 flags, u16 width, u16 height, u8 actual fps. Flags: 0x01 torch available, 0x02 torch on, 0x04 focus locked, 0x08 60 fps available, 0x10 4K available, 0x20 autofocus, 0x40 120 fps available (1.3.2; older PCs ignore it). Since 1.3.2 three more bytes follow (21 total): one frame-rate mask per quality (720p, 1080p, 4K) with 0x01 = 30, 0x02 = 60, 0x04 = 120 fps, worked out by the phone for every camera facing the current way (normal and high-speed modes, and the encoder at that exact size). PCs offer only the rates in the mask for the selected quality; with an 18-byte payload they fall back to the 0x08/0x40 flags. Width 0 = capabilities not known yet (camera not started since connecting). Sent after HELLO and whenever a setting changes. |
 
 Facing: 0 = back, 1 = front.
 
@@ -74,7 +74,7 @@ Fixed 8 bytes:
 | 6 | PAUSE | [v2] Pause: camera off until RESUME. The phone stores this, so it survives reconnects. |
 | 7 | RESUME | [v2] Resume; the camera turns back on if the PC still wants video |
 | 8 | SET_QUALITY | [v3] arg 0 720p, 1 1080p, 2 4K (restarts the camera if running) |
-| 9 | SET_FPS | [v3] arg 30 or 60 (restarts the camera if running) |
+| 9 | SET_FPS | [v3] arg 30, 60 or 120 (120 since 1.3.2; restarts the camera if running). The phone falls back 120 → 60 → 30 to what the camera can do and reports the result as CAMERA actual fps. |
 | 10 | SET_ZOOM | [v3] arg zoom×10, e.g. 6 = 0.6× ultrawide, 20 = 2× (applied live) |
 | 11 | SET_EXPOSURE | [v3] arg signed int8 EV steps (applied live) |
 | 12 | SET_TORCH | [v3] arg 0 off, 1 on (applied live; resets to off on reconnect) |

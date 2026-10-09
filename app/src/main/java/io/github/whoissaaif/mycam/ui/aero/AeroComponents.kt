@@ -164,16 +164,22 @@ fun AeroSegmented(
     }
 }
 
-enum class BadgeKind { Pause, Resume }
+enum class BadgeKind { Pause, Resume, Dim }
 
-/** Glossy round badge (like the tray icon badges): amber with pause bars, or green with a play arrow. */
+/**
+ * Glossy round badge (like the tray icon badges): amber with pause bars, green with a play arrow, or deep
+ * blue with a crescent moon (dim the screen).
+ */
 @Composable
 fun GlossyBadge(kind: BadgeKind, size: Dp, modifier: Modifier = Modifier) {
     Canvas(modifier.size(size)) {
         val r = this.size.minDimension / 2
         val c = center
-        val (light, dark) = if (kind == BadgeKind.Pause) Aero.PausedLight to Aero.PausedDark
-        else Aero.ResumeLight to Aero.ResumeDark
+        val (light, dark) = when (kind) {
+            BadgeKind.Pause -> Aero.PausedLight to Aero.PausedDark
+            BadgeKind.Resume -> Aero.ResumeLight to Aero.ResumeDark
+            BadgeKind.Dim -> Aero.DimBadgeLight to Aero.DimBadgeDark
+        }
         drawCircle(Color.White, r, c)
         val inner = r * 0.9f
         drawCircle(
@@ -185,6 +191,15 @@ fun GlossyBadge(kind: BadgeKind, size: Dp, modifier: Modifier = Modifier) {
             val h = inner * 0.95f
             drawRect(Color.White, Offset(c.x - inner * 0.42f, c.y - h / 2), Size(w, h))
             drawRect(Color.White, Offset(c.x + inner * 0.18f, c.y - h / 2), Size(w, h))
+        } else if (kind == BadgeKind.Dim) {
+            // Crescent: a white disc with a smaller disc of the badge colour cut out of its upper right.
+            val moon = inner * 0.5f
+            val mc = Offset(c.x - inner * 0.06f, c.y + inner * 0.04f)
+            val moonPath = Path().apply { addOval(androidx.compose.ui.geometry.Rect(mc, moon)) }
+            val bite = Path().apply {
+                addOval(androidx.compose.ui.geometry.Rect(Offset(mc.x + moon * 0.45f, mc.y - moon * 0.35f), moon * 0.85f))
+            }
+            drawPath(Path.combine(androidx.compose.ui.graphics.PathOperation.Difference, moonPath, bite), Color.White)
         } else {
             val p = Path().apply {
                 moveTo(c.x - inner * 0.28f, c.y - inner * 0.48f)

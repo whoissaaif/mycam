@@ -43,6 +43,7 @@ add_executable(MyCamCompanion WIN32
     companion/frame_writer.cpp
     companion/packet_parser.cpp
     companion/winusb_bind.cpp
+    companion/driver_task.cpp
     companion/log.cpp
     companion/app_settings.cpp
     companion/status_text.cpp
@@ -53,7 +54,7 @@ add_executable(MyCamCompanion WIN32
     companion/companion.manifest
 )
 target_link_libraries(MyCamCompanion PRIVATE usb mfplat mfuuid mfsensorgroup ole32 shell32 advapi32 setupapi newdev cfgmgr32
-    comctl32 d2d1 dwrite windowscodecs dwmapi wtsapi32)
+    comctl32 d2d1 dwrite windowscodecs dwmapi wtsapi32 taskschd)
 
 # --- Developer tools (not shipped; install.ps1 copies only the two binaries above) -------------------
 option(MYCAM_BUILD_TOOLS "Build developer tools (capture_test, usb_probe)" OFF)

@@ -26,11 +26,14 @@ import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
-/** Quality (720p / 1080p / 4K) and 60 fps. Changing them restarts the camera briefly. */
+/** Quality (720p / 1080p / 4K) and frame rate (30 / 60 / 120). Changing them restarts the camera briefly. */
 @Composable
 fun VideoSection(settings: CameraStreamer.Settings, info: Protocol.CameraInfo?, onCommand: (Int, Int) -> Unit) {
     val has4K = info == null || info.flags and Protocol.CAM_HAS_4K != 0
-    val has60 = info == null || info.flags and Protocol.CAM_HAS_60FPS != 0
+    // Frame rates that work at the selected quality on this phone (until the camera has reported, only 30).
+    val mask = if (info != null && info.width > 0) info.fpsMask(settings.quality) else Protocol.FPS_30
+    val has60 = mask and Protocol.FPS_60 != 0
+    val has120 = mask and Protocol.FPS_120 != 0
     SectionHeading(stringResource(R.string.section_video))
     Spacer(Modifier.height(12.dp))
     AeroSegmented(
@@ -40,10 +43,22 @@ fun VideoSection(settings: CameraStreamer.Settings, info: Protocol.CameraInfo?, 
         enabled = { it != Protocol.QUALITY_4K || has4K },
         modifier = Modifier.fillMaxWidth(),
     )
-    AeroCheckbox(
-        stringResource(if (has60) R.string.video_60fps else R.string.video_60fps_unsupported),
-        checked = settings.fps >= 60 && has60, enabled = has60,
-        onCheckedChange = { onCommand(Protocol.CMD_SET_FPS, if (it) 60 else 30) },
+    Spacer(Modifier.height(10.dp))
+    val rates = listOf(30, 60, 120)
+    val available = { i: Int -> i == 0 || (i == 1 && has60) || (i == 2 && has120) }
+    AeroSegmented(
+        options = rates.map { "$it fps" },
+        // Show what this quality will actually run at: the chosen rate, or the best one below it that works
+        // here (the choice is kept, so going back to a quality that supports it restores it).
+        selectedIndex = rates.indices.last { it == 0 || (rates[it] <= settings.fps && available(it)) },
+        onSelect = { onCommand(Protocol.CMD_SET_FPS, rates[it]) },
+        enabled = available,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(6.dp))
+    Text(
+        stringResource(if (has60 || has120) R.string.video_fps_hint else R.string.video_fps_unsupported),
+        style = MaterialTheme.typography.bodyMedium, color = Aero.Subtle,
     )
     if (info != null && info.width > 0) {
         Text(

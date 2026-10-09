@@ -22,23 +22,26 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 ## Next
 
 - [ ] Recover when the UsbDk fallback leaves the phone hidden [2.1]
-- [ ] One UAC prompt for a new phone instead of two [2.2]
+- [~] No UAC prompt for new phones (SYSTEM scheduled task from the installer) [2.2]: built and installed (1.3.2), test with a never-connected phone
 
-- [ ] Dim the phone screen while streaming, with a heat warning [4.1]
+- [~] Dim the phone screen while streaming, with a heat warning [4.1]: built, test on the phone
 - [ ] Write `design/STYLE.md` [7.2]
 
 ## Backlog
 
-- [ ] Lower phone-side latency (capture→encoded 150–230 ms on the test phone) [3.4]
+- [~] Lower phone-side latency (capture→encoded 150–230 ms on the test phone) [3.4]: camera/encoder tweaks and a camera-vs-encoder split in the log built; measure on the phone
+- [~] 30 / 60 / 120 fps choice; 60 and 120 on the back camera through high-speed capture [3.2]: built, test on the phone
+- [ ] Adaptive-bitrate Int overflow fix at 4K (in `WebcamService.kt`): test, then release as 1.3.2
 - [ ] Screen-reader support for the settings window (UI Automation) [5.2]
 - [ ] Code-sign the installer and companion [5.3]
 - [ ] Uninstaller: remove UsbDk completely (service + UsbDk.sys stay behind after msiexec) [5.3]
 - [ ] Test a clean install on a different PC (Sandbox needs CPU virtualization enabled in firmware) [2.3]
 - [ ] Decide public vs. private repo before sharing builds [8]
-- [ ] Play Store assets (512 px icon, feature graphic), if publishing there [7.3]
 - [ ] iPhone support: iOS app + usbmux transport on the PC (future; needs a Mac, an iPhone, Apple Developer account) [9]
 
 ## Done
+
+- [x] Assets complete: Play Store 512 px icon + 1024×500 feature graphic, dimmed streaming screen [7.3]
 
 - [x] Picture quality and camera control: crop to fill, 720p/1080p/4K, 60 fps where supported, zoom/brightness/focus/torch + Auto, adaptive streaming [3] (1.3.1)
 

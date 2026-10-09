@@ -17,6 +17,7 @@
 #include "../common/guids.h"
 #include "app_settings.h"
 #include "log.h"
+#include "driver_task.h"
 #include "phone_link.h"
 #include "protocol.h"
 #include "settings_window.h"
@@ -163,8 +164,10 @@ void ShowMenu(HWND hwnd) {
 }
 
 // Runs "MyCamCompanion.exe --bind-driver" elevated to give an accessory-mode phone the WinUSB driver.
-// Windows asks for admin once per phone; afterwards the binding persists.
+// Normally through the installer's scheduled task (no prompt); if that's missing, Windows asks for admin
+// once per phone. Either way the binding persists.
 void RunDriverBinder() {
+    if (RunDriverTask()) return;
     static HANDLE running = nullptr;
     if (running) {
         if (WaitForSingleObject(running, 0) == WAIT_TIMEOUT) return;
@@ -290,6 +293,8 @@ HRESULT CreateVirtualCamera(ComPtr<IMFVirtualCamera>& vcam) {
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     // Elevated helper mode (launched by the companion via UAC): bind WinUSB to accessory-mode phones.
     if (wcsstr(GetCommandLineW(), L"--bind-driver")) return BindAccessoryDrivers();
+    // Installer (elevated): register the task that lets later phones be set up without a UAC prompt.
+    if (wcsstr(GetCommandLineW(), L"--register-task")) return RegisterDriverTask() ? 0 : 1;
     // Used by the installer/uninstaller: close the running companion cleanly (it turns the phone camera
     // off on the way out) and wait for it to exit. Exit code 0 = none running or it closed.
     if (wcsstr(GetCommandLineW(), L"--quit")) return QuitRunningInstance();

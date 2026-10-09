@@ -45,4 +45,15 @@ object Aero {
     val PausedDark = Color(0xFFD68000)
     val ResumeLight = Color(0xFF96F078)
     val ResumeDark = Color(0xFF108C1E)
+    val DimBadgeLight = Color(0xFF7FB6EA)
+    val DimBadgeDark = Color(0xFF123E7A)
+
+    // Dimmed streaming screen: the aurora at night. Mostly black (cool and private on OLED), low-contrast text.
+    val DimTop = Color(0xFF071A33)
+    val DimBottom = Color(0xFF000000)
+    val DimGlow = Color(0xFF0E3A6E)
+    val DimText = Color(0xFF8FA6C4)
+    val DimSubtle = Color(0xFF51677F)
+    val HeatWarm = Color(0xFFFFC94D)
+    val HeatHot = Color(0xFFFF7A6B)
 }
