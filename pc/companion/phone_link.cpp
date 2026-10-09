@@ -1,268 +1,133 @@
 #include "phone_link.h"
 
-#include <libusb.h>
-#include <string.h>
+#include <windows.h>
 
 #include "../common/shared_frame.h"
+#include "aoa_transport.h"
 #include "log.h"
 #include "protocol.h"
-#include "winusb_bind.h"
 
 namespace mycam {
 
 namespace {
 
-constexpr uint16_t kGoogleVid = 0x18D1;
-constexpr int kAoaGetProtocol = 51;
-constexpr int kAoaSendString = 52;
-constexpr int kAoaStart = 53;
-
-// USB vendors that make Android phones. Used together with interface checks to decide which devices
-// are worth asking to switch into accessory mode.
-constexpr uint16_t kAndroidVendors[] = {
-    0x18D1, 0x04E8, 0x2717, 0x2A70, 0x22B8, 0x1004, 0x12D1, 0x22D9, 0x2D95, 0x0FCE, 0x0BB4, 0x0B05,
-    0x17EF, 0x19D2, 0x05C6, 0x0E8D, 0x1782, 0x2A45, 0x1BBB, 0x2E04, 0x0489, 0x2B0E, 0x2D96, 0x1EBF,
-};
-
 constexpr uint64_t kConsumerWindowMs = 2000;  // App counts as "using the camera" for this long after a request.
 constexpr uint64_t kStopGraceMs = 4000;       // Keep the phone camera on briefly between app sessions.
 
-bool IsAccessoryPid(uint16_t pid) { return pid >= 0x2D00 && pid <= 0x2D05; }
-
-std::string DeviceKey(libusb_device* dev, const libusb_device_descriptor& desc) {
-    uint8_t ports[8];
-    int n = libusb_get_port_numbers(dev, ports, sizeof(ports));
-    std::string key = std::to_string(libusb_get_bus_number(dev));
-    for (int i = 0; i < n; ++i) key += "." + std::to_string(ports[i]);
-    key += ":" + std::to_string(desc.idVendor) + ":" + std::to_string(desc.idProduct);
-    return key;
-}
-
 } // namespace
 
+void PhoneLink::RequestReconnect() {
+    for (auto& transport : transports_) transport->RequestReconnect();
+}
+
 void PhoneLink::Run() {
-    // UsbDk lets libusb talk to phones while Windows' own MTP/ADB drivers are bound to them.
-    // libusb silently falls back to WinUSB without it, which cannot open phones, so check explicitly.
-    HMODULE usbdk = LoadLibraryExW(L"UsbDkHelper.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-    if (usbdk) FreeLibrary(usbdk);
-    // Switch to UsbDk after init: libusb_init_context applies options before it has probed for UsbDk,
-    // so passing LIBUSB_OPTION_USE_USBDK there always fails with LIBUSB_ERROR_NOT_FOUND.
-    bool ok = usbdk && libusb_init_context(&ctx_, nullptr, 0) == LIBUSB_SUCCESS;
-    if (ok && libusb_set_option(ctx_, LIBUSB_OPTION_USE_USBDK) != LIBUSB_SUCCESS) {
-        libusb_exit(ctx_);
-        ctx_ = nullptr;
-        ok = false;
+    transports_.push_back(std::make_unique<AoaTransport>());
+    for (auto& transport : transports_) {
+        ITransport* t = transport.get();
+        t->SetEventCallback([this, t](TransportEvent event) { OnTransportEvent(t, event); });
+        t->SetDataCallback([this, t](const uint8_t* data, size_t size) { OnTransportData(t, data, size); });
+        transportThreads_.emplace_back([this, t] { TransportWorker(t); });
     }
-    Log("usb: UsbDk helper %s, libusb %s", usbdk ? "found" : "MISSING", ok ? "ready" : "FAILED");
-    if (!ok) {
-        status_.state = LinkState::NoDriver;
-        Publish();
-        return;
-    }
-    if (libusb_init_context(&winusbCtx_, nullptr, 0) != LIBUSB_SUCCESS) winusbCtx_ = nullptr;
     status_.state = LinkState::Searching;
     Publish();
 
     while (!quit_) {
-        ScanOnce();
-        for (int i = 0; i < 10 && !quit_; ++i) {
-            SyncLockPaused();
-            WriteStatusFrame(GetTickCount64()); // "Waiting for the phone" while none is connected.
-            Sleep(100);
+        {
+            std::lock_guard<std::mutex> lock(sessionLock_);
+            SessionTick(GetTickCount64());
         }
-    }
-    if (winusbCtx_) libusb_exit(winusbCtx_);
-    winusbCtx_ = nullptr;
-    libusb_exit(ctx_);
-    ctx_ = nullptr;
-}
-
-void PhoneLink::ScanOnce() {
-    // Windows has no driver for a phone in accessory mode, and a driverless device makes UsbDk fail to
-    // enumerate anything. Ask the UI to bind WinUSB (one UAC prompt per phone; it sticks afterwards).
-    if (AccessoryNeedsDriver()) {
-        uint64_t now = GetTickCount64();
-        if (onNeedDriver_ && (lastDriverRequest_ == 0 || now - lastDriverRequest_ > 20000)) {
-            lastDriverRequest_ = now;
-            Log("scan: accessory-mode phone has no driver, requesting WinUSB binding");
-            onNeedDriver_();
-        }
-        if (status_.state != LinkState::Waiting) {
-            status_ = LinkStatus{};
-            status_.state = LinkState::Waiting;
-            Publish();
-        }
-        return;
+        Sleep(100);
     }
 
-    libusb_device** list = nullptr;
-    ssize_t count = libusb_get_device_list(ctx_, &list);
-    if (count < 0) {
-        static uint64_t lastWarn = 0;
-        if (GetTickCount64() - lastWarn > 10000) { Log("scan: device list failed: %s", libusb_error_name(int(count))); lastWarn = GetTickCount64(); }
-        return;
+    {
+        std::lock_guard<std::mutex> lock(sessionLock_);
+        // Companion exiting: turn the phone camera off rather than leaving it blocked on a full pipe.
+        if (activeTransport_.load() && startSent_) SendCommand(proto::kCmdStop);
     }
-
-    libusb_device* accessory = nullptr;
-    std::set<std::string> present;
-    for (ssize_t i = 0; i < count; ++i) {
-        libusb_device_descriptor desc;
-        if (libusb_get_device_descriptor(list[i], &desc) != LIBUSB_SUCCESS) continue;
-        if (desc.idVendor == kGoogleVid && IsAccessoryPid(desc.idProduct)) {
-            if (!accessory) accessory = list[i];
-            continue;
-        }
-        std::string key = DeviceKey(list[i], desc);
-        present.insert(key);
-        // Ask each phone once per plug-in; the set entry goes away when it is unplugged.
-        if (!probed_.count(key) && LooksLikeAndroid(list[i])) {
-            probed_.insert(key);
-            SwitchToAccessory(list[i]);
-        }
-    }
-    for (auto it = probed_.begin(); it != probed_.end();) {
-        it = present.count(*it) ? std::next(it) : probed_.erase(it);
-    }
-
-    if (accessory) {
-        libusb_ref_device(accessory);
-        libusb_free_device_list(list, 1);
-        // Prefer WinUSB: UsbDk refuses to redirect a device that already has a working driver, and the
-        // accessory gets WinUSB bound on first connection (see winusb_bind.cpp).
-        libusb_device* viaWinUsb = winusbCtx_ ? FindAccessory(winusbCtx_) : nullptr;
-        if (viaWinUsb) {
-            RunSession(viaWinUsb, winusbCtx_);
-            libusb_unref_device(viaWinUsb);
-        } else {
-            RunSession(accessory, ctx_);
-        }
-        libusb_unref_device(accessory);
-    } else {
-        libusb_free_device_list(list, 1);
-        if (status_.state != LinkState::Searching) {
-            status_ = LinkStatus{};
-            Publish();
-        }
+    for (auto& transport : transports_) transport->Close();
+    activeCv_.notify_all();
+    for (auto& thread : transportThreads_) {
+        if (thread.joinable()) thread.join();
     }
 }
 
-bool PhoneLink::LooksLikeAndroid(libusb_device* dev) {
-    libusb_device_descriptor desc;
-    if (libusb_get_device_descriptor(dev, &desc) != LIBUSB_SUCCESS) return false;
-    if (desc.bDeviceClass == LIBUSB_CLASS_HUB) return false;
+void PhoneLink::TransportWorker(ITransport* transport) {
+    while (!quit_) {
+        {
+            std::unique_lock<std::mutex> lock(activeMutex_);
+            activeCv_.wait(lock, [this] { return quit_ || activeTransport_.load() == nullptr; });
+        }
+        if (quit_) break;
+        if (!transport->Connect(quit_)) break;
+    }
+}
 
-    bool knownVendor = false;
-    for (uint16_t vid : kAndroidVendors) knownVendor |= desc.idVendor == vid;
-
-    libusb_config_descriptor* config = nullptr;
-    if (libusb_get_active_config_descriptor(dev, &config) != LIBUSB_SUCCESS) return false;
-    bool phoneInterface = false, excluded = false;
-    for (int i = 0; i < config->bNumInterfaces; ++i) {
-        const libusb_interface& itf = config->interface[i];
-        for (int a = 0; a < itf.num_altsetting; ++a) {
-            const libusb_interface_descriptor& alt = itf.altsetting[a];
-            switch (alt.bInterfaceClass) {
-            case LIBUSB_CLASS_HID:
-            case LIBUSB_CLASS_PRINTER:
-            case LIBUSB_CLASS_MASS_STORAGE:
-            case LIBUSB_CLASS_HUB:
-            case LIBUSB_CLASS_VIDEO:
-                excluded = true; // Keyboards, drives, webcams...: never poke these.
-                break;
-            case LIBUSB_CLASS_IMAGE: // PTP
-                phoneInterface = true;
-                break;
-            case LIBUSB_CLASS_VENDOR_SPEC:
-                // ADB (ff/42/01) or Android MTP (ff/ff/00 with bulk in/out + interrupt).
-                if ((alt.bInterfaceSubClass == 0x42 && alt.bInterfaceProtocol == 0x01) ||
-                    (alt.bInterfaceSubClass == 0xFF && alt.bInterfaceProtocol == 0x00 && alt.bNumEndpoints == 3)) {
-                    phoneInterface = true;
-                }
-                break;
+void PhoneLink::OnTransportEvent(ITransport* transport, TransportEvent event) {
+    switch (event) {
+    case TransportEvent::NoDriver:
+        {
+            std::lock_guard<std::mutex> lock(sessionLock_);
+            status_.state = LinkState::NoDriver;
+            Publish();
+        }
+        break;
+    case TransportEvent::Searching:
+        if (activeTransport_.load() == nullptr) {
+            std::lock_guard<std::mutex> lock(sessionLock_);
+            if (status_.state != LinkState::Searching) {
+                status_ = LinkStatus{};
+                Publish();
             }
         }
+        break;
+    case TransportEvent::Waiting:
+        if (activeTransport_.load() == nullptr) {
+            std::lock_guard<std::mutex> lock(sessionLock_);
+            if (status_.state != LinkState::Waiting) {
+                status_ = LinkStatus{};
+                status_.state = LinkState::Waiting;
+                Publish();
+            }
+        }
+        break;
+    case TransportEvent::Connected:
+        {
+            ITransport* expected = nullptr;
+            if (activeTransport_.compare_exchange_strong(expected, transport)) {
+                std::lock_guard<std::mutex> lock(sessionLock_);
+                BeginSession(transport);
+            } else {
+                transport->Close();
+            }
+        }
+        break;
+    case TransportEvent::Disconnected:
+    case TransportEvent::Error:
+        EndSession(transport);
+        activeCv_.notify_all();
+        break;
+    case TransportEvent::DriverNeeded:
+        if (onNeedDriver_) onNeedDriver_();
+        break;
     }
-    libusb_free_config_descriptor(config);
-    return !excluded && (phoneInterface || knownVendor);
 }
 
-void PhoneLink::SwitchToAccessory(libusb_device* dev) {
-    libusb_device_handle* h = nullptr;
-    libusb_device_descriptor desc = {};
-    libusb_get_device_descriptor(dev, &desc);
-    int openResult = libusb_open(dev, &h);
-    Log("scan: phone-like device %04x:%04x, open -> %s", desc.idVendor, desc.idProduct, libusb_error_name(openResult));
-    if (openResult != LIBUSB_SUCCESS) return;
-
-    uint8_t version[2] = {};
-    int r = libusb_control_transfer(h, LIBUSB_ENDPOINT_IN | LIBUSB_REQUEST_TYPE_VENDOR, kAoaGetProtocol, 0, 0,
-                                    version, sizeof(version), 1000);
-    Log("scan: AOA protocol query -> %d (version %d)", r, version[0] | version[1] << 8);
-    if (r == 2 && (version[0] | version[1] << 8) >= 1) {
-        const char* strings[] = {proto::kAccessoryManufacturer, proto::kAccessoryModel, proto::kAccessoryDescription,
-                                 proto::kAccessoryVersion, proto::kAccessoryUri, proto::kAccessorySerial};
-        bool ok = true;
-        for (uint16_t i = 0; i < 6 && ok; ++i) {
-            ok = libusb_control_transfer(h, LIBUSB_ENDPOINT_OUT | LIBUSB_REQUEST_TYPE_VENDOR, kAoaSendString, 0, i,
-                                         (unsigned char*)strings[i], uint16_t(strlen(strings[i]) + 1), 1000) >= 0;
-        }
-        // The phone disconnects and comes back as a Google accessory device (18d1:2d0x).
-        if (ok) libusb_control_transfer(h, LIBUSB_ENDPOINT_OUT | LIBUSB_REQUEST_TYPE_VENDOR, kAoaStart, 0, 0, nullptr, 0, 1000);
-    }
-    libusb_close(h);
+void PhoneLink::OnTransportData(ITransport* transport, const uint8_t* data, size_t size) {
+    if (activeTransport_.load() != transport) return;
+    std::lock_guard<std::mutex> lock(sessionLock_);
+    statBytes_ += size;
+    parser_.Feed(data, size, [this](const Packet& p) {
+        ++statPackets_;
+        HandlePacket(p.type, p.flags, p.ptsUs, p.payload, p.length);
+    });
 }
 
-libusb_device* PhoneLink::FindAccessory(libusb_context* ctx) {
-    libusb_device** list = nullptr;
-    ssize_t count = libusb_get_device_list(ctx, &list);
-    if (count < 0) return nullptr;
-    libusb_device* found = nullptr;
-    for (ssize_t i = 0; i < count && !found; ++i) {
-        libusb_device_descriptor desc;
-        if (libusb_get_device_descriptor(list[i], &desc) == LIBUSB_SUCCESS && desc.idVendor == kGoogleVid &&
-            IsAccessoryPid(desc.idProduct)) {
-            found = libusb_ref_device(list[i]);
-        }
-    }
-    libusb_free_device_list(list, 1);
-    return found;
-}
-
-void PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx) {
-    sessionCtx_ = ctx;
-    int openResult = libusb_open(dev, &handle_);
-    if (openResult != LIBUSB_SUCCESS) {
-        static uint64_t lastWarn = 0;
-        if (GetTickCount64() - lastWarn > 10000) {
-            Log("session: opening accessory failed: %s", libusb_error_name(openResult));
-            lastWarn = GetTickCount64();
-        }
-        handle_ = nullptr;
-        return;
-    }
-
-    // Interface 0 of the accessory configuration has one bulk IN and one bulk OUT endpoint.
-    libusb_config_descriptor* config = nullptr;
-    epIn_ = epOut_ = 0;
-    if (libusb_get_active_config_descriptor(dev, &config) == LIBUSB_SUCCESS) {
-        const libusb_interface_descriptor& alt = config->interface[0].altsetting[0];
-        for (int e = 0; e < alt.bNumEndpoints; ++e) {
-            const libusb_endpoint_descriptor& ep = alt.endpoint[e];
-            if ((ep.bmAttributes & LIBUSB_TRANSFER_TYPE_MASK) != LIBUSB_TRANSFER_TYPE_BULK) continue;
-            if (ep.bEndpointAddress & LIBUSB_ENDPOINT_IN) epIn_ = ep.bEndpointAddress;
-            else epOut_ = ep.bEndpointAddress;
-        }
-        libusb_free_config_descriptor(config);
-    }
-    if (!epIn_ || !epOut_ || libusb_claim_interface(handle_, 0) != LIBUSB_SUCCESS) {
-        libusb_close(handle_);
-        handle_ = nullptr;
-        return;
-    }
-
+void PhoneLink::BeginSession(ITransport*) {
     parser_.Reset();
     gotHello_ = startSent_ = phoneStreaming_ = false;
+    phonePaused_ = false;
     waitKeyFrame_ = true;
+    keyFrameWanted_ = false;
     csd_.clear();
     decoder_.Reset();
     status_ = LinkStatus{};
@@ -270,133 +135,86 @@ void PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx) {
     writer_.SetPhoneState(kPhoneWaiting);
     Publish();
 
-    Log("session: accessory opened via %s (in 0x%02x, out 0x%02x)", ctx == ctx_ ? "UsbDk" : "WinUSB", epIn_, epOut_);
-
-    // Keep several reads queued with no timeout. Timed-out reads get cancelled, and with UsbDk a
-    // cancelled read can drop bytes that were already in flight, which corrupts the stream.
-    constexpr int kQueued = 4;
-    constexpr int kReadSize = 16384; // Matches the phone's accessory request size.
-    std::vector<std::vector<uint8_t>> buffers(kQueued, std::vector<uint8_t>(kReadSize));
-    std::vector<libusb_transfer*> transfers;
-    sessionEnding_ = sessionError_ = false;
-    inFlight_ = 0;
     statBytes_ = statPackets_ = statFrames_ = statDecoded_ = statDecodeErrors_ = 0;
-    for (auto& b : buffers) {
-        libusb_transfer* t = libusb_alloc_transfer(0);
-        libusb_fill_bulk_transfer(t, handle_, epIn_, b.data(), kReadSize,
-                                  [](libusb_transfer* x) { static_cast<PhoneLink*>(x->user_data)->OnInTransfer(x); },
-                                  this, 0);
-        if (libusb_submit_transfer(t) == LIBUSB_SUCCESS) ++inFlight_;
-        else Log("session: submit failed");
-        transfers.push_back(t);
-    }
-
     SendCommand(proto::kCmdHello);
-    uint64_t lastHello = GetTickCount64();
-    uint64_t lastConsumer = 0;
-    uint64_t lastStart = 0;
-    uint64_t lastStop = 0;
-    lastStats_ = lastHello;
+    lastHello_ = GetTickCount64();
+    lastConsumer_ = 0;
+    lastStart_ = 0;
+    lastStop_ = 0;
+    lastStats_ = lastHello_;
+}
 
-    while (!quit_ && !sessionError_) {
-        timeval tv = {0, 100000};
-        libusb_handle_events_timeout_completed(sessionCtx_, &tv, nullptr);
+void PhoneLink::EndSession(ITransport* transport) {
+    ITransport* expected = transport;
+    if (!activeTransport_.compare_exchange_strong(expected, nullptr)) return;
 
-        uint64_t now = GetTickCount64();
-        LogStats(now);
-        SyncLockPaused();
-        WriteStatusFrame(now);
-        if (reconnect_.exchange(false)) {
-            // Forces the phone out of accessory mode; it re-enumerates and we switch it back.
-            libusb_reset_device(handle_);
-            break;
-        }
-        if (!gotHello_) {
-            if (now - lastHello > 2000) {
-                SendCommand(proto::kCmdHello);
-                lastHello = now;
-            }
-            continue;
-        }
-
-        if (keyFrameWanted_) {
-            keyFrameWanted_ = false;
-            SendCommand(proto::kCmdKeyFrame);
-        }
-        int facing = pendingFacing_.exchange(-1);
-        if (facing >= 0) SendCommand(proto::kCmdSetFacing, uint8_t(facing));
-        {
-            std::vector<std::pair<uint8_t, uint8_t>> queued;
-            {
-                std::lock_guard<std::mutex> lock(commandLock_);
-                queued.swap(commands_);
-            }
-            for (auto& c : queued) SendCommand(c.first, c.second);
-        }
-        int pause = pendingPause_.exchange(-1);
-        if (pause >= 0) {
-            Log("session: user %s the camera from the PC", pause ? "paused" : "resumed");
-            SendCommand(pause ? proto::kCmdPause : proto::kCmdResume);
-        }
-
-        if (writer_.ConsumerActive(kConsumerWindowMs)) lastConsumer = now;
-        // Video is wanted only if an app is using the camera and nothing has paused it.
-        bool wanted = lastConsumer && now - lastConsumer < kStopGraceMs && !phonePaused_ && !lockPaused_;
-        if (wanted && (!startSent_ || (!phoneStreaming_ && now - lastStart > 3000))) {
-            // (Re)start the phone camera; repeated if the phone reported an error or never started.
-            Log("session: app is using the camera -> START");
-            if (!SendCommand(proto::kCmdStart)) break;
-            startSent_ = true;
-            lastStart = now;
-            waitKeyFrame_ = true;
-        } else if (!wanted && (startSent_ || (phoneStreaming_ && now - lastStop > 3000))) {
-            // Also stops a phone that is streaming without being asked, e.g. after the companion crashed
-            // or was killed mid-stream and the phone kept its camera on.
-            Log("session: camera not wanted (no app, paused or Windows locked) -> STOP");
-            if (!SendCommand(proto::kCmdStop)) break;
-            startSent_ = false;
-            lastStop = now;
-        }
-    }
-    Log("session: ending (quit=%d, error=%d)", int(quit_.load()), int(sessionError_));
-
-    // Companion exiting: turn the phone camera off rather than leaving it blocked on a full pipe.
-    if (quit_ && startSent_) SendCommand(proto::kCmdStop);
-
-    sessionEnding_ = true;
-    for (libusb_transfer* t : transfers) libusb_cancel_transfer(t);
-    for (int i = 0; i < 50 && inFlight_ > 0; ++i) {
-        timeval tv = {0, 20000};
-        libusb_handle_events_timeout_completed(sessionCtx_, &tv, nullptr);
-    }
-    if (inFlight_ == 0) {
-        for (libusb_transfer* t : transfers) libusb_free_transfer(t);
-    } // else: leak rather than free transfers libusb still owns.
+    std::lock_guard<std::mutex> lock(sessionLock_);
     decoder_.Reset();
-    libusb_release_interface(handle_, 0);
-    libusb_close(handle_);
-    handle_ = nullptr;
     phonePaused_ = phoneStreaming_ = false;
     writer_.SetPhoneState(kPhoneNone);
     status_ = LinkStatus{};
     Publish();
 }
 
-void PhoneLink::OnInTransfer(libusb_transfer* t) {
-    if (t->status == LIBUSB_TRANSFER_COMPLETED || t->status == LIBUSB_TRANSFER_TIMED_OUT) {
-        if (t->actual_length > 0) {
-            statBytes_ += t->actual_length;
-            parser_.Feed(t->buffer, size_t(t->actual_length), [this](const Packet& p) {
-                ++statPackets_;
-                HandlePacket(p.type, p.flags, p.ptsUs, p.payload, p.length);
-            });
+void PhoneLink::SessionTick(uint64_t now) {
+    LogStats(now);
+    SyncLockPaused();
+    WriteStatusFrame(now);
+    if (!activeTransport_.load()) return;
+    if (!gotHello_) {
+        if (now - lastHello_ > 2000) {
+            SendCommand(proto::kCmdHello);
+            lastHello_ = now;
         }
-        if (!sessionEnding_ && libusb_submit_transfer(t) == LIBUSB_SUCCESS) return;
-    } else if (t->status != LIBUSB_TRANSFER_CANCELLED) {
-        Log("session: read failed (status %d), phone disconnected?", int(t->status));
-        sessionError_ = true;
+        return;
     }
-    --inFlight_;
+
+    if (keyFrameWanted_) {
+        keyFrameWanted_ = false;
+        SendCommand(proto::kCmdKeyFrame);
+    }
+    int facing = pendingFacing_.exchange(-1);
+    if (facing >= 0) SendCommand(proto::kCmdSetFacing, uint8_t(facing));
+    {
+        std::vector<std::pair<uint8_t, uint8_t>> queued;
+        {
+            std::lock_guard<std::mutex> lock(commandLock_);
+            queued.swap(commands_);
+        }
+        for (auto& c : queued) SendCommand(c.first, c.second);
+    }
+    int pause = pendingPause_.exchange(-1);
+    if (pause >= 0) {
+        Log("session: user %s the camera from the PC", pause ? "paused" : "resumed");
+        SendCommand(pause ? proto::kCmdPause : proto::kCmdResume);
+    }
+
+    if (writer_.ConsumerActive(kConsumerWindowMs)) lastConsumer_ = now;
+    // Video is wanted only if an app is using the camera and nothing has paused it.
+    bool wanted = lastConsumer_ && now - lastConsumer_ < kStopGraceMs && !phonePaused_ && !lockPaused_;
+    if (wanted && (!startSent_ || (!phoneStreaming_ && now - lastStart_ > 3000))) {
+        // (Re)start the phone camera; repeated if the phone reported an error or never started.
+        Log("session: app is using the camera -> START");
+        if (!SendCommand(proto::kCmdStart)) {
+            ITransport* transport = activeTransport_.load();
+            if (transport) transport->Close();
+            return;
+        }
+        startSent_ = true;
+        lastStart_ = now;
+        waitKeyFrame_ = true;
+    } else if (!wanted && (startSent_ || (phoneStreaming_ && now - lastStop_ > 3000))) {
+        // Also stops a phone that is streaming without being asked, e.g. after the companion crashed
+        // or was killed mid-stream and the phone kept its camera on.
+        Log("session: camera not wanted (no app, paused or Windows locked) -> STOP");
+        if (!SendCommand(proto::kCmdStop)) {
+            ITransport* transport = activeTransport_.load();
+            if (transport) transport->Close();
+            return;
+        }
+        startSent_ = false;
+        lastStop_ = now;
+    }
 }
 
 void PhoneLink::LogStats(uint64_t now) {
@@ -414,12 +232,12 @@ void PhoneLink::LogStats(uint64_t now) {
 }
 
 bool PhoneLink::SendCommand(uint8_t cmd, uint8_t arg) {
+    ITransport* transport = activeTransport_.load();
+    if (!transport) return false;
     uint8_t packet[proto::kCommandSize];
     proto::MakeCommand(packet, proto::Command(cmd), arg);
-    int sent = 0;
-    int r = libusb_bulk_transfer(handle_, epOut_, packet, sizeof(packet), &sent, 1000);
-    if (r != LIBUSB_SUCCESS || sent != int(sizeof(packet))) {
-        Log("send cmd %d failed: %s", int(cmd), libusb_error_name(r));
+    if (!transport->Write(packet, sizeof(packet), 1000)) {
+        Log("send cmd %d failed", int(cmd));
         return false;
     }
     return true;
