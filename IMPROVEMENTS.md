@@ -272,6 +272,78 @@ Continuity Camera (Apple's built-in iPhone webcam) only works with Macs, so it d
 
 ---
 
+## 10. Windows 10 support (M): ⏳
+
+Today the installer requires Windows 11, because the PC shows "MyCam" through `MFCreateVirtualCamera`,
+which only exists on Windows 11 (build 22000+). Everything else (USB, WinUSB binding, decoding, tray,
+settings window, installer) already works on Windows 10.
+
+**Plan: a DirectShow camera for Windows 10 (the approach OBS Virtual Camera uses)**
+- A second small COM DLL registered as a DirectShow video capture source. It reads the same shared memory
+  (`Global\MyCamFrame`), so the phone app, protocol and USB code don't change.
+- The installer picks by Windows version: Windows 11 keeps the current virtual camera, Windows 10 gets
+  the DirectShow one. `MinVersion` drops to Windows 10 (1809 or newer).
+- No driver and no driver signing.
+
+**What works on Windows 10 with it**
+
+| Works | Doesn't work |
+|---|---|
+| Zoom, Discord, Skype, OBS, most desktop video-call apps | The built-in Windows Camera app |
+| Chrome, Edge, Firefox (Google Meet, web Teams, etc.) | Some newer Store (UWP) apps that only see real cameras |
+
+**Rejected alternative:** a kernel camera driver (AVStream). It would appear in every app, but needs
+kernel code plus a Microsoft-approved signature (paid EV certificate, attestation process). Too much
+cost and risk for this project.
+
+**Work items**
+- [ ] DirectShow source filter (formats 1080p/720p/4K, 30/60/120; status pictures; pause), reusing
+      `frame_reader` and `frame_transform`
+- [ ] Installer: register the right camera per Windows version, lower `MinVersion`, uninstall both
+- [ ] Settings window: "camera registered" check for the DirectShow camera
+- [ ] Test on a real Windows 10 PC (this dev PC can't run Sandbox or VMs): Zoom, Chrome/Meet, OBS, Discord
+
+**Needs before starting:** a Windows 10 PC for testing.
+
+---
+
+## 11. Wireless option (L): ⏳
+
+MyCam is wired-only by design (plug and play, no setup, no lag spikes, phone charges while streaming).
+A wireless mode would be an **optional** second way to connect, with the cable staying the default.
+
+**How it would work**
+- Phone and PC on the same Wi-Fi (or the PC on the phone's hotspot). The phone app gets a "Wireless" switch
+  that starts the same streaming service over a TCP connection instead of the USB accessory.
+- **Discovery:** the PC companion finds phones on the local network (mDNS / DNS-SD, e.g.
+  `_mycam._tcp`), so nobody types IP addresses.
+- **Pairing, once per phone:** the PC shows a 6-digit code (or a QR code) and the phone confirms it.
+  Unpaired devices are refused. A webcam on the network must not be open to anyone on the same Wi-Fi.
+- **Encryption:** TLS with the key from pairing, so the video can't be watched on the network.
+- **Same protocol** (`protocol/PROTOCOL.md`) on top of TCP. The PC side becomes a second transport next to
+  USB. Aiyan's `ITransport` refactor (branch `aiyan`) is the natural base once its threading issues are fixed.
+- **Adaptive bitrate** already exists and matters more here: Wi-Fi throughput and delay vary a lot.
+
+**Differences from wired (to explain to users)**
+
+| | Wired (USB) | Wireless (Wi-Fi) |
+|---|---|---|
+| Setup | Plug in | Same network + one-time pairing code |
+| Delay | Lowest | Higher, with occasional spikes on busy Wi-Fi |
+| Quality | Up to 4K / 120 fps | 1080p30 recommended; 4K and 120 fps only on strong 5 GHz Wi-Fi |
+| Battery | Phone charges | Phone drains: warn in the app, keep the dim screen (4.1) |
+| Starting | App opens itself when plugged in | Open MyCam on the phone and turn on Wireless |
+| Windows | Nothing extra | Firewall prompt the first time (allow on private networks) |
+
+**Work items**
+- [ ] Phone: TCP server/client mode in the streaming service, mDNS advertising, pairing screen, battery warning
+- [ ] PC: network transport, discovery list in the settings window, pairing UI, firewall rule in the installer
+- [ ] Security: pairing, TLS, and refusing unpaired devices; review before release
+- [ ] Bitrate/latency tuning for Wi-Fi; default to 1080p30 when wireless
+- [ ] Testing: 2.4 vs 5 GHz, hotspot, Wi-Fi drop and reconnect, switching between cable and Wi-Fi
+
+---
+
 ## Suggested order
 
 1. **2.3** Test the untested scenarios (cheap, and it finds the real bugs)

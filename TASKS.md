@@ -38,6 +38,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [ ] Test a clean install on a different PC (Sandbox needs CPU virtualization enabled in firmware) [2.3]
 - [ ] Decide public vs. private repo before sharing builds [8]
 - [ ] iPhone support: iOS app + usbmux transport on the PC (future; needs a Mac, an iPhone, Apple Developer account) [9]
+- [ ] Windows 10 support: DirectShow camera for Windows 10, installer picks per Windows version (needs a Windows 10 PC to test) [10]
+- [ ] Wireless option: Wi-Fi transport with discovery, one-time pairing and encryption; cable stays the default [11]
 
 ## Done
 
