@@ -72,6 +72,7 @@ class CameraStreamer(
     private var caps: Caps? = null
     private var stopped = false
     private var outputCount = 0
+    private var reported = false
     private var configSent = false
 
     private var width = 0
@@ -86,6 +87,7 @@ class CameraStreamer(
     @SuppressLint("MissingPermission") // Caller checks CAMERA permission before starting.
     fun start() {
         try {
+            logCameraReport()
             val cameraId = findCamera() ?: run {
                 listener.onError(if (facing == Protocol.FACING_FRONT) "No front camera" else "No back camera")
                 return
@@ -116,7 +118,9 @@ class CameraStreamer(
                 Caps(
                     it.zoomMin, it.zoomMax, it.useZoomRatio, it.activeArray, it.evMin, it.evMax, it.evStep,
                     it.torch, it.autofocus,
-                    has60 = supports60 && maxFps(size) >= 59 && encoderSupports(width, height, 60),
+                    // Any camera facing this way that can do 60 fps (findCamera switches to it when 60 is asked for).
+                    has60 = (supports60 && maxFps(size) >= 59 || sameFacingIds().any { id -> supports60At1080(id) }) &&
+                        encoderSupports(minOf(width, 1920), minOf(height, 1080), 60),
                     has4K = sizes.any { s -> s.width == 3840 && s.height == 2160 } && encoderSupports(3840, 2160, 30),
                 )
             }
@@ -189,11 +193,61 @@ class CameraStreamer(
         session = null; camera = null; encoder = null; inputSurface = null; request = null
     }
 
-    private fun findCamera(): String? {
+    /**
+     * The first camera facing the right way, unless 60 fps is wanted: then any camera facing that way which
+     * can do 60 fps at 1080p (some phones only offer it on a secondary camera id).
+     */
+    private fun sameFacingIds(): List<String> {
         val wanted = if (facing == Protocol.FACING_FRONT) CameraCharacteristics.LENS_FACING_FRONT
         else CameraCharacteristics.LENS_FACING_BACK
-        return cameraManager.cameraIdList.firstOrNull {
+        return cameraManager.cameraIdList.filter {
             cameraManager.getCameraCharacteristics(it).get(CameraCharacteristics.LENS_FACING) == wanted
+        }
+    }
+
+    private fun findCamera(): String? {
+        val ids = sameFacingIds()
+        if (settings.fps >= 60) ids.firstOrNull { supports60At1080(it) }?.let { return it }
+        return ids.firstOrNull()
+    }
+
+    private fun supports60At1080(id: String): Boolean {
+        val chars = cameraManager.getCameraCharacteristics(id)
+        val ranges = chars.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES) ?: return false
+        val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return false
+        val ns = map.getOutputMinFrameDuration(MediaCodec::class.java, Size(1920, 1080))
+        return ranges.any { it.upper >= 60 } && ns in 1..17_000_000
+    }
+
+    /** One-time report of what every camera offers, so frame-rate limits can be explained from the PC log. */
+    private fun logCameraReport() {
+        if (reported) return
+        reported = true
+        for (id in cameraManager.cameraIdList) {
+            try {
+                val c = cameraManager.getCameraCharacteristics(id)
+                val facingName = when (c.get(CameraCharacteristics.LENS_FACING)) {
+                    CameraCharacteristics.LENS_FACING_FRONT -> "front"
+                    CameraCharacteristics.LENS_FACING_BACK -> "back"
+                    else -> "external"
+                }
+                val map = c.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
+                val ns = map?.getOutputMinFrameDuration(MediaCodec::class.java, Size(1920, 1080)) ?: 0L
+                val max1080 = if (ns > 0) (1_000_000_000.0 / ns).roundToInt() else 0
+                val ranges = c.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)?.joinToString(" ") ?: "-"
+                val caps = c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES) ?: IntArray(0)
+                val highSpeed = CameraMetadata.REQUEST_AVAILABLE_CAPABILITIES_CONSTRAINED_HIGH_SPEED_VIDEO in caps
+                val hsSizes = if (highSpeed) map?.highSpeedVideoSizes?.joinToString(" ") { s ->
+                    "${s.width}x${s.height}:" + map.getHighSpeedVideoFpsRangesFor(s).joinToString(",")
+                } ?: "" else ""
+                val physical = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) c.physicalCameraIds.joinToString(",") else ""
+                listener.onLog(
+                    "camera report $id ($facingName): AE ranges $ranges; 1080p max ${max1080} fps; " +
+                        "high-speed ${if (highSpeed) hsSizes else "no"}" + (if (physical.isNotEmpty()) "; physical $physical" else "")
+                )
+            } catch (e: Exception) {
+                listener.onLog("camera report $id: ${e.message}")
+            }
         }
     }
 
