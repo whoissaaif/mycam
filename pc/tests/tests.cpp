@@ -226,6 +226,29 @@ void TestLetterbox() {
     CHECK(out[8 * 4 + 0] == 128 && out[8 * 4 + 1] == 128); // Black chroma in the bar.
 }
 
+void TestFill() {
+    // A 2x4 portrait image filling an 8x4 output: scaled 4x to 8x16, centred, so rows 6..9 of the scaled
+    // image are visible = source rows 1..2. No black bars anywhere.
+    Bytes src = MakeImage(2, 4); // luma: 1 2 / 3 4 / 5 6 / 7 8
+    Bytes dst(8 * 4 * 3 / 2);
+    FillBlackNV12(dst.data(), 8, 8, 4);
+    DrawFittedNV12(src.data(), 2, 4, 0, false, dst.data(), 8, 8, 4, true);
+    CHECK((Bytes(dst.begin(), dst.begin() + 8) == Bytes{3, 3, 3, 3, 4, 4, 4, 4}));
+    CHECK((Bytes(dst.begin() + 24, dst.begin() + 32) == Bytes{5, 5, 5, 5, 6, 6, 6, 6}));
+    bool anyBlack = false;
+    for (size_t i = 0; i < 32; ++i) anyBlack |= dst[i] == 16;
+    for (size_t i = 32; i < dst.size(); ++i) anyBlack |= dst[i] == 128;
+    CHECK(!anyBlack);
+    // Fill of a same-aspect image is identical to fit.
+    Bytes sq = MakeImage(4, 4);
+    CHECK(Render(sq, 4, 4, 0, false, 4, 4) == [&] {
+        Bytes d(4 * 4 * 3 / 2);
+        FillBlackNV12(d.data(), 4, 4, 4);
+        DrawFittedNV12(sq.data(), 4, 4, 0, false, d.data(), 4, 4, 4, true);
+        return d;
+    }());
+}
+
 void TestDownscale() {
     // 8x8 -> 4x4 picks every other pixel.
     Bytes src = MakeImage(8, 8);
@@ -285,6 +308,7 @@ int main() {
     printf("transform rotations\n");       TestRotations();
     printf("transform mirror\n");          TestMirror();
     printf("transform letterbox\n");       TestLetterbox();
+    printf("transform fill\n");            TestFill();
     printf("transform downscale\n");       TestDownscale();
     printf("transform pitch\n");           TestPitch();
     printf("bgra to nv12\n");              TestBgraToNV12();

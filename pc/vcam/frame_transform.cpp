@@ -28,44 +28,50 @@ void FillBlackNV12(uint8_t* dst, ptrdiff_t pitch, uint32_t width, uint32_t heigh
 }
 
 void DrawFittedNV12(const uint8_t* src, uint32_t srcWidth, uint32_t srcHeight, uint32_t rotation, bool mirror,
-                    uint8_t* dst, ptrdiff_t pitch, uint32_t width, uint32_t height) {
+                    uint8_t* dst, ptrdiff_t pitch, uint32_t width, uint32_t height, bool fill) {
     if (rotation != 90 && rotation != 180 && rotation != 270) rotation = 0;
     const int w = int(srcWidth), h = int(srcHeight);
     const bool swap = rotation == 90 || rotation == 270;
     const int ew = swap ? h : w, eh = swap ? w : h; // Size after rotation.
+    const int W = int(width), H = int(height);
 
-    // Fit (letterbox) the rotated image into the output, keeping even offsets/sizes for NV12.
-    double scale = std::min(double(width) / ew, double(height) / eh);
+    // Fit (letterbox) or fill (cover, cropping the overflow) the rotated image, centred, keeping even
+    // offsets and sizes for NV12. In fill mode dw/dh exceed the output and x0/y0 go negative.
+    double scale = fill ? std::max(double(W) / ew, double(H) / eh) : std::min(double(W) / ew, double(H) / eh);
     int dw = std::max(2, int(ew * scale) & ~1), dh = std::max(2, int(eh * scale) & ~1);
-    int x0 = ((int(width) - dw) / 2) & ~1, y0 = ((int(height) - dh) / 2) & ~1;
+    int x0 = ((W - dw) / 2) & ~1, y0 = ((H - dh) / 2) & ~1;
+    // The part of the scaled image that lands inside the output.
+    const int xa = std::max(0, x0), xb = std::min(W, x0 + dw), ya = std::max(0, y0), yb = std::min(H, y0 + dh);
+    if (xa >= xb || ya >= yb) return;
 
-    // Luma: precompute rotated-image coordinates for each output column/row.
-    std::vector<int> xmap(dw), ymap(dh);
-    for (int x = 0; x < dw; ++x) {
-        int u = std::min(ew - 1, int(x * double(ew) / dw));
-        xmap[x] = mirror ? ew - 1 - u : u;
+    // Luma: precompute rotated-image coordinates for each visible output column/row.
+    std::vector<int> xmap(xb - xa), ymap(yb - ya);
+    for (int x = xa; x < xb; ++x) {
+        int u = std::min(ew - 1, int((x - x0) * double(ew) / dw));
+        xmap[x - xa] = mirror ? ew - 1 - u : u;
     }
-    for (int y = 0; y < dh; ++y) ymap[y] = std::min(eh - 1, int(y * double(eh) / dh));
+    for (int y = ya; y < yb; ++y) ymap[y - ya] = std::min(eh - 1, int((y - y0) * double(eh) / dh));
 
-    for (int y = 0; y < dh; ++y) {
-        uint8_t* row = dst + (y0 + y) * pitch + x0;
-        int v = ymap[y];
-        for (int x = 0; x < dw; ++x) {
+    for (int y = ya; y < yb; ++y) {
+        uint8_t* row = dst + y * pitch;
+        int v = ymap[y - ya];
+        for (int x = xa; x < xb; ++x) {
             int sx, sy;
-            Inverse(rotation, xmap[x], v, w, h, &sx, &sy);
+            Inverse(rotation, xmap[x - xa], v, w, h, &sx, &sy);
             row[x] = src[sy * w + sx];
         }
     }
 
     // Chroma at half resolution, in UV-sample units of the source (w/2 x h/2).
     const uint8_t* srcUV = src + size_t(w) * h;
-    const int cw = w / 2, ch = h / 2, cew = ew / 2, ceh = eh / 2;
+    const int cw = w / 2, ch = h / 2, cew = ew / 2, ceh = eh / 2, cdw = dw / 2, cdh = dh / 2;
+    const int cx0 = x0 / 2, cy0 = y0 / 2;
     uint8_t* dstUV = dst + pitch * height;
-    for (int y = 0; y < dh / 2; ++y) {
-        uint8_t* row = dstUV + (y0 / 2 + y) * pitch + x0;
-        int v = std::min(ceh - 1, int(y * double(ceh) / (dh / 2)));
-        for (int x = 0; x < dw / 2; ++x) {
-            int u = std::min(cew - 1, int(x * double(cew) / (dw / 2)));
+    for (int y = ya / 2; y < yb / 2; ++y) {
+        uint8_t* row = dstUV + y * pitch;
+        int v = std::min(ceh - 1, int((y - cy0) * double(ceh) / cdh));
+        for (int x = xa / 2; x < xb / 2; ++x) {
+            int u = std::min(cew - 1, int((x - cx0) * double(cew) / cdw));
             if (mirror) u = cew - 1 - u;
             int sx, sy;
             Inverse(rotation, u, v, cw, ch, &sx, &sy);

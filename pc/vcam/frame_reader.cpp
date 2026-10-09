@@ -71,6 +71,7 @@ bool FrameReader::CopyLatest() {
         memcpy(frame_.data(), FrameData(view_), bytes);
         UINT32 rot = hdr->rotation;
         bool mirror = hdr->mirror != 0;
+        bool fill = hdr->fill != 0;
         uint64_t tick = hdr->frameTick;
         MemoryBarrier();
         if (hdr->seq != seq1) continue; // Torn read; retry.
@@ -78,6 +79,7 @@ bool FrameReader::CopyLatest() {
         frameHeight_ = h;
         rotation_ = (rot == 90 || rot == 180 || rot == 270) ? rot : 0;
         mirror_ = mirror;
+        fill_ = fill;
         frameTick_ = tick;
         lastSeq_ = seq1;
         return true;
@@ -88,7 +90,7 @@ bool FrameReader::CopyLatest() {
 void FrameReader::Render(uint8_t* dst, LONG pitch, UINT32 width, UINT32 height) {
     bool have = CopyLatest() && frameWidth_ && GetTickCount64() - frameTick_ < kStaleMs;
     FillBlackNV12(dst, pitch, width, height);
-    if (have) DrawFittedNV12(frame_.data(), frameWidth_, frameHeight_, rotation_, mirror_, dst, pitch, width, height);
+    if (have) DrawFittedNV12(frame_.data(), frameWidth_, frameHeight_, rotation_, mirror_, dst, pitch, width, height, fill_);
 }
 
 } // namespace mycam

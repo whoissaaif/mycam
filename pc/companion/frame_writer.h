@@ -14,7 +14,7 @@ public:
     bool ConsumerActive(uint64_t withinMs);
 
     void SetPhoneState(uint32_t state);
-    void Write(const uint8_t* nv12, uint32_t width, uint32_t height, uint32_t rotation, bool mirror);
+    void Write(const uint8_t* nv12, uint32_t width, uint32_t height, uint32_t rotation, bool mirror, bool fill = false);
 
 private:
     bool EnsureMapping();

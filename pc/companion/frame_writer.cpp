@@ -44,7 +44,7 @@ void FrameWriter::SetPhoneState(uint32_t state) {
     static_cast<SharedHeader*>(view_)->phoneState = state;
 }
 
-void FrameWriter::Write(const uint8_t* nv12, uint32_t width, uint32_t height, uint32_t rotation, bool mirror) {
+void FrameWriter::Write(const uint8_t* nv12, uint32_t width, uint32_t height, uint32_t rotation, bool mirror, bool fill) {
     if (width > kMaxWidth || height > kMaxHeight || !EnsureMapping()) return;
     auto* hdr = static_cast<SharedHeader*>(view_);
     if (hdr->magic != kSharedMagic) return;
@@ -54,6 +54,7 @@ void FrameWriter::Write(const uint8_t* nv12, uint32_t width, uint32_t height, ui
     hdr->height = height;
     hdr->rotation = rotation;
     hdr->mirror = mirror ? 1 : 0;
+    hdr->fill = fill ? 1 : 0;
     memcpy(FrameData(view_), nv12, size_t(width) * height * 3 / 2);
     hdr->frameTick = GetTickCount64();
     InterlockedIncrement(&hdr->seq); // Even: stable.

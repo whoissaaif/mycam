@@ -31,10 +31,10 @@ constexpr UINT32 kLinkHot = 0x3399FF;
 constexpr UINT32 kRule = 0xE2E2E2;
 
 // Layout in DIPs.
-constexpr float kWidth = 420, kHeight = 432;
+constexpr float kWidth = 420, kHeight = 456;
 constexpr float kTitleH = 30, kFrame = 7, kCommandH = 46;
 
-enum Id { kNone = 0, kPause, kBack, kFront, kMirror, kAutostart, kReconnect, kOpenLog, kClose, kTitleClose };
+enum Id { kNone = 0, kPause, kBack, kFront, kMirror, kFill, kAutostart, kReconnect, kOpenLog, kClose, kTitleClose };
 enum class Kind { Segment, Checkbox, Link, Button, TitleClose };
 
 struct Element {
@@ -95,9 +95,10 @@ struct SettingsWindow::Impl {
         elements.push_back({kBack, Kind::Segment, Rect(x, 164, 150, 28), L"Back camera"});
         elements.push_back({kFront, Kind::Segment, Rect(x + 149, 164, 150, 28), L"Front camera"});
         elements.push_back({kMirror, Kind::Checkbox, Rect(x, 246, 300, 20), L"Mirror the image"});
-        elements.push_back({kAutostart, Kind::Checkbox, Rect(x, 306, 300, 20), L"Start MyCam with Windows"});
-        elements.push_back({kReconnect, Kind::Link, Rect(x, 340, 110, 20), L"Reconnect phone"});
-        elements.push_back({kOpenLog, Kind::Link, Rect(x + 130, 340, 110, 20), L"Open log folder"});
+        elements.push_back({kFill, Kind::Checkbox, Rect(x, 270, 330, 20), L"Fill the frame (crop instead of black bars)"});
+        elements.push_back({kAutostart, Kind::Checkbox, Rect(x, 330, 300, 20), L"Start MyCam with Windows"});
+        elements.push_back({kReconnect, Kind::Link, Rect(x, 364, 110, 20), L"Reconnect phone"});
+        elements.push_back({kOpenLog, Kind::Link, Rect(x + 130, 364, 110, 20), L"Open log folder"});
         const float bottom = kHeight - kFrame;
         elements.push_back({kClose, Kind::Button, Rect(kWidth - kFrame - 12 - 86, bottom - kCommandH + 11, 86, 24), L"Close"});
     }
@@ -369,7 +370,7 @@ struct SettingsWindow::Impl {
 
         SectionHeading(L"Camera", 140);
         SectionHeading(L"Picture", 222);
-        SectionHeading(L"General", 282);
+        SectionHeading(L"General", 306);
 
         const bool front = status.facing == proto::kFacingFront;
         for (const auto& e : elements) {
@@ -380,7 +381,7 @@ struct SettingsWindow::Impl {
                 DrawAeroButton(e.rect, e.text, isHot, isDown, (e.id == kFront) == front);
                 break;
             case Kind::Checkbox:
-                DrawCheckbox(e, e.id == kMirror ? model->mirror() : model->autostart());
+                DrawCheckbox(e, e.id == kMirror ? model->mirror() : e.id == kFill ? model->fill() : model->autostart());
                 break;
             case Kind::Link: DrawLink(e); break;
             case Kind::Button:
@@ -410,6 +411,7 @@ struct SettingsWindow::Impl {
         case kBack: model->setFacing(proto::kFacingBack); break;
         case kFront: model->setFacing(proto::kFacingFront); break;
         case kMirror: model->setMirror(!model->mirror()); break;
+        case kFill: model->setFill(!model->fill()); break;
         case kAutostart: model->setAutostart(!model->autostart()); break;
         case kReconnect: model->reconnect(); break;
         case kOpenLog: model->openLogFolder(); break;
@@ -421,8 +423,8 @@ struct SettingsWindow::Impl {
     }
 
     void MoveFocus(int step) {
-        static const Id order[] = {kPause, kBack, kFront, kMirror, kAutostart, kReconnect, kOpenLog, kClose};
-        constexpr int n = 8;
+        static const Id order[] = {kPause, kBack, kFront, kMirror, kFill, kAutostart, kReconnect, kOpenLog, kClose};
+        constexpr int n = 9;
         int i = 0;
         for (int k = 0; k < n; ++k) if (order[k] == focus) i = k;
         focus = order[(i + step + n) % n];

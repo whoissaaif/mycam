@@ -28,6 +28,7 @@ private:
     UINT32 frameHeight_ = 0;
     UINT32 rotation_ = 0;
     bool mirror_ = false;
+    bool fill_ = false;
     uint64_t frameTick_ = 0;
     LONG lastSeq_ = -1;
 };

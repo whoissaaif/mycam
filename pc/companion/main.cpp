@@ -41,6 +41,7 @@ enum MenuId : UINT {
     kMenuBack,
     kMenuFront,
     kMenuMirror,
+    kMenuFill,
     kMenuReconnect,
     kMenuAutostart,
     kMenuExit,
@@ -51,6 +52,7 @@ NOTIFYICONDATAW g_tray = {};
 PhoneLink* g_link = nullptr;
 SettingsWindow* g_settings = nullptr;
 bool g_mirror = false;
+bool g_fill = false;
 
 std::mutex g_statusLock;
 LinkStatus g_status;
@@ -117,6 +119,12 @@ void SetMirror(bool mirror) {
     WriteSetting(L"Mirror", mirror);
 }
 
+void SetFill(bool fill) {
+    g_fill = fill;
+    g_link->SetFill(fill);
+    WriteSetting(L"Fill", fill);
+}
+
 // Windows locked or asleep: keep the phone camera off (privacy). Separate from the user's own pause.
 void UpdateLockPause() {
     if (g_link) g_link->SetLockPaused(g_sessionLocked || g_suspended);
@@ -139,6 +147,7 @@ void ShowMenu(HWND hwnd) {
     AppendMenuW(menu, MF_STRING, kMenuFront, L"Front camera");
     CheckMenuRadioItem(menu, kMenuBack, kMenuFront, s.facing == proto::kFacingFront ? kMenuFront : kMenuBack, MF_BYCOMMAND);
     AppendMenuW(menu, MF_STRING | (g_mirror ? MF_CHECKED : 0), kMenuMirror, L"Mirror image");
+    AppendMenuW(menu, MF_STRING | (g_fill ? MF_CHECKED : 0), kMenuFill, L"Fill the frame");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kMenuReconnect, L"Reconnect phone");
     AppendMenuW(menu, MF_STRING | (AutostartEnabled() ? MF_CHECKED : 0), kMenuAutostart, L"Start with Windows");
@@ -209,6 +218,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case kMenuBack:  g_link->RequestFacing(proto::kFacingBack); break;
         case kMenuFront: g_link->RequestFacing(proto::kFacingFront); break;
         case kMenuMirror: SetMirror(!g_mirror); break;
+        case kMenuFill: SetFill(!g_fill); break;
         case kMenuReconnect: g_link->RequestReconnect(); break;
         case kMenuAutostart: SetAutostart(!AutostartEnabled()); break;
         case kMenuExit: DestroyWindow(hwnd); break;
@@ -248,7 +258,7 @@ void RunTestPattern(std::atomic<bool>& quit, uint32_t rotation) {
             }
         uint32_t line = n * 8 % h; // White line sweeping down shows the feed is live.
         memset(&frame[line * w], 235, w);
-        writer.Write(frame.data(), w, h, rotation, false);
+        writer.Write(frame.data(), w, h, rotation, false, g_fill);
         Sleep(33);
     }
 }
@@ -324,6 +334,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     }
 
     g_mirror = ReadSetting(L"Mirror", 0) != 0;
+    g_fill = ReadSetting(L"Fill", 0) != 0;
     PhoneLink link([](const LinkStatus& s) {
         {
             std::lock_guard<std::mutex> lock(g_statusLock);
@@ -332,6 +343,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         PostMessageW(g_hwnd, WM_STATUS, 0, 0);
     }, [] { PostMessageW(g_hwnd, WM_NEED_DRIVER, 0, 0); });
     link.SetMirror(g_mirror);
+    link.SetFill(g_fill);
     link.SetStatusImages(LoadStatusImage(kImagePaused), LoadStatusImage(kImageWaiting));
     g_link = &link;
 
@@ -347,6 +359,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         OpenLogFolder,
         [] { return CurrentStatus().state == LinkState::Paused; },
         [](bool pause) { g_link->RequestPause(pause); },
+        [] { return g_fill; },
+        SetFill,
     });
     g_settings = &settings;
     UpdateTray();

@@ -39,6 +39,7 @@ struct SharedHeader {
     uint32_t phoneState;
     volatile uint64_t frameTick;     // GetTickCount64() when the frame was written (companion).
     volatile uint64_t consumerTick;  // GetTickCount64() of the last frame request (virtual camera).
+    uint32_t fill;      // Non-zero: crop to fill the output instead of letterboxing (appended in 1.3).
 };
 static_assert(sizeof(SharedHeader) <= kHeaderBytes, "header too large");
 

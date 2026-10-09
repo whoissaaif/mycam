@@ -523,7 +523,7 @@ void PhoneLink::OnDecodedFrame(const uint8_t* nv12, uint32_t width, uint32_t hei
     rotation = (rotation + 45) / 90 * 90 % 360;
     ++statDecoded_;
     if (phonePaused_ || lockPaused_) return; // Privacy: nothing reaches the camera while paused or locked.
-    writer_.Write(nv12, width, height, uint32_t(rotation), mirror_);
+    writer_.Write(nv12, width, height, uint32_t(rotation), mirror_, fill_);
     lastFrameTick_ = GetTickCount64();
 }
 

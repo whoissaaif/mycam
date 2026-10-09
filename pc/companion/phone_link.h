@@ -50,6 +50,7 @@ public:
     // Thread-safe controls from the UI thread.
     void RequestFacing(int facing) { pendingFacing_ = facing; }
     void SetMirror(bool mirror) { mirror_ = mirror; }
+    void SetFill(bool fill) { fill_ = fill; }
     void RequestReconnect() { reconnect_ = true; }
     // Pause / resume the camera (the phone stores the choice). Needs a connected phone.
     void RequestPause(bool pause) { pendingPause_ = pause ? 1 : 0; }
@@ -83,6 +84,7 @@ private:
     std::atomic<bool> quit_{false};
     std::atomic<int> pendingFacing_{-1};
     std::atomic<bool> mirror_{false};
+    std::atomic<bool> fill_{false};
     std::atomic<bool> reconnect_{false};
     std::atomic<int> pendingPause_{-1};
     std::atomic<bool> lockPaused_{false};

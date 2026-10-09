@@ -21,6 +21,8 @@ struct SettingsModel {
     std::function<void()> openLogFolder;
     std::function<bool()> paused;
     std::function<void(bool)> setPaused;
+    std::function<bool()> fill;
+    std::function<void(bool)> setFill;
 };
 
 class SettingsWindow {
