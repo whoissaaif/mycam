@@ -6,7 +6,7 @@
   2. Downloads the UsbDk driver package (hash-checked) and its license into installer\redist.
   3. Compiles installer\mycam.iss with Inno Setup 6 (winget install JRSoftware.InnoSetup).
 #>
-param([string]$Version = '1.4.0-beta1')
+param([string]$Version = '1.4.0-beta2')
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path "$PSScriptRoot\.."
 

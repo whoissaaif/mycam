@@ -57,7 +57,13 @@ fun VideoSection(settings: CameraStreamer.Settings, info: Protocol.CameraInfo?, 
     )
     Spacer(Modifier.height(6.dp))
     Text(
-        stringResource(if (has60 || has120) R.string.video_fps_hint else R.string.video_fps_unsupported),
+        stringResource(
+            when {
+                info == null || info.width == 0 -> R.string.video_fps_unknown
+                has60 || has120 -> R.string.video_fps_hint
+                else -> R.string.video_fps_unsupported
+            }
+        ),
         style = MaterialTheme.typography.bodyMedium, color = Aero.Subtle,
     )
     if (info != null && info.width > 0) {

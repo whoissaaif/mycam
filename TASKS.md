@@ -34,6 +34,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [ ] Adaptive-bitrate Int overflow fix at 4K (in `WebcamService.kt`): test, then release as 1.3.2
 - [ ] Screen-reader support for the settings window (UI Automation) [5.2]
 - [ ] Code-sign the installer and companion [5.3]
+- [ ] USB debugging on: the accessory shows up as accessory+adb (composite), WinUSB isn't bound to its interface, so it never connects; bind the MI_00 interface too [2.1]
+- [ ] Test the release APK (not just debug) on a phone before every release: R8 only runs on release builds
 - [ ] Uninstaller: remove UsbDk completely (service + UsbDk.sys stay behind after msiexec) [5.3]
 - [ ] Test a clean install on a different PC (Sandbox needs CPU virtualization enabled in firmware) [2.3]
 - [ ] Decide public vs. private repo before sharing builds [8]
@@ -65,6 +67,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 
 | Version | Date | What changed |
 |---|---|---|
+| 1.3.3 | 2026-10-10 | Hotfix: the 1.3.2 phone app crashed on launch (R8 packageScope); clearer frame-rate hint. |
 | 1.3.2 | 2026-10-10 | 30/60/120 fps per quality (high-speed capture), no-UAC phone setup, dim screen + heat warning, lower phone latency, 4K bitrate fixes. |
 | 1.3.1 | 2026-10-09 | Quality & 60 fps, camera controls + Auto, crop to fill, adaptive streaming, lower PC latency (protocol v3). |
 | 1.2.0 | 2026-10-09 | Package `io.github.whoissaaif.mycam` (new app on phones), signed with the release key, 1.5 MB APK. |
