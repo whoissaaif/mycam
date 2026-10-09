@@ -9,7 +9,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 
 ## Now
 
-- [ ] Install v1.1.1 on the PC and the phone (adds the GitHub link shown on phones without the app)
+- [ ] Create the release key (`tools\create-release-key.ps1`) and back it up [4.2]
+- [ ] Release 1.2.0 (signed APK + installer); on the phone, uninstall the old `com.example.mycam` app once, then install 1.2.0
 - [ ] Test the remaining scenarios [2.3]
   - [ ] Pause / Resume from the phone's notification
   - [ ] Pause survives unplug and replug
@@ -25,8 +26,6 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [ ] One UAC prompt for a new phone instead of two [2.2]
 - [ ] Crop to fill (no black bars for a portrait phone) [3.1]
 - [ ] Dim the phone screen while streaming, with a heat warning [4.1]
-- [ ] Real package name instead of `com.example.mycam` [4.2]
-- [ ] Release signing key for the APK [4.2]
 - [ ] Write `design/STYLE.md` [7.2]
 
 ## Backlog
@@ -41,6 +40,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 
 ## Done
 
+- [x] Package name `io.github.whoissaaif.mycam` and release signing setup [4.2] (1.2.0)
+- [x] Ad brief for the motion designer (shared doc)
 - [x] Wired phone-as-webcam: Android Open Accessory + Windows 11 virtual camera (1.0)
 - [x] Fixes from first real-phone testing: MediaTek config, WinUSB streaming, reliable reads, logging (1.0)
 - [x] Project hygiene: git, unit tests, protocol spec and golden vectors [6]

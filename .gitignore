@@ -32,3 +32,8 @@ local.properties
 
 # Release files staged for GitHub Releases
 /release/
+
+# Release signing secrets (see tools/create-release-key.ps1). Never commit these.
+/keystore.properties
+*.jks
+*.keystore

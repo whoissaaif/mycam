@@ -1,6 +1,6 @@
 # Golden byte sequences for the MyCam wire protocol (see PROTOCOL.md).
 # Both test suites check against this file:
-#   Android: app/src/test/java/com/example/mycam/ProtocolTest.kt  (builds packets, parses commands)
+#   Android: app/src/test/java/io/github/whoissaaif/mycam/ProtocolTest.kt  (builds packets, parses commands)
 #   Windows: pc/tests/tests.cpp                                   (parses packets, builds commands)
 # Format: name = hex bytes (spaces are ignored). Change both implementations and this file together.
 

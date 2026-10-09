@@ -1,4 +1,4 @@
-package com.example.mycam
+package io.github.whoissaaif.mycam
 
 import android.Manifest
 import android.app.PendingIntent
@@ -19,8 +19,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
-import com.example.mycam.ui.WebcamScreen
-import com.example.mycam.ui.theme.MycamTheme
+import io.github.whoissaaif.mycam.ui.WebcamScreen
+import io.github.whoissaaif.mycam.ui.theme.MycamTheme
 
 class MainActivity : ComponentActivity() {
 
@@ -170,7 +170,7 @@ class MainActivity : ComponentActivity() {
         ContextCompat.checkSelfPermission(this, permission) == PackageManager.PERMISSION_GRANTED
 
     companion object {
-        private const val ACTION_USB_PERMISSION = "com.example.mycam.USB_PERMISSION"
+        private const val ACTION_USB_PERMISSION = "io.github.whoissaaif.mycam.USB_PERMISSION"
         const val ACCESSORY_MANUFACTURER = "MyCam"
     }
 }

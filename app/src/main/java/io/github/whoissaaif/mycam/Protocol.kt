@@ -1,4 +1,4 @@
-package com.example.mycam
+package io.github.whoissaaif.mycam
 
 import java.nio.ByteBuffer
 import java.nio.ByteOrder

@@ -1,4 +1,4 @@
-package com.example.mycam.ui
+package io.github.whoissaaif.mycam.ui
 
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -22,19 +22,19 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import com.example.mycam.Protocol
-import com.example.mycam.R
-import com.example.mycam.WebcamService
-import com.example.mycam.ui.aero.AeroSegmented
-import com.example.mycam.ui.aero.BadgeKind
-import com.example.mycam.ui.aero.CommandArea
-import com.example.mycam.ui.aero.CommandLink
-import com.example.mycam.ui.aero.GlassHeader
-import com.example.mycam.ui.aero.GlossyBadge
-import com.example.mycam.ui.aero.LivePill
-import com.example.mycam.ui.aero.SectionHeading
-import com.example.mycam.ui.theme.Aero
-import com.example.mycam.ui.theme.MycamTheme
+import io.github.whoissaaif.mycam.Protocol
+import io.github.whoissaaif.mycam.R
+import io.github.whoissaaif.mycam.WebcamService
+import io.github.whoissaaif.mycam.ui.aero.AeroSegmented
+import io.github.whoissaaif.mycam.ui.aero.BadgeKind
+import io.github.whoissaaif.mycam.ui.aero.CommandArea
+import io.github.whoissaaif.mycam.ui.aero.CommandLink
+import io.github.whoissaaif.mycam.ui.aero.GlassHeader
+import io.github.whoissaaif.mycam.ui.aero.GlossyBadge
+import io.github.whoissaaif.mycam.ui.aero.LivePill
+import io.github.whoissaaif.mycam.ui.aero.SectionHeading
+import io.github.whoissaaif.mycam.ui.theme.Aero
+import io.github.whoissaaif.mycam.ui.theme.MycamTheme
 
 private data class StatusView(val icon: Int, val headline: String, val detail: String, val live: Boolean = false)
 

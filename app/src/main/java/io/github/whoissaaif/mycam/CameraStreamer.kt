@@ -1,4 +1,4 @@
-package com.example.mycam
+package io.github.whoissaaif.mycam
 
 import android.annotation.SuppressLint
 import android.content.Context

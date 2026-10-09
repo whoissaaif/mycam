@@ -90,12 +90,12 @@ measurement (timestamp in the frame header → log).
 A dark aurora "streaming" screen keeps the phone cooler, saves battery and is more private. Show a warning
 when the phone gets hot (`PowerManager.getCurrentThermalStatus`).
 
-### 4.2 Branding and release signing (S): 🟡
+### 4.2 Branding and release signing (S): ✅ (1.2.0)
 - ✅ Real app icon (Aero webcam, adaptive + legacy + themed).
-- ⏳ Proper package name instead of `com.example.mycam`. Changing it later means a separate install, so
-  do it before sharing widely.
-- ⏳ Release signing key. APKs are currently signed with the debug key: fine for sideloading, not for
-  the Play Store.
+- ✅ Package name `io.github.whoissaaif.mycam` (was `com.example.mycam`). Android treats it as a new app:
+  uninstall the old one once.
+- ✅ Release signing: `tools\create-release-key.ps1` makes the key in `%USERPROFILE%\.mycam\` and a git-ignored
+  `keystore.properties`; `gradlew assembleRelease` then signs. **Back up the key and its password.**
 
 ---
 
@@ -194,6 +194,5 @@ The UI was built directly in the chosen style and reviewed from screenshots inst
 1. **2.3** Test the untested scenarios (cheap, and it finds the real bugs)
 2. **2.1 / 2.2** Remaining reliability and first-use polish
 3. **3.1** Crop to fill, and **4.1** dim the screen while streaming
-4. **4.2** Package name and release signing, before sharing more widely
-5. **7.2** Write `design/STYLE.md`
-6. Everything else as needed (3.2–3.4, 5.2 accessibility, 5.3 code signing)
+4. **7.2** Write `design/STYLE.md`
+5. Everything else as needed (3.2–3.4, 5.2 accessibility, 5.3 code signing)

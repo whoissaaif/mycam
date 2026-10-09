@@ -1,4 +1,4 @@
-package com.example.mycam.ui.theme
+package io.github.whoissaaif.mycam.ui.theme
 
 import androidx.compose.material3.Typography
 import androidx.compose.ui.text.TextStyle
@@ -6,7 +6,7 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
-import com.example.mycam.R
+import io.github.whoissaaif.mycam.R
 
 // Selawik: Microsoft's open-source (OFL) Segoe UI substitute, for the Windows 7 look.
 // License: assets/licenses/Selawik-OFL.txt

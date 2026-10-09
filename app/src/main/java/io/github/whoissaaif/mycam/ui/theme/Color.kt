@@ -1,4 +1,4 @@
-package com.example.mycam.ui.theme
+package io.github.whoissaaif.mycam.ui.theme
 
 import androidx.compose.ui.graphics.Color
 

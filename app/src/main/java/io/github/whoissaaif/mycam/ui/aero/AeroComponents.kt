@@ -1,4 +1,4 @@
-package com.example.mycam.ui.aero
+package io.github.whoissaaif.mycam.ui.aero
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
@@ -46,7 +46,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.example.mycam.ui.theme.Aero
+import io.github.whoissaaif.mycam.ui.theme.Aero
 
 // Windows 7 "Aero" building blocks for Compose (IMPROVEMENTS.md section 7). The PC settings window
 // draws the same parts with Direct2D (pc/companion/settings_window.cpp).

@@ -3,7 +3,7 @@
 The phone and the PC talk over the two bulk endpoints of an Android Open Accessory (AOA) connection.
 All integers are **big-endian**. Implementations:
 
-- Android: `app/src/main/java/com/example/mycam/Protocol.kt`
+- Android: `app/src/main/java/io/github/whoissaaif/mycam/Protocol.kt`
 - Windows: `pc/companion/protocol.h` and `pc/companion/packet_parser.cpp`
 
 Byte-exact examples live in [`golden.txt`](golden.txt), and both test suites check against them.

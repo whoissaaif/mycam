@@ -1,4 +1,4 @@
-package com.example.mycam
+package io.github.whoissaaif.mycam
 
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals

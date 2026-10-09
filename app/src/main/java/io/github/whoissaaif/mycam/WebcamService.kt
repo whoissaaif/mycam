@@ -1,4 +1,4 @@
-package com.example.mycam
+package io.github.whoissaaif.mycam
 
 import android.app.Notification
 import android.app.NotificationChannel
@@ -407,10 +407,10 @@ class WebcamService : Service() {
         private const val NOTIFICATION_ID = 1
         const val PREFS = "mycam"
         const val PREF_FACING = "facing"
-        const val ACTION_SET_FACING = "com.example.mycam.SET_FACING"
+        const val ACTION_SET_FACING = "io.github.whoissaaif.mycam.SET_FACING"
         const val EXTRA_FACING = "facing"
         const val PREF_PAUSED = "paused"
-        const val ACTION_SET_PAUSED = "com.example.mycam.SET_PAUSED"
+        const val ACTION_SET_PAUSED = "io.github.whoissaaif.mycam.SET_PAUSED"
         const val EXTRA_PAUSED = "paused"
 
         private val _state = MutableStateFlow(UiState())
