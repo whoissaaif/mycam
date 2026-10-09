@@ -63,6 +63,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 
 | Version | Date | What changed |
 |---|---|---|
+| 1.3.2 | 2026-10-10 | 30/60/120 fps per quality (high-speed capture), no-UAC phone setup, dim screen + heat warning, lower phone latency, 4K bitrate fixes. |
 | 1.3.1 | 2026-10-09 | Quality & 60 fps, camera controls + Auto, crop to fill, adaptive streaming, lower PC latency (protocol v3). |
 | 1.2.0 | 2026-10-09 | Package `io.github.whoissaaif.mycam` (new app on phones), signed with the release key, 1.5 MB APK. |
 | 1.1.1 | 2026-10-09 | The phone's "get the app" link points to the GitHub repo. First GitHub release (exe + apk). |
