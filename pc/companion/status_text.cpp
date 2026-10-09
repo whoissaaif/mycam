@@ -16,7 +16,7 @@ StatusView DescribeStatus(const LinkStatus& s, bool cameraRegistered) {
     case LinkState::NoDriver:
         return {L"USB driver missing", L"Run the MyCam installer again to set up the USB driver.", kIconError};
     case LinkState::Searching:
-        return {L"No phone connected", L"Plug in your Android phone with a USB cable.", kIconDisconnected};
+        return {L"No phone connected", L"Plug in your phone with a USB cable.", kIconDisconnected};
     case LinkState::Waiting:
         return {L"Phone found", L"Open MyCam on the phone, and tap OK if it asks.", kIconDisconnected};
     case LinkState::Idle:

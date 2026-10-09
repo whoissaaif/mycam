@@ -6,6 +6,7 @@
 #include "aoa_transport.h"
 #include "log.h"
 #include "protocol.h"
+#include "usbmux_transport.h"
 
 namespace mycam {
 
@@ -22,6 +23,7 @@ void PhoneLink::RequestReconnect() {
 
 void PhoneLink::Run() {
     transports_.push_back(std::make_unique<AoaTransport>());
+    transports_.push_back(std::make_unique<UsbmuxTransport>());
     for (auto& transport : transports_) {
         ITransport* t = transport.get();
         t->SetEventCallback([this, t](TransportEvent event) { OnTransportEvent(t, event); });
