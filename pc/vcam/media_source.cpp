@@ -10,27 +10,29 @@ namespace {
 // KSCATEGORY pin name for a video capture stream ({FB6C4281-0353-11d1-905F-0000C0CC16BA}).
 constexpr GUID kPinNameVideoCapture = {0xfb6c4281, 0x0353, 0x11d1, {0x90, 0x5f, 0x00, 0x00, 0xc0, 0xcc, 0x16, 0xba}};
 
-constexpr UINT32 kFps = 30;
-constexpr LONGLONG kFrameDuration = 10'000'000 / kFps; // 100 ns units
+constexpr LONGLONG kSecond = 10'000'000; // 100 ns units
 
-struct Format { UINT32 width, height; };
-constexpr Format kFormats[] = {{1920, 1080}, {1280, 720}, {640, 480}, {640, 360}};
+// Offered to apps; the first is the default. 4K and 60 fps match the phone qualities (1.3).
+struct Format { UINT32 width, height, fps; };
+constexpr Format kFormats[] = {
+    {1920, 1080, 30}, {1280, 720, 30}, {3840, 2160, 30}, {1920, 1080, 60}, {1280, 720, 60}, {640, 480, 30}, {640, 360, 30},
+};
 
-HRESULT CreateVideoType(UINT32 width, UINT32 height, IMFMediaType** out) {
+HRESULT CreateVideoType(UINT32 width, UINT32 height, UINT32 fps, IMFMediaType** out) {
     ComPtr<IMFMediaType> type;
     HRESULT hr = MFCreateMediaType(&type);
     if (FAILED(hr)) return hr;
     type->SetGUID(MF_MT_MAJOR_TYPE, MFMediaType_Video);
     type->SetGUID(MF_MT_SUBTYPE, MFVideoFormat_NV12);
     MFSetAttributeSize(type.Get(), MF_MT_FRAME_SIZE, width, height);
-    MFSetAttributeRatio(type.Get(), MF_MT_FRAME_RATE, kFps, 1);
+    MFSetAttributeRatio(type.Get(), MF_MT_FRAME_RATE, fps, 1);
     MFSetAttributeRatio(type.Get(), MF_MT_PIXEL_ASPECT_RATIO, 1, 1);
     type->SetUINT32(MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive);
     type->SetUINT32(MF_MT_ALL_SAMPLES_INDEPENDENT, TRUE);
     type->SetUINT32(MF_MT_FIXED_SIZE_SAMPLES, TRUE);
     type->SetUINT32(MF_MT_DEFAULT_STRIDE, width);
     type->SetUINT32(MF_MT_SAMPLE_SIZE, width * height * 3 / 2);
-    type->SetUINT32(MF_MT_AVG_BITRATE, width * height * 3 / 2 * 8 * kFps);
+    type->SetUINT32(MF_MT_AVG_BITRATE, width * height * 3 / 2 * 8 * fps);
     *out = type.Detach();
     return S_OK;
 }
@@ -162,6 +164,9 @@ HRESULT MediaStream::Start(IMFMediaType* type, const PROPVARIANT* startTime) {
     if (!type) return E_INVALIDARG;
     HRESULT hr = MFGetAttributeSize(type, MF_MT_FRAME_SIZE, &width_, &height_);
     if (FAILED(hr)) return hr;
+    UINT32 num = 30, den = 1;
+    MFGetAttributeRatio(type, MF_MT_FRAME_RATE, &num, &den);
+    frameDuration_ = (num && den) ? kSecond * den / num : kSecond / 30;
 
     if (allocator_ && FAILED(allocator_->InitializeSampleAllocator(10, type))) {
         allocator_.Reset(); // Fall back to plain memory samples.
@@ -214,7 +219,7 @@ void MediaStream::DeliveryLoop() {
     if (!timer) timer = CreateWaitableTimerW(nullptr, FALSE, nullptr);
     LONGLONG next = MFGetSystemTime();
     for (;;) {
-        next += kFrameDuration;
+        next += frameDuration_;
         LONGLONG wait = next - MFGetSystemTime();
         if (wait < 0) { next = MFGetSystemTime(); wait = 0; } // Fell behind; don't burst.
         LARGE_INTEGER due;
@@ -270,7 +275,7 @@ HRESULT MediaStream::DeliverSample(IUnknown* token) {
     }
 
     sample->SetSampleTime(MFGetSystemTime());
-    sample->SetSampleDuration(kFrameDuration);
+    sample->SetSampleDuration(frameDuration_);
     if (token) sample->SetUnknown(MFSampleExtension_Token, token);
     return queue_->QueueEventParamUnk(MEMediaSample, GUID_NULL, S_OK, sample.Get());
 }
@@ -291,7 +296,7 @@ HRESULT MediaSource::RuntimeClassInitialize(IMFAttributes* activatorAttributes) 
 
     IMFMediaType* types[ARRAYSIZE(kFormats)] = {};
     for (size_t i = 0; i < ARRAYSIZE(kFormats); ++i) {
-        hr = CreateVideoType(kFormats[i].width, kFormats[i].height, &types[i]);
+        hr = CreateVideoType(kFormats[i].width, kFormats[i].height, kFormats[i].fps, &types[i]);
         if (FAILED(hr)) break;
     }
     ComPtr<IMFStreamDescriptor> sd;

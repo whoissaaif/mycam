@@ -23,6 +23,7 @@ struct SettingsModel {
     std::function<void(bool)> setPaused;
     std::function<bool()> fill;
     std::function<void(bool)> setFill;
+    std::function<void(uint8_t, uint8_t)> command; // v3 camera command (proto::Command, arg)
 };
 
 class SettingsWindow {

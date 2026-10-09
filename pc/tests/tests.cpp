@@ -107,12 +107,32 @@ void TestGoldenCommands(std::map<std::string, Bytes>& golden) {
         {"command.facing_front", proto::kCmdSetFacing, proto::kFacingFront},
         {"command.pause", proto::kCmdPause, 0},
         {"command.resume", proto::kCmdResume, 0},
+        {"command.quality_4k", proto::kCmdSetQuality, proto::kQuality4K},
+        {"command.fps_60", proto::kCmdSetFps, 60},
+        {"command.zoom_2x", proto::kCmdSetZoom, 20},
+        {"command.exposure_m2", proto::kCmdSetExposure, uint8_t(int8_t(-2))},
+        {"command.torch_on", proto::kCmdSetTorch, 1},
+        {"command.focus_lock", proto::kCmdSetFocus, 1},
     };
     for (const Expect& e : cases) {
         uint8_t out[proto::kCommandSize];
         proto::MakeCommand(out, e.cmd, e.arg);
         CHECK(Bytes(out, out + sizeof(out)) == golden[e.name]);
     }
+}
+
+void TestGoldenCamera(std::map<std::string, Bytes>& golden) {
+    PacketParser parser;
+    std::vector<Bytes> payloads;
+    auto packets = ParseAll(parser, golden["packet.camera"], &payloads);
+    CHECK(packets.size() == 1 && packets[0].type == proto::kCamera);
+    proto::CameraInfo c;
+    CHECK(!payloads.empty() && proto::ParseCameraInfo(payloads[0].data(), uint32_t(payloads[0].size()), &c));
+    CHECK(c.quality == proto::kQuality1080p && c.fps == 30);
+    CHECK(c.zoomX100 == 100 && c.zoomMinX100 == 60 && c.zoomMaxX100 == 1000);
+    CHECK(c.ev == 0 && c.evMin == -12 && c.evMax == 12 && c.evStepX100 == 33);
+    CHECK(c.flags == (proto::kCamTorchAvailable | proto::kCamHas60Fps | proto::kCamHas4K));
+    CHECK(c.width == 1920 && c.height == 1080 && c.actualFps == 30);
 }
 
 void TestParserSplitsAndBatches(std::map<std::string, Bytes>& golden) {
@@ -301,6 +321,7 @@ int main() {
 
     printf("protocol golden packets\n");   withGolden(TestGoldenPackets);
     printf("protocol golden commands\n");  withGolden(TestGoldenCommands);
+    printf("protocol golden camera\n");    withGolden(TestGoldenCamera);
     printf("parser splits/batches\n");     withGolden(TestParserSplitsAndBatches);
     printf("parser resyncs\n");            withGolden(TestParserResyncs);
     printf("parser re-entrant\n");         withGolden(TestParserReentrant);

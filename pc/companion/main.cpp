@@ -361,6 +361,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         [](bool pause) { g_link->RequestPause(pause); },
         [] { return g_fill; },
         SetFill,
+        [](uint8_t cmd, uint8_t arg) { g_link->RequestCommand(cmd, arg); },
     });
     g_settings = &settings;
     UpdateTray();

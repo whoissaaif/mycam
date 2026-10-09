@@ -325,6 +325,14 @@ void PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx) {
         }
         int facing = pendingFacing_.exchange(-1);
         if (facing >= 0) SendCommand(proto::kCmdSetFacing, uint8_t(facing));
+        {
+            std::vector<std::pair<uint8_t, uint8_t>> queued;
+            {
+                std::lock_guard<std::mutex> lock(commandLock_);
+                queued.swap(commands_);
+            }
+            for (auto& c : queued) SendCommand(c.first, c.second);
+        }
         int pause = pendingPause_.exchange(-1);
         if (pause >= 0) {
             Log("session: user %s the camera from the PC", pause ? "paused" : "resumed");
@@ -490,6 +498,16 @@ void PhoneLink::HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const u
         }
         break;
     }
+
+    case proto::kCamera:
+        if (proto::ParseCameraInfo(payload, length, &status_.camera)) {
+            Log("phone: camera %ux%u @ %u fps, zoom %.2f (%.2f-%.2f), ev %d, flags 0x%02x", status_.camera.width,
+                status_.camera.height, status_.camera.actualFps, status_.camera.zoomX100 / 100.0,
+                status_.camera.zoomMinX100 / 100.0, status_.camera.zoomMaxX100 / 100.0, status_.camera.ev,
+                status_.camera.flags);
+            Publish();
+        }
+        break;
 
     case proto::kLog:
         Log("phone says: %.*s", int(length), reinterpret_cast<const char*>(payload));

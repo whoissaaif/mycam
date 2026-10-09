@@ -45,6 +45,10 @@ class WebcamService : Service() {
         val connected: Boolean = false,
         val streaming: Boolean = false,
         val paused: Boolean = false,
+        /** Video and camera-control settings (persisted). */
+        val camera: CameraStreamer.Settings = CameraStreamer.Settings(),
+        /** What the active camera supports; null until the camera has been opened once. */
+        val cameraInfo: Protocol.CameraInfo? = null,
         val facing: Int = Protocol.FACING_BACK,
         val resolution: String = "",
         val error: String? = null,
@@ -64,6 +68,8 @@ class WebcamService : Service() {
     // Owned by the camera thread.
     private var wantStreaming = false
     private var paused = false // User pause (phone or PC). Persisted so a reconnect never turns the camera back on.
+    private var camSettings = CameraStreamer.Settings()
+    private var lastCameraInfo: Protocol.CameraInfo? = null
     private var facing = Protocol.FACING_BACK
     private var lastConfig: ByteArray? = null
     private var deviceRotation = 0
@@ -88,7 +94,8 @@ class WebcamService : Service() {
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         facing = prefs.getInt(PREF_FACING, Protocol.FACING_BACK)
         paused = prefs.getBoolean(PREF_PAUSED, false)
-        _state.update { UiState(facing = facing, paused = paused) }
+        camSettings = loadCameraSettings(prefs)
+        _state.update { UiState(facing = facing, paused = paused, camera = camSettings) }
         ContextCompat.registerReceiver(
             this, detachReceiver, IntentFilter(UsbManager.ACTION_USB_ACCESSORY_DETACHED),
             ContextCompat.RECEIVER_NOT_EXPORTED,
@@ -114,6 +121,13 @@ class WebcamService : Service() {
             ACTION_SET_FACING -> {
                 val f = intent.getIntExtra(EXTRA_FACING, Protocol.FACING_BACK)
                 camera.post { setFacing(f) }
+                return START_NOT_STICKY
+            }
+            ACTION_COMMAND -> {
+                // The phone UI uses the same commands as the PC (quality, fps, zoom, exposure, torch, focus).
+                val cmd = intent.getIntExtra(EXTRA_CMD, 0)
+                val arg = intent.getIntExtra(EXTRA_ARG, 0)
+                camera.post { handleCommand(cmd, arg) }
                 return START_NOT_STICKY
             }
             ACTION_SET_PAUSED -> {
@@ -234,6 +248,7 @@ class WebcamService : Service() {
                 send(Protocol.TYPE_HELLO, 0, 0, byteArrayOf(0, Protocol.VERSION.toByte()))
                 sendState()
                 sendOrientation()
+                sendCameraInfo()
             }
             Protocol.CMD_START -> {
                 wantStreaming = true
@@ -255,6 +270,12 @@ class WebcamService : Service() {
             Protocol.CMD_SET_FACING -> setFacing(arg)
             Protocol.CMD_PAUSE -> setPaused(true)
             Protocol.CMD_RESUME -> setPaused(false)
+            Protocol.CMD_SET_QUALITY -> changeVideo(camSettings.copy(quality = arg.coerceIn(Protocol.QUALITY_720P, Protocol.QUALITY_4K)))
+            Protocol.CMD_SET_FPS -> changeVideo(camSettings.copy(fps = if (arg >= 60) 60 else 30))
+            Protocol.CMD_SET_ZOOM -> changeControls(camSettings.copy(zoom = arg / 10f))
+            Protocol.CMD_SET_EXPOSURE -> changeControls(camSettings.copy(ev = arg.toByte().toInt()))
+            Protocol.CMD_SET_TORCH -> changeControls(camSettings.copy(torch = arg != 0))
+            Protocol.CMD_SET_FOCUS -> changeControls(camSettings.copy(focusLocked = arg != 0))
         }
     }
 
@@ -272,6 +293,41 @@ class WebcamService : Service() {
             !p && wantStreaming && streamer == null -> startStreamer()
             else -> sendState()
         }
+    }
+
+    /** Quality or frame rate changed: save, and restart the camera if it is running. */
+    private fun changeVideo(s: CameraStreamer.Settings) {
+        if (s == camSettings) return
+        camSettings = s
+        saveCameraSettings(getSharedPreferences(PREFS, MODE_PRIVATE), s)
+        _state.update { it.copy(camera = s) }
+        if (streamer != null) {
+            stopStreamer()
+            startStreamer()
+        } else {
+            sendCameraInfo()
+        }
+    }
+
+    /** Zoom, exposure, torch or focus changed: save, and apply live without restarting. */
+    private fun changeControls(s: CameraStreamer.Settings) {
+        camSettings = s
+        saveCameraSettings(getSharedPreferences(PREFS, MODE_PRIVATE), s)
+        _state.update { it.copy(camera = s) }
+        streamer?.updateControls(s) ?: sendCameraInfo()
+    }
+
+    /** Tells the PC the current settings (and, once known, what the camera supports). */
+    private fun sendCameraInfo() {
+        val c = camSettings
+        val info = lastCameraInfo?.copy(
+            quality = c.quality, fps = c.fps, zoomX100 = (c.zoom * 100).toInt().coerceIn(lastCameraInfo!!.zoomMinX100, lastCameraInfo!!.zoomMaxX100),
+            ev = c.ev.coerceIn(lastCameraInfo!!.evMin, lastCameraInfo!!.evMax),
+            flags = (lastCameraInfo!!.flags and (Protocol.CAM_TORCH_ON or Protocol.CAM_FOCUS_LOCKED).inv()) or
+                (if (c.torch && lastCameraInfo!!.flags and Protocol.CAM_TORCH_AVAILABLE != 0) Protocol.CAM_TORCH_ON else 0) or
+                (if (c.focusLocked && lastCameraInfo!!.flags and Protocol.CAM_HAS_AUTOFOCUS != 0) Protocol.CAM_FOCUS_LOCKED else 0),
+        ) ?: Protocol.CameraInfo(c.quality, c.fps, (c.zoom * 100).toInt(), 100, 100, c.ev, 0, 0, 0, 0, 0, 0, 0)
+        send(Protocol.TYPE_CAMERA, 0, 0, info.encode())
     }
 
     private fun setFacing(f: Int) {
@@ -292,8 +348,14 @@ class WebcamService : Service() {
         remoteLog("starting ${if (facing == Protocol.FACING_FRONT) "front" else "back"} camera")
         framesSent = 0
         bytesSent = 0L
-        val s = CameraStreamer(this, camera, facing, object : CameraStreamer.Listener {
+        val s = CameraStreamer(this, camera, facing, camSettings, object : CameraStreamer.Listener {
             override fun onLog(message: String) = remoteLog(message)
+
+            override fun onCameraInfo(info: Protocol.CameraInfo) {
+                lastCameraInfo = info
+                _state.update { it.copy(cameraInfo = info) }
+                sendCameraInfo()
+            }
 
             override fun onConfig(width: Int, height: Int, sensorOrientation: Int, facing: Int, csd: ByteArray) {
                 val payload = ByteBuffer.allocate(7 + csd.size).order(ByteOrder.BIG_ENDIAN)
@@ -395,7 +457,7 @@ class WebcamService : Service() {
         closeAccessory()
         wakeLock?.release()
         wakeLock = null
-        _state.update { UiState(facing = facing, paused = paused) }
+        _state.update { UiState(facing = facing, paused = paused, camera = camSettings) }
         super.onDestroy()
     }
 
@@ -410,6 +472,26 @@ class WebcamService : Service() {
         const val ACTION_SET_FACING = "io.github.whoissaaif.mycam.SET_FACING"
         const val EXTRA_FACING = "facing"
         const val PREF_PAUSED = "paused"
+        const val ACTION_COMMAND = "io.github.whoissaaif.mycam.COMMAND"
+        const val EXTRA_CMD = "cmd"
+        const val EXTRA_ARG = "arg"
+
+        fun loadCameraSettings(prefs: android.content.SharedPreferences) = CameraStreamer.Settings(
+            quality = prefs.getInt("quality", Protocol.QUALITY_1080P),
+            fps = prefs.getInt("fps", 30),
+            zoom = prefs.getFloat("zoom", 1f),
+            ev = prefs.getInt("ev", 0),
+            // Torch and focus lock reset on each connection: a torch left on would surprise people.
+        )
+
+        fun saveCameraSettings(prefs: android.content.SharedPreferences, s: CameraStreamer.Settings) {
+            prefs.edit().putInt("quality", s.quality).putInt("fps", s.fps).putFloat("zoom", s.zoom).putInt("ev", s.ev).apply()
+        }
+
+        /** Shows saved camera settings while no PC is connected. */
+        fun showIdleCamera(s: CameraStreamer.Settings) {
+            _state.update { if (it.connected) it else it.copy(camera = s) }
+        }
         const val ACTION_SET_PAUSED = "io.github.whoissaaif.mycam.SET_PAUSED"
         const val EXTRA_PAUSED = "paused"
 

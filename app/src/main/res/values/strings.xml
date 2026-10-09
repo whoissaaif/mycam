@@ -33,6 +33,19 @@
     <string name="camera_front">Front camera</string>
     <string name="camera_hint">The camera turns on only while an app on the PC is using it.</string>
 
+    <!-- Video and camera controls -->
+    <string name="section_video">Video</string>
+    <string name="video_60fps">60 frames per second (smoother)</string>
+    <string name="video_actual">Now: %1$s at %2$d fps</string>
+    <string name="section_controls">Camera controls</string>
+    <string name="controls_unknown">Zoom, exposure, focus and torch appear once the camera has started.</string>
+    <string name="control_zoom">Zoom: %1$s</string>
+    <string name="control_exposure">Brightness</string>
+    <string name="control_focus">Focus</string>
+    <string name="focus_auto">Auto</string>
+    <string name="focus_lock">Lock</string>
+    <string name="control_torch">Torch (light)</string>
+
     <!-- Footer -->
     <string name="footer_connected">Connected to your PC over USB</string>
     <string name="footer_disconnected">Not connected</string>

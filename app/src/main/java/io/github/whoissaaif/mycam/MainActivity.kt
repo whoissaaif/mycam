@@ -54,13 +54,14 @@ class MainActivity : ComponentActivity() {
         val prefs = getSharedPreferences(WebcamService.PREFS, MODE_PRIVATE)
         WebcamService.showIdleFacing(prefs.getInt(WebcamService.PREF_FACING, Protocol.FACING_BACK))
         WebcamService.showIdlePaused(prefs.getBoolean(WebcamService.PREF_PAUSED, false))
+        WebcamService.showIdleCamera(WebcamService.loadCameraSettings(prefs))
         ContextCompat.registerReceiver(
             this, usbPermissionReceiver, IntentFilter(ACTION_USB_PERMISSION), ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         setContent {
             MycamTheme {
                 val state by WebcamService.state.collectAsState()
-                WebcamScreen(state = state, onFacing = ::setFacing, onPause = ::setPaused)
+                WebcamScreen(state = state, onFacing = ::setFacing, onPause = ::setPaused, onCommand = ::sendCommand)
             }
         }
         handleIntent(intent)
@@ -164,6 +165,29 @@ class MainActivity : ComponentActivity() {
                 .putBoolean(WebcamService.PREF_PAUSED, paused).apply()
             WebcamService.showIdlePaused(paused)
         }
+    }
+
+    /** Video and camera-control commands from the UI: the service applies them (and tells the PC); with no PC
+     * connected, quality / fps / zoom / exposure are saved for next time. */
+    private fun sendCommand(cmd: Int, arg: Int) {
+        if (WebcamService.state.value.connected) {
+            startService(
+                Intent(this, WebcamService::class.java).setAction(WebcamService.ACTION_COMMAND)
+                    .putExtra(WebcamService.EXTRA_CMD, cmd).putExtra(WebcamService.EXTRA_ARG, arg)
+            )
+            return
+        }
+        val prefs = getSharedPreferences(WebcamService.PREFS, MODE_PRIVATE)
+        val s = WebcamService.loadCameraSettings(prefs)
+        val updated = when (cmd) {
+            Protocol.CMD_SET_QUALITY -> s.copy(quality = arg)
+            Protocol.CMD_SET_FPS -> s.copy(fps = arg)
+            Protocol.CMD_SET_ZOOM -> s.copy(zoom = arg / 10f)
+            Protocol.CMD_SET_EXPOSURE -> s.copy(ev = arg.toByte().toInt())
+            else -> s
+        }
+        WebcamService.saveCameraSettings(prefs, updated)
+        WebcamService.showIdleCamera(updated)
     }
 
     private fun granted(permission: String) =

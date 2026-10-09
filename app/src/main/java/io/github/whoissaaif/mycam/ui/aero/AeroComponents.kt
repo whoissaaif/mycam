@@ -147,6 +147,7 @@ fun AeroSegmented(
     selectedIndex: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
+    enabled: (Int) -> Boolean = { true },
 ) {
     Row(modifier) {
         options.forEachIndexed { i, label ->
@@ -156,7 +157,7 @@ fun AeroSegmented(
                 else -> RoundedCornerShape(0.dp)
             }
             AeroButton(
-                label, onClick = { onSelect(i) }, selected = i == selectedIndex, shape = shape,
+                label, onClick = { onSelect(i) }, selected = i == selectedIndex, shape = shape, enabled = enabled(i),
                 modifier = Modifier.weight(1f),
             )
         }
@@ -279,5 +280,49 @@ fun CommandArea(modifier: Modifier = Modifier, content: @Composable RowScope.() 
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             content = content,
         )
+    }
+}
+
+/** Win7 checkbox: 18 dp box with a soft inner gradient and a dark-blue check; the whole row is tappable. */
+@Composable
+fun AeroCheckbox(
+    text: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+) {
+    Row(
+        modifier
+            .heightIn(min = 44.dp)
+            .clickable(enabled = enabled, role = Role.Checkbox) { onCheckedChange(!checked) },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Canvas(Modifier.size(18.dp)) {
+            val s = size.minDimension
+            drawRect(Color.White)
+            drawRect(
+                if (!enabled) Brush.verticalGradient(listOf(Aero.ButtonDisabled, Aero.ButtonDisabled))
+                else Brush.verticalGradient(listOf(Color(0xFFCBCFD5), Color(0xFFF6F6F6))),
+                topLeft = Offset(s * 0.15f, s * 0.15f), size = Size(s * 0.7f, s * 0.7f),
+            )
+            drawRect(
+                if (enabled) Aero.ButtonNormalBorder else Aero.ButtonDisabledBorder,
+                style = androidx.compose.ui.graphics.drawscope.Stroke(width = 1.dp.toPx()),
+            )
+            if (checked) {
+                val p = Path().apply {
+                    moveTo(s * 0.22f, s * 0.5f)
+                    lineTo(s * 0.42f, s * 0.72f)
+                    lineTo(s * 0.8f, s * 0.24f)
+                }
+                drawPath(
+                    p, if (enabled) Color(0xFF1B3D82) else Aero.ButtonDisabledText,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2.4.dp.toPx()),
+                )
+            }
+        }
+        Spacer(Modifier.width(10.dp))
+        Text(text, style = MaterialTheme.typography.bodyLarge, color = if (enabled) Aero.Text else Aero.ButtonDisabledText)
     }
 }

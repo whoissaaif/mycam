@@ -2,13 +2,16 @@ package io.github.whoissaaif.mycam
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.graphics.Rect
 import android.hardware.camera2.CameraCaptureSession
 import android.hardware.camera2.CameraCharacteristics
 import android.hardware.camera2.CameraDevice
 import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CameraMetadata
 import android.hardware.camera2.CaptureRequest
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
+import android.media.MediaCodecList
 import android.media.MediaFormat
 import android.os.Build
 import android.os.Bundle
@@ -17,37 +20,62 @@ import android.util.Log
 import android.util.Range
 import android.util.Size
 import android.view.Surface
+import kotlin.math.roundToInt
 
 /**
- * Streams one camera into a hardware H.264 encoder via its input Surface.
- * All callbacks run on [handler]'s thread; call [start]/[stop] from that thread too.
+ * Streams one camera into a hardware H.264 encoder via its input Surface, at the requested quality and
+ * frame rate, with live camera controls (zoom, exposure, torch, focus).
+ * All callbacks run on [handler]'s thread; call every method from that thread too.
  */
 class CameraStreamer(
     context: Context,
     private val handler: Handler,
     private val facing: Int,
+    private var settings: Settings,
     private val listener: Listener,
 ) {
+    /** What the user chose; the phone stores it and the PC can change it (protocol v3). */
+    data class Settings(
+        val quality: Int = Protocol.QUALITY_1080P,
+        val fps: Int = 30,
+        val zoom: Float = 1f,
+        val ev: Int = 0,
+        val torch: Boolean = false,
+        val focusLocked: Boolean = false,
+    )
+
     interface Listener {
         /** Codec config (SPS/PPS) is ready. Called before the first frame. */
         fun onConfig(width: Int, height: Int, sensorOrientation: Int, facing: Int, csd: ByteArray)
         fun onFrame(data: ByteArray, ptsUs: Long, keyFrame: Boolean)
         fun onError(message: String)
+        /** Settings actually in effect and what this camera supports. Sent on start and after each change. */
+        fun onCameraInfo(info: Protocol.CameraInfo) {}
         /** Diagnostic text, forwarded to the PC log. */
         fun onLog(message: String) {}
     }
+
+    /** What the opened camera can do. */
+    private class Caps(
+        val zoomMin: Float, val zoomMax: Float, val useZoomRatio: Boolean, val activeArray: Rect?,
+        val evMin: Int, val evMax: Int, val evStep: Float,
+        val torch: Boolean, val autofocus: Boolean, val has60: Boolean, val has4K: Boolean,
+    )
 
     private val cameraManager = context.getSystemService(CameraManager::class.java)
     private var camera: CameraDevice? = null
     private var session: CameraCaptureSession? = null
     private var encoder: MediaCodec? = null
     private var inputSurface: Surface? = null
+    private var request: CaptureRequest.Builder? = null
+    private var caps: Caps? = null
     private var stopped = false
     private var outputCount = 0
     private var configSent = false
 
     private var width = 0
     private var height = 0
+    private var fps = 30
     private var sensorOrientation = 0
 
     @SuppressLint("MissingPermission") // Caller checks CAMERA permission before starting.
@@ -60,13 +88,34 @@ class CameraStreamer(
             val chars = cameraManager.getCameraCharacteristics(cameraId)
             sensorOrientation = chars.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 0
             val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)!!
-            val size = chooseSize(map.getOutputSizes(MediaCodec::class.java) ?: emptyArray())
+            val sizes = map.getOutputSizes(MediaCodec::class.java) ?: emptyArray()
+            val aeRanges = chars.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES)
+
+            // Highest frame rate the camera can deliver at a size (from its minimum frame duration).
+            fun maxFps(s: Size): Int {
+                val ns = map.getOutputMinFrameDuration(MediaCodec::class.java, s)
+                return if (ns > 0) (1_000_000_000.0 / ns).roundToInt() else 30
+            }
+            val supports60 = aeRanges?.any { it.upper >= 60 } == true
+
+            val size = chooseSize(sizes, settings.quality) { s -> encoderSupports(s.width, s.height, 30) }
             width = size.width
             height = size.height
-            val fpsRange = chooseFpsRange(chars.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES))
-            listener.onLog("camera $cameraId: ${width}x$height, fps $fpsRange, sensor $sensorOrientation")
+            val want60 = settings.fps >= 60 && supports60 && maxFps(size) >= 59 && encoderSupports(width, height, 60)
+            fps = if (want60) 60 else 30
+            val fpsRange = chooseFpsRange(aeRanges, fps)
 
-            startEncoder(fpsRange.upper.coerceAtMost(30))
+            caps = readCaps(chars).let {
+                Caps(
+                    it.zoomMin, it.zoomMax, it.useZoomRatio, it.activeArray, it.evMin, it.evMax, it.evStep,
+                    it.torch, it.autofocus,
+                    has60 = supports60 && maxFps(size) >= 59 && encoderSupports(width, height, 60),
+                    has4K = sizes.any { s -> s.width == 3840 && s.height == 2160 } && encoderSupports(3840, 2160, 30),
+                )
+            }
+            listener.onLog("camera $cameraId: ${width}x$height @ $fps fps (asked ${settings.fps}), AE $fpsRange, sensor $sensorOrientation")
+
+            startEncoder()
             cameraManager.openCamera(cameraId, object : CameraDevice.StateCallback() {
                 override fun onOpened(device: CameraDevice) {
                     if (stopped) { device.close(); return }
@@ -91,6 +140,34 @@ class CameraStreamer(
         }
     }
 
+    /** Changes zoom / exposure / torch / focus on the running camera (quality and fps need a restart). */
+    fun updateControls(newSettings: Settings) {
+        val old = settings
+        settings = newSettings
+        val s = session ?: return
+        val b = request ?: return
+        try {
+            if (newSettings.focusLocked != old.focusLocked && caps?.autofocus == true) {
+                if (newSettings.focusLocked) {
+                    // Focus once on the current scene, then hold it.
+                    b.set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO)
+                    b.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_START)
+                    s.capture(b.build(), null, handler)
+                    b.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_IDLE)
+                } else {
+                    b.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_CANCEL)
+                    s.capture(b.build(), null, handler)
+                    b.set(CaptureRequest.CONTROL_AF_TRIGGER, CameraMetadata.CONTROL_AF_TRIGGER_IDLE)
+                }
+            }
+            applyControls(b)
+            s.setRepeatingRequest(b.build(), null, handler)
+        } catch (e: Exception) {
+            listener.onLog("controls not applied: ${e.message}")
+        }
+        reportInfo()
+    }
+
     fun requestKeyFrame() {
         encoder?.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0) })
     }
@@ -102,7 +179,7 @@ class CameraStreamer(
         try { encoder?.stop() } catch (_: Exception) {}
         try { encoder?.release() } catch (_: Exception) {}
         inputSurface?.release()
-        session = null; camera = null; encoder = null; inputSurface = null
+        session = null; camera = null; encoder = null; inputSurface = null; request = null
     }
 
     private fun findCamera(): String? {
@@ -113,10 +190,77 @@ class CameraStreamer(
         }
     }
 
-    private fun encoderFormat(fps: Int, lowLatencyExtras: Boolean): MediaFormat =
+    private fun readCaps(chars: CameraCharacteristics): Caps {
+        val zoomRatioRange = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+            chars.get(CameraCharacteristics.CONTROL_ZOOM_RATIO_RANGE) else null
+        val maxDigital = chars.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM) ?: 1f
+        val ev = chars.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE) ?: Range(0, 0)
+        val evStep = chars.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_STEP)?.toFloat() ?: 0f
+        val afModes = chars.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES) ?: IntArray(0)
+        return Caps(
+            zoomMin = zoomRatioRange?.lower ?: 1f,
+            zoomMax = zoomRatioRange?.upper ?: maxDigital,
+            useZoomRatio = zoomRatioRange != null,
+            activeArray = chars.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE),
+            evMin = ev.lower, evMax = ev.upper, evStep = evStep,
+            torch = chars.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true,
+            autofocus = CaptureRequest.CONTROL_AF_MODE_AUTO in afModes,
+            has60 = false, has4K = false,
+        )
+    }
+
+    /** Zoom, exposure, torch and focus mode from [settings], clamped to what the camera supports. */
+    private fun applyControls(b: CaptureRequest.Builder) {
+        val c = caps ?: return
+        val zoom = settings.zoom.coerceIn(c.zoomMin, c.zoomMax)
+        if (c.useZoomRatio && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            b.set(CaptureRequest.CONTROL_ZOOM_RATIO, zoom)
+        } else if (c.activeArray != null) {
+            val a = c.activeArray
+            val cw = (a.width() / zoom).toInt()
+            val ch = (a.height() / zoom).toInt()
+            val l = a.left + (a.width() - cw) / 2
+            val t = a.top + (a.height() - ch) / 2
+            b.set(CaptureRequest.SCALER_CROP_REGION, Rect(l, t, l + cw, t + ch))
+        }
+        b.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION, settings.ev.coerceIn(c.evMin, c.evMax))
+        b.set(
+            CaptureRequest.FLASH_MODE,
+            if (settings.torch && c.torch) CaptureRequest.FLASH_MODE_TORCH else CaptureRequest.FLASH_MODE_OFF,
+        )
+        if (c.autofocus) {
+            b.set(
+                CaptureRequest.CONTROL_AF_MODE,
+                if (settings.focusLocked) CaptureRequest.CONTROL_AF_MODE_AUTO else CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO,
+            )
+        }
+    }
+
+    private fun reportInfo() {
+        val c = caps ?: return
+        var flags = 0
+        if (c.torch) flags = flags or Protocol.CAM_TORCH_AVAILABLE
+        if (settings.torch && c.torch) flags = flags or Protocol.CAM_TORCH_ON
+        if (settings.focusLocked && c.autofocus) flags = flags or Protocol.CAM_FOCUS_LOCKED
+        if (c.has60) flags = flags or Protocol.CAM_HAS_60FPS
+        if (c.has4K) flags = flags or Protocol.CAM_HAS_4K
+        if (c.autofocus) flags = flags or Protocol.CAM_HAS_AUTOFOCUS
+        listener.onCameraInfo(
+            Protocol.CameraInfo(
+                quality = settings.quality, fps = settings.fps,
+                zoomX100 = (settings.zoom.coerceIn(c.zoomMin, c.zoomMax) * 100).roundToInt(),
+                zoomMinX100 = (c.zoomMin * 100).roundToInt(), zoomMaxX100 = (c.zoomMax * 100).roundToInt().coerceAtMost(65535),
+                ev = settings.ev.coerceIn(c.evMin, c.evMax), evMin = c.evMin, evMax = c.evMax,
+                evStepX100 = (c.evStep * 100).roundToInt(),
+                flags = flags, width = width, height = height, actualFps = fps,
+            )
+        )
+    }
+
+    private fun encoderFormat(lowLatencyExtras: Boolean): MediaFormat =
         MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
             setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-            setInteger(MediaFormat.KEY_BIT_RATE, if (width * height >= 1920 * 1080) 10_000_000 else 6_000_000)
+            setInteger(MediaFormat.KEY_BIT_RATE, bitrateFor(width, height, fps))
             setInteger(MediaFormat.KEY_FRAME_RATE, fps)
             setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
             if (lowLatencyExtras) {
@@ -127,7 +271,7 @@ class CameraStreamer(
             }
         }
 
-    private fun startEncoder(fps: Int) {
+    private fun startEncoder() {
         val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
         codec.setCallback(object : MediaCodec.Callback() {
             override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {}
@@ -177,16 +321,16 @@ class CameraStreamer(
             }
         }, handler)
         try {
-            codec.configure(encoderFormat(fps, lowLatencyExtras = true), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            codec.configure(encoderFormat(lowLatencyExtras = true), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         } catch (e: Exception) {
             // Some vendor encoders reject the optional low-latency keys; retry without them.
             Log.w(TAG, "Encoder rejected format, retrying with basic settings", e)
             codec.reset()
-            codec.configure(encoderFormat(fps, lowLatencyExtras = false), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+            codec.configure(encoderFormat(lowLatencyExtras = false), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         }
         inputSurface = codec.createInputSurface()
         codec.start()
-        listener.onLog("encoder ${codec.name} started")
+        listener.onLog("encoder ${codec.name} started, ${bitrateFor(width, height, fps) / 1_000_000} Mbps")
         encoder = codec
     }
 
@@ -197,14 +341,17 @@ class CameraStreamer(
             override fun onConfigured(s: CameraCaptureSession) {
                 if (stopped) { s.close(); return }
                 session = s
-                val request = device.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
+                val b = device.createCaptureRequest(CameraDevice.TEMPLATE_RECORD).apply {
                     addTarget(surface)
                     set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, fpsRange)
                     set(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO)
-                }.build()
+                }
+                applyControls(b)
+                request = b
                 try {
-                    s.setRepeatingRequest(request, null, handler)
+                    s.setRepeatingRequest(b.build(), null, handler)
                     listener.onLog("capture started")
+                    reportInfo()
                 } catch (e: Exception) {
                     listener.onError("Capture failed: ${e.message}")
                 }
@@ -219,21 +366,48 @@ class CameraStreamer(
     companion object {
         private const val TAG = "CameraStreamer"
 
-        /** Prefer 1080p, then 720p, then the largest 16:9 size, then the largest size, capped at 1080p. */
-        fun chooseSize(sizes: Array<Size>): Size {
-            val capped = sizes.filter { it.width <= 1920 && it.height <= 1080 }
-            capped.firstOrNull { it.width == 1920 && it.height == 1080 }?.let { return it }
-            capped.firstOrNull { it.width == 1280 && it.height == 720 }?.let { return it }
-            capped.filter { it.width * 9 == it.height * 16 }.maxByOrNull { it.width * it.height }?.let { return it }
-            return capped.maxByOrNull { it.width * it.height } ?: Size(1280, 720)
+        fun targetSize(quality: Int): Size = when (quality) {
+            Protocol.QUALITY_720P -> Size(1280, 720)
+            Protocol.QUALITY_4K -> Size(3840, 2160)
+            else -> Size(1920, 1080)
         }
 
-        /** Prefer a fixed 30 fps range, else the range with the highest max fps <= 30. */
-        fun chooseFpsRange(ranges: Array<Range<Int>>?): Range<Int> {
-            if (ranges.isNullOrEmpty()) return Range(30, 30)
-            ranges.firstOrNull { it.lower == 30 && it.upper == 30 }?.let { return it }
-            return ranges.filter { it.upper <= 30 }.maxWithOrNull(compareBy({ it.upper }, { it.lower }))
+        /** About 0.16 bits per pixel per frame: 4 Mbps at 720p30, 10 at 1080p30, 20 at 1080p60, 40 at 4K30. */
+        fun bitrateFor(width: Int, height: Int, fps: Int): Int =
+            (width.toLong() * height * fps * 16 / 100).coerceIn(4_000_000L, 40_000_000L).toInt()
+
+        /**
+         * The requested quality if the camera and encoder can do it exactly; otherwise the largest 16:9 size
+         * up to it, then the largest size up to it, then the smallest available.
+         */
+        fun chooseSize(sizes: Array<Size>, quality: Int, encoderOk: (Size) -> Boolean = { true }): Size {
+            val target = targetSize(quality)
+            val usable = sizes.filter { encoderOk(it) }.ifEmpty { sizes.toList() }
+            val capped = usable.filter { it.width <= target.width && it.height <= target.height }
+            capped.firstOrNull { it.width == target.width && it.height == target.height }?.let { return it }
+            capped.filter { it.width * 9 == it.height * 16 }.maxByOrNull { it.width * it.height }?.let { return it }
+            capped.maxByOrNull { it.width * it.height }?.let { return it }
+            return usable.minByOrNull { it.width * it.height } ?: Size(1280, 720)
+        }
+
+        /** A fixed [fps] range if available, else the range reaching [fps] with the highest minimum, else <= [fps]. */
+        fun chooseFpsRange(ranges: Array<Range<Int>>?, fps: Int): Range<Int> {
+            if (ranges.isNullOrEmpty()) return Range(fps, fps)
+            ranges.firstOrNull { it.lower == fps && it.upper == fps }?.let { return it }
+            ranges.filter { it.upper == fps }.maxByOrNull { it.lower }?.let { return it }
+            return ranges.filter { it.upper <= fps }.maxWithOrNull(compareBy({ it.upper }, { it.lower }))
                 ?: ranges.first()
+        }
+
+        private val encoderCache = HashMap<Triple<Int, Int, Int>, Boolean>()
+
+        /** Whether a hardware/software AVC encoder on this phone accepts this size and frame rate. */
+        fun encoderSupports(width: Int, height: Int, fps: Int): Boolean = encoderCache.getOrPut(Triple(width, height, fps)) {
+            val format = MediaFormat.createVideoFormat(MediaFormat.MIMETYPE_VIDEO_AVC, width, height).apply {
+                setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+                setInteger(MediaFormat.KEY_FRAME_RATE, fps)
+            }
+            try { MediaCodecList(MediaCodecList.REGULAR_CODECS).findEncoderForFormat(format) != null } catch (_: Exception) { false }
         }
     }
 }

@@ -13,7 +13,7 @@ import java.nio.ByteOrder
  *   u32 magic 'MCMD' | u8 cmd | u8 arg | u16 reserved
  */
 object Protocol {
-    const val VERSION = 2
+    const val VERSION = 3
 
     const val PACKET_MAGIC = 0x4D43414D // 'MCAM'
     const val HEADER_SIZE = 20
@@ -25,6 +25,7 @@ object Protocol {
     const val TYPE_ORIENT = 3  // payload: u16 device rotation in degrees (0/90/180/270, clockwise)
     const val TYPE_STATE = 4   // payload: u8 state (STATE_*), u8 facing
     const val TYPE_LOG = 5     // payload: UTF-8 diagnostic text (shown in the PC log)
+    const val TYPE_CAMERA = 6  // v3: payload: see CameraInfo (settings + capabilities)
 
     const val FLAG_KEYFRAME = 0x01
 
@@ -47,6 +48,24 @@ object Protocol {
     const val CMD_SET_FACING = 5 // arg: FACING_*
     const val CMD_PAUSE = 6 // v2
     const val CMD_RESUME = 7 // v2
+    const val CMD_SET_QUALITY = 8  // v3: arg QUALITY_*
+    const val CMD_SET_FPS = 9      // v3: arg 30 or 60
+    const val CMD_SET_ZOOM = 10    // v3: arg zoom x10 (5 = 0.5x .. 255 = 25.5x)
+    const val CMD_SET_EXPOSURE = 11 // v3: arg signed EV steps (int8)
+    const val CMD_SET_TORCH = 12   // v3: arg 0 off, 1 on
+    const val CMD_SET_FOCUS = 13   // v3: arg 0 continuous auto focus, 1 focus once and lock
+
+    const val QUALITY_720P = 0
+    const val QUALITY_1080P = 1
+    const val QUALITY_4K = 2
+
+    // CAMERA flags
+    const val CAM_TORCH_AVAILABLE = 0x01
+    const val CAM_TORCH_ON = 0x02
+    const val CAM_FOCUS_LOCKED = 0x04
+    const val CAM_HAS_60FPS = 0x08
+    const val CAM_HAS_4K = 0x10
+    const val CAM_HAS_AUTOFOCUS = 0x20
 
     fun packet(type: Int, flags: Int, ptsUs: Long, payload: ByteArray, offset: Int = 0, length: Int = payload.size): ByteArray {
         val buf = ByteBuffer.allocate(HEADER_SIZE + length).order(ByteOrder.BIG_ENDIAN)
@@ -62,6 +81,21 @@ object Protocol {
 
     data class Command(val cmd: Int, val arg: Int)
 
+    /** Phone camera settings and what the active camera supports (TYPE_CAMERA payload, 18 bytes). */
+    data class CameraInfo(
+        val quality: Int, val fps: Int,
+        val zoomX100: Int, val zoomMinX100: Int, val zoomMaxX100: Int,
+        val ev: Int, val evMin: Int, val evMax: Int, val evStepX100: Int,
+        val flags: Int, val width: Int, val height: Int, val actualFps: Int,
+    ) {
+        fun encode(): ByteArray = ByteBuffer.allocate(18).order(ByteOrder.BIG_ENDIAN)
+            .put(quality.toByte()).put(fps.toByte())
+            .putShort(zoomX100.toShort()).putShort(zoomMinX100.toShort()).putShort(zoomMaxX100.toShort())
+            .put(ev.toByte()).put(evMin.toByte()).put(evMax.toByte()).put(evStepX100.toByte())
+            .put(flags.toByte()).putShort(width.toShort()).putShort(height.toShort()).put(actualFps.toByte())
+            .array()
+    }
+
     /** Splits the PC's byte stream into commands, skipping garbage until the next valid magic. */
     class CommandParser {
         private var pending = ByteArray(0)
@@ -74,7 +108,7 @@ object Protocol {
             while (data.size - pos >= COMMAND_SIZE) {
                 // Only accept plausible commands so stray magic bytes in garbage can't desync the stream.
                 val cmd = data[pos + 4].toInt() and 0xFF
-                val valid = buf.getInt(pos) == COMMAND_MAGIC && cmd in CMD_HELLO..CMD_RESUME &&
+                val valid = buf.getInt(pos) == COMMAND_MAGIC && cmd in CMD_HELLO..CMD_SET_FOCUS &&
                     data[pos + 6].toInt() == 0 && data[pos + 7].toInt() == 0
                 if (!valid) {
                     pos++ // Resync byte by byte.

@@ -73,6 +73,7 @@ private:
     ComPtr<IMFVideoSampleAllocatorEx> allocator_;
     MF_STREAM_STATE state_ = MF_STREAM_STATE_STOPPED;
     UINT32 width_ = 0, height_ = 0;
+    LONGLONG frameDuration_ = 333333; // 100 ns units, from the media type the app picked
     bool shutdown_ = false;
 
     std::deque<ComPtr<IUnknown>> pendingTokens_;

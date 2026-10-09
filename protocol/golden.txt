@@ -21,3 +21,16 @@ command.keyframe    = 4D434D44 04 00 0000
 command.facing_front = 4D434D44 05 01 0000
 command.pause       = 4D434D44 06 00 0000
 command.resume      = 4D434D44 07 00 0000
+
+# v3: camera settings and capabilities (phone -> PC), and the commands that change them (PC -> phone).
+# CAMERA payload: quality | fps | zoom x100 (u16) | zoomMin x100 | zoomMax x100 | ev | evMin | evMax |
+#                 evStep x100 | flags | width (u16) | height (u16) | actual fps
+# here: 1080p, 30 fps, zoom 1.00 (0.60..10.00), EV 0 (-12..+12, step 0.33), flags torch+has60+has4K,
+#       actual 1920x1080 @ 30
+packet.camera  = 4D43414D 06 00 0000 0000000000000000 00000012 01 1E 0064 003C 03E8 00 F4 0C 21 19 0780 0438 1E
+command.quality_4k  = 4D434D44 08 02 0000
+command.fps_60      = 4D434D44 09 3C 0000
+command.zoom_2x     = 4D434D44 0A 14 0000
+command.exposure_m2 = 4D434D44 0B FE 0000
+command.torch_on    = 4D434D44 0C 01 0000
+command.focus_lock  = 4D434D44 0D 01 0000

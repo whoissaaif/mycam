@@ -59,6 +59,7 @@ fun WebcamScreen(
     onFacing: (Int) -> Unit,
     onPause: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    onCommand: (Int, Int) -> Unit = { _, _ -> },
 ) {
     val view = describe(state)
     Column(modifier.fillMaxSize().background(Aero.Body)) {
@@ -113,6 +114,11 @@ fun WebcamScreen(
             )
             Spacer(Modifier.height(10.dp))
             Text(stringResource(R.string.camera_hint), style = MaterialTheme.typography.bodyMedium, color = Aero.Subtle)
+
+            Spacer(Modifier.height(32.dp))
+            VideoSection(state.camera, state.cameraInfo, onCommand)
+            Spacer(Modifier.height(32.dp))
+            ControlsSection(state.camera, state.cameraInfo, onCommand)
         }
 
         CommandArea {

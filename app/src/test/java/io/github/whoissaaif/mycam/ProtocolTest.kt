@@ -45,6 +45,16 @@ class ProtocolTest {
             golden.getValue("packet.state_paused"),
             Protocol.packet(Protocol.TYPE_STATE, 0, 0, byteArrayOf(Protocol.STATE_PAUSED.toByte(), Protocol.FACING_BACK.toByte())),
         )
+        assertArrayEquals(
+            golden.getValue("packet.camera"),
+            Protocol.packet(
+                Protocol.TYPE_CAMERA, 0, 0,
+                Protocol.CameraInfo(
+                    Protocol.QUALITY_1080P, 30, 100, 60, 1000, 0, -12, 12, 33,
+                    Protocol.CAM_TORCH_AVAILABLE or Protocol.CAM_HAS_60FPS or Protocol.CAM_HAS_4K, 1920, 1080, 30,
+                ).encode(),
+            ),
+        )
     }
 
     @Test
@@ -57,6 +67,12 @@ class ProtocolTest {
             "command.facing_front" to Protocol.Command(Protocol.CMD_SET_FACING, Protocol.FACING_FRONT),
             "command.pause" to Protocol.Command(Protocol.CMD_PAUSE, 0),
             "command.resume" to Protocol.Command(Protocol.CMD_RESUME, 0),
+            "command.quality_4k" to Protocol.Command(Protocol.CMD_SET_QUALITY, Protocol.QUALITY_4K),
+            "command.fps_60" to Protocol.Command(Protocol.CMD_SET_FPS, 60),
+            "command.zoom_2x" to Protocol.Command(Protocol.CMD_SET_ZOOM, 20),
+            "command.exposure_m2" to Protocol.Command(Protocol.CMD_SET_EXPOSURE, (-2).toByte().toInt() and 0xFF),
+            "command.torch_on" to Protocol.Command(Protocol.CMD_SET_TORCH, 1),
+            "command.focus_lock" to Protocol.Command(Protocol.CMD_SET_FOCUS, 1),
         )
         for ((name, command) in expected) {
             assertEquals(name, listOf(command), Protocol.CommandParser().feed(golden.getValue(name)))

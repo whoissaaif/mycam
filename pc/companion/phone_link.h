@@ -9,6 +9,7 @@
 #include "decoder.h"
 #include "packet_parser.h"
 #include "frame_writer.h"
+#include "protocol.h"
 #include "status_images.h"
 
 struct libusb_context;
@@ -33,6 +34,7 @@ struct LinkStatus {
     int facing = 0;          // proto::Facing
     uint32_t width = 0, height = 0;
     bool lockPaused = false; // Windows is locked or asleep: MyCam keeps the phone camera off.
+    proto::CameraInfo camera; // v3: phone video settings + what its camera supports (valid once received).
 };
 
 // Owns all USB traffic. Run() blocks on the calling (worker) thread until Quit() is called.
@@ -51,6 +53,11 @@ public:
     void RequestFacing(int facing) { pendingFacing_ = facing; }
     void SetMirror(bool mirror) { mirror_ = mirror; }
     void SetFill(bool fill) { fill_ = fill; }
+    // Queues a v3 camera command (quality, fps, zoom, exposure, torch, focus) for the phone.
+    void RequestCommand(uint8_t cmd, uint8_t arg) {
+        std::lock_guard<std::mutex> lock(commandLock_);
+        commands_.push_back({cmd, arg});
+    }
     void RequestReconnect() { reconnect_ = true; }
     // Pause / resume the camera (the phone stores the choice). Needs a connected phone.
     void RequestPause(bool pause) { pendingPause_ = pause ? 1 : 0; }
@@ -85,6 +92,8 @@ private:
     std::atomic<int> pendingFacing_{-1};
     std::atomic<bool> mirror_{false};
     std::atomic<bool> fill_{false};
+    std::mutex commandLock_;
+    std::vector<std::pair<uint8_t, uint8_t>> commands_;
     std::atomic<bool> reconnect_{false};
     std::atomic<int> pendingPause_{-1};
     std::atomic<bool> lockPaused_{false};

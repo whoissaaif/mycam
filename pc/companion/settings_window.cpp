@@ -7,6 +7,7 @@
 #include <windowsx.h>
 #include <wrl/client.h>
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -31,10 +32,13 @@ constexpr UINT32 kLinkHot = 0x3399FF;
 constexpr UINT32 kRule = 0xE2E2E2;
 
 // Layout in DIPs.
-constexpr float kWidth = 420, kHeight = 456;
+constexpr float kWidth = 420, kHeight = 720;
 constexpr float kTitleH = 30, kFrame = 7, kCommandH = 46;
 
-enum Id { kNone = 0, kPause, kBack, kFront, kMirror, kFill, kAutostart, kReconnect, kOpenLog, kClose, kTitleClose };
+enum Id {
+    kNone = 0, kPause, kBack, kFront,
+    kQ720, kQ1080, kQ4K, kFps60, kZoomOut, kZoomIn, kZoomReset, kEvDown, kEvUp, kFocusAuto, kFocusLock, kTorch,
+    kMirror, kFill, kAutostart, kReconnect, kOpenLog, kClose, kTitleClose };
 enum class Kind { Segment, Checkbox, Link, Button, TitleClose };
 
 struct Element {
@@ -94,11 +98,27 @@ struct SettingsWindow::Impl {
         elements.push_back({kPause, Kind::Button, Rect(kWidth - kFrame - 20 - 92, kTitleH + 22, 92, 28), L"Pause"});
         elements.push_back({kBack, Kind::Segment, Rect(x, 164, 150, 28), L"Back camera"});
         elements.push_back({kFront, Kind::Segment, Rect(x + 149, 164, 150, 28), L"Front camera"});
-        elements.push_back({kMirror, Kind::Checkbox, Rect(x, 246, 300, 20), L"Mirror the image"});
-        elements.push_back({kFill, Kind::Checkbox, Rect(x, 270, 330, 20), L"Fill the frame (crop instead of black bars)"});
-        elements.push_back({kAutostart, Kind::Checkbox, Rect(x, 330, 300, 20), L"Start MyCam with Windows"});
-        elements.push_back({kReconnect, Kind::Link, Rect(x, 364, 110, 20), L"Reconnect phone"});
-        elements.push_back({kOpenLog, Kind::Link, Rect(x + 130, 364, 110, 20), L"Open log folder"});
+        // Video (y 222).
+        elements.push_back({kQ720, Kind::Segment, Rect(x, 246, 100, 28), L"720p"});
+        elements.push_back({kQ1080, Kind::Segment, Rect(x + 99, 246, 100, 28), L"1080p"});
+        elements.push_back({kQ4K, Kind::Segment, Rect(x + 198, 246, 100, 28), L"4K"});
+        elements.push_back({kFps60, Kind::Checkbox, Rect(x, 282, 300, 20), L"60 frames per second (smoother)"});
+        // Camera controls (y 314). Values are drawn between the buttons in Paint().
+        const float cx = x + 120;
+        elements.push_back({kZoomOut, Kind::Button, Rect(cx, 338, 32, 26), L"−"});
+        elements.push_back({kZoomIn, Kind::Button, Rect(cx + 102, 338, 32, 26), L"+"});
+        elements.push_back({kZoomReset, Kind::Button, Rect(cx + 144, 338, 44, 26), L"1×"});
+        elements.push_back({kEvDown, Kind::Button, Rect(cx, 374, 32, 26), L"−"});
+        elements.push_back({kEvUp, Kind::Button, Rect(cx + 102, 374, 32, 26), L"+"});
+        elements.push_back({kFocusAuto, Kind::Segment, Rect(cx, 410, 70, 26), L"Auto"});
+        elements.push_back({kFocusLock, Kind::Segment, Rect(cx + 69, 410, 70, 26), L"Lock"});
+        elements.push_back({kTorch, Kind::Checkbox, Rect(x, 446, 300, 20), L"Torch (phone light)"});
+        // Picture (y 494), General (y 578).
+        elements.push_back({kMirror, Kind::Checkbox, Rect(x, 518, 300, 20), L"Mirror the image"});
+        elements.push_back({kFill, Kind::Checkbox, Rect(x, 542, 330, 20), L"Fill the frame (crop instead of black bars)"});
+        elements.push_back({kAutostart, Kind::Checkbox, Rect(x, 602, 300, 20), L"Start MyCam with Windows"});
+        elements.push_back({kReconnect, Kind::Link, Rect(x, 636, 110, 20), L"Reconnect phone"});
+        elements.push_back({kOpenLog, Kind::Link, Rect(x + 130, 636, 110, 20), L"Open log folder"});
         const float bottom = kHeight - kFrame;
         elements.push_back({kClose, Kind::Button, Rect(kWidth - kFrame - 12 - 86, bottom - kCommandH + 11, 86, 24), L"Close"});
     }
@@ -114,9 +134,31 @@ struct SettingsWindow::Impl {
         return s.state >= LinkState::Idle && !s.lockPaused;
     }
 
+    // Whether a control can be used right now (connected phone, and the phone's camera supports it).
+    bool Enabled(Id id) const {
+        const LinkStatus s = model->status();
+        const proto::CameraInfo& c = s.camera;
+        const bool connected = s.state >= LinkState::Idle && c.valid;
+        const bool known = connected && c.width > 0; // Capabilities arrive once the camera has started.
+        switch (id) {
+        case kPause: return PauseEnabled();
+        case kQ720: case kQ1080: return connected;
+        case kQ4K: return connected && (!known || (c.flags & proto::kCamHas4K));
+        case kFps60: return connected && (!known || (c.flags & proto::kCamHas60Fps));
+        case kZoomOut: return known && c.zoomX100 > c.zoomMinX100;
+        case kZoomIn: return known && c.zoomX100 < c.zoomMaxX100;
+        case kZoomReset: return known && c.zoomX100 != 100 && c.zoomMinX100 <= 100 && c.zoomMaxX100 >= 100;
+        case kEvDown: return known && c.evMax > c.evMin && c.ev > c.evMin;
+        case kEvUp: return known && c.evMax > c.evMin && c.ev < c.evMax;
+        case kFocusAuto: case kFocusLock: return known && (c.flags & proto::kCamHasAutofocus);
+        case kTorch: return known && (c.flags & proto::kCamTorchAvailable);
+        default: return true;
+        }
+    }
+
     Id HitTest(float x, float y) const {
         for (const auto& e : elements) {
-            if (e.id == kPause && !PauseEnabled()) continue;
+            if (!Enabled(e.id)) continue;
             if (Contains(e.rect, x, y)) return e.id;
         }
         return kNone;
@@ -263,8 +305,8 @@ struct SettingsWindow::Impl {
     }
 
     // Win7 checkbox: 13px box with a soft inner gradient and a dark blue check.
-    void DrawCheckbox(const Element& e, bool checked) {
-        const bool isHot = hot == e.id;
+    void DrawCheckbox(const Element& e, bool checked, bool enabled = true) {
+        const bool isHot = enabled && hot == e.id;
         const float y = (e.rect.top + e.rect.bottom) / 2 - 6.5f;
         const D2D1_RECT_F box = Rect(e.rect.left, y, 13, 13);
         rt->FillRectangle(box, Solid(Rgb(0xFFFFFF)).Get());
@@ -285,7 +327,7 @@ struct SettingsWindow::Impl {
             sink->Close();
             rt->DrawGeometry(path.Get(), Solid(Rgb(0x1B3D82)).Get(), 2.f);
         }
-        Text(e.text, fontBody.Get(), D2D1::RectF(e.rect.left + 19, e.rect.top, e.rect.right, e.rect.bottom), Rgb(kText));
+        Text(e.text, fontBody.Get(), D2D1::RectF(e.rect.left + 19, e.rect.top, e.rect.right, e.rect.bottom), Rgb(enabled ? kText : 0x838383));
     }
 
     void DrawLink(const Element& e) {
@@ -319,6 +361,31 @@ struct SettingsWindow::Impl {
                                nullptr, 0, &dots);
         rt->DrawRectangle(D2D1::RectF(r.left + 0.5f, r.top + 0.5f, r.right - 0.5f, r.bottom - 0.5f),
                           Solid(Rgb(0x000000, 0.7f)).Get(), 1.f, dots.Get());
+    }
+
+    // Row labels and current values for the Video / Camera controls sections.
+    void DrawControlValues(const LinkStatus& status) {
+        const proto::CameraInfo& c = status.camera;
+        const bool known = status.state >= LinkState::Idle && c.valid && c.width > 0;
+        const float x = kFrame + 20, cx = x + 120;
+        const auto ink = Rgb(known ? kText : 0x838383);
+        Text(L"Zoom", fontBody.Get(), Rect(x, 338, 110, 26), ink);
+        Text(L"Brightness", fontBody.Get(), Rect(x, 374, 110, 26), ink);
+        Text(L"Focus", fontBody.Get(), Rect(x, 410, 110, 26), ink);
+        wchar_t buf[32];
+        if (known) {
+            swprintf_s(buf, L"%.1f×", c.zoomX100 / 100.0);
+            Text(buf, fontBody.Get(), Rect(cx + 32, 338, 70, 26), ink, DWRITE_TEXT_ALIGNMENT_CENTER);
+            const double ev = c.ev * c.evStepX100 / 100.0;
+            swprintf_s(buf, L"%s%.1f EV", ev > 0 ? L"+" : L"", ev);
+            Text(c.evMax > c.evMin ? buf : L"—", fontBody.Get(), Rect(cx + 32, 374, 70, 26), ink, DWRITE_TEXT_ALIGNMENT_CENTER);
+            swprintf_s(buf, L"Now %u×%u at %u fps", c.width, c.height, c.actualFps);
+            Text(buf, fontBody.Get(), Rect(x + 230, 282, 160, 20), Rgb(kSubtle), DWRITE_TEXT_ALIGNMENT_TRAILING);
+        } else {
+            Text(L"—", fontBody.Get(), Rect(cx + 32, 338, 70, 26), ink, DWRITE_TEXT_ALIGNMENT_CENTER);
+            Text(L"—", fontBody.Get(), Rect(cx + 32, 374, 70, 26), ink, DWRITE_TEXT_ALIGNMENT_CENTER);
+            Text(L"Controls appear once the phone camera has started.", fontBody.Get(), Rect(x, 466, 330, 20), Rgb(kSubtle));
+        }
     }
 
     void SectionHeading(const wchar_t* text, float y) {
@@ -369,24 +436,47 @@ struct SettingsWindow::Impl {
         Text(view.detail, fontBody.Get(), Rect(x + 62, kTitleH + 44, textW, 50), Rgb(kSubtle));
 
         SectionHeading(L"Camera", 140);
-        SectionHeading(L"Picture", 222);
-        SectionHeading(L"General", 306);
+        SectionHeading(L"Video", 222);
+        SectionHeading(L"Camera controls", 314);
+        SectionHeading(L"Picture", 494);
+        SectionHeading(L"General", 578);
+        DrawControlValues(status);
 
         const bool front = status.facing == proto::kFacingFront;
         for (const auto& e : elements) {
             const bool isHot = hot == e.id, isDown = pressed == e.id && isHot;
             switch (e.kind) {
             case Kind::TitleClose: DrawTitleClose(e); break;
-            case Kind::Segment:
-                DrawAeroButton(e.rect, e.text, isHot, isDown, (e.id == kFront) == front);
+            case Kind::Segment: {
+                const proto::CameraInfo& c = status.camera;
+                bool selected = false;
+                switch (e.id) {
+                case kBack: case kFront: selected = (e.id == kFront) == front; break;
+                case kQ720: selected = c.valid && c.quality == proto::kQuality720p; break;
+                case kQ1080: selected = c.valid && c.quality == proto::kQuality1080p; break;
+                case kQ4K: selected = c.valid && c.quality == proto::kQuality4K; break;
+                case kFocusAuto: selected = c.valid && !(c.flags & proto::kCamFocusLocked); break;
+                case kFocusLock: selected = c.valid && (c.flags & proto::kCamFocusLocked); break;
+                default: break;
+                }
+                const bool on = Enabled(e.id);
+                DrawAeroButton(e.rect, e.text, isHot && on, isDown && on, selected, on);
                 break;
-            case Kind::Checkbox:
-                DrawCheckbox(e, e.id == kMirror ? model->mirror() : e.id == kFill ? model->fill() : model->autostart());
+            }
+            case Kind::Checkbox: {
+                const proto::CameraInfo& c = status.camera;
+                bool checked = e.id == kMirror ? model->mirror()
+                             : e.id == kFill   ? model->fill()
+                             : e.id == kFps60  ? (c.valid && c.fps >= 60)
+                             : e.id == kTorch  ? (c.valid && (c.flags & proto::kCamTorchOn))
+                                               : model->autostart();
+                DrawCheckbox(e, checked, Enabled(e.id));
                 break;
+            }
             case Kind::Link: DrawLink(e); break;
             case Kind::Button:
                 if (e.id == kPause) DrawAeroButton(e.rect, model->paused() ? L"Resume" : L"Pause", isHot, isDown, false, PauseEnabled());
-                else DrawAeroButton(e.rect, e.text, isHot, isDown, false);
+                else DrawAeroButton(e.rect, e.text, isHot && Enabled(e.id), isDown && Enabled(e.id), false, Enabled(e.id));
                 break;
             }
         }
@@ -412,6 +502,22 @@ struct SettingsWindow::Impl {
         case kFront: model->setFacing(proto::kFacingFront); break;
         case kMirror: model->setMirror(!model->mirror()); break;
         case kFill: model->setFill(!model->fill()); break;
+        case kQ720: model->command(proto::kCmdSetQuality, proto::kQuality720p); break;
+        case kQ1080: model->command(proto::kCmdSetQuality, proto::kQuality1080p); break;
+        case kQ4K: model->command(proto::kCmdSetQuality, proto::kQuality4K); break;
+        case kFps60: model->command(proto::kCmdSetFps, model->status().camera.fps >= 60 ? 30 : 60); break;
+        case kZoomOut: case kZoomIn: case kZoomReset: {
+            const proto::CameraInfo c = model->status().camera;
+            double z = id == kZoomReset ? 1.0 : c.zoomX100 / 100.0 * (id == kZoomIn ? 1.25 : 0.8);
+            z = std::clamp(z, c.zoomMinX100 / 100.0, c.zoomMaxX100 / 100.0);
+            model->command(proto::kCmdSetZoom, uint8_t(std::clamp(int(z * 10 + 0.5), 1, 255)));
+            break;
+        }
+        case kEvDown: model->command(proto::kCmdSetExposure, uint8_t(model->status().camera.ev - 1)); break;
+        case kEvUp: model->command(proto::kCmdSetExposure, uint8_t(model->status().camera.ev + 1)); break;
+        case kFocusAuto: model->command(proto::kCmdSetFocus, 0); break;
+        case kFocusLock: model->command(proto::kCmdSetFocus, 1); break;
+        case kTorch: model->command(proto::kCmdSetTorch, (model->status().camera.flags & proto::kCamTorchOn) ? 0 : 1); break;
         case kAutostart: model->setAutostart(!model->autostart()); break;
         case kReconnect: model->reconnect(); break;
         case kOpenLog: model->openLogFolder(); break;
@@ -423,8 +529,10 @@ struct SettingsWindow::Impl {
     }
 
     void MoveFocus(int step) {
-        static const Id order[] = {kPause, kBack, kFront, kMirror, kFill, kAutostart, kReconnect, kOpenLog, kClose};
-        constexpr int n = 9;
+        static const Id order[] = {kPause, kBack, kFront, kQ720, kQ1080, kQ4K, kFps60, kZoomOut, kZoomIn, kZoomReset,
+                                   kEvDown, kEvUp, kFocusAuto, kFocusLock, kTorch, kMirror, kFill, kAutostart,
+                                   kReconnect, kOpenLog, kClose};
+        constexpr int n = int(sizeof(order) / sizeof(order[0]));
         int i = 0;
         for (int k = 0; k < n; ++k) if (order[k] == focus) i = k;
         focus = order[(i + step + n) % n];
