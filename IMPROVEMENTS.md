@@ -70,21 +70,21 @@ pressure. Fix whatever breaks.
 
 ---
 
-## 3. Picture quality and camera control
+## 3. Picture quality and camera control: ✅ done (1.3.1), except phone-side latency
 
-### 3.1 Crop to fill (S): ⏳
+### 3.1 Crop to fill (S): ✅ (1.3)
 A portrait phone gives a narrow image with black bars. Add a "Crop to fill" option that center-crops to
 16:9 (`DrawFittedNV12` in `pc/vcam/frame_transform.cpp`), with a toggle in the settings window.
 
-### 3.2 Resolution and frame-rate options (M): ⏳
+### 3.2 Resolution and frame-rate options (M): ✅ (1.3). 60 fps only where Camera2 offers it: the test phone (MediaTek) reports 30 fps max on all cameras and no high-speed mode, though its own camera app does 1080p60 via private vendor interfaces.
 720p / 1080p / 4K, and 60 fps where the phone supports it. Add a protocol command to request a mode, and
 advertise the matching media types from the virtual camera.
 
-### 3.3 Camera controls (M): ⏳
+### 3.3 Camera controls (M): ✅ (1.3), plus an Auto reset button (1.3.1). Lens choice via zoom ratio only where the phone exposes it (the test phone: 1–10×, no ultrawide).
 Zoom, tap-to-focus, exposure, torch, and lens choice (ultrawide / telephoto). Phone UI first; exposing them
 to PC apps through `IKsControl` is a stretch goal.
 
-### 3.4 Lower latency (M): ⏳
+### 3.4 Lower latency (M): 🟡 PC side done (1.3–1.3.1): delivery on arrival, one less copy, adaptive bitrate when the USB link is the limit. Measured: PC decode+copy 3–12 ms; **phone capture→encoded 150–230 ms** (MediaTek encoder buffers ~3 frames). Next: try encoder low-latency vendor keys, fewer camera buffers, I-frame interval.
 Decode on the GPU (D3D11 / DXVA) instead of the CPU, cut extra frame copies, and add a latency
 measurement (timestamp in the frame header → log).
 

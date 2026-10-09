@@ -23,15 +23,13 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 
 - [ ] Recover when the UsbDk fallback leaves the phone hidden [2.1]
 - [ ] One UAC prompt for a new phone instead of two [2.2]
-- [ ] Crop to fill (no black bars for a portrait phone) [3.1]
+
 - [ ] Dim the phone screen while streaming, with a heat warning [4.1]
 - [ ] Write `design/STYLE.md` [7.2]
 
 ## Backlog
 
-- [ ] Resolution and frame-rate options (720p / 1080p / 4K, 60 fps) [3.2]
-- [ ] Camera controls: zoom, focus, exposure, torch, lens choice [3.3]
-- [ ] Lower latency: GPU decode, fewer copies, latency measurement [3.4]
+- [ ] Lower phone-side latency (capture→encoded 150–230 ms on the test phone) [3.4]
 - [ ] Screen-reader support for the settings window (UI Automation) [5.2]
 - [ ] Code-sign the installer and companion [5.3]
 - [ ] Uninstaller: remove UsbDk completely (service + UsbDk.sys stay behind after msiexec) [5.3]
@@ -41,6 +39,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [ ] iPhone support: iOS app + usbmux transport on the PC (future; needs a Mac, an iPhone, Apple Developer account) [9]
 
 ## Done
+
+- [x] Picture quality and camera control: crop to fill, 720p/1080p/4K, 60 fps where supported, zoom/brightness/focus/torch + Auto, adaptive streaming [3] (1.3.1)
 
 - [x] Package name `io.github.whoissaaif.mycam`, release key created, signed release [4.2] (1.2.0)
 - [x] Ad brief for the motion designer (shared doc)
@@ -60,6 +60,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 
 | Version | Date | What changed |
 |---|---|---|
+| 1.3.1 | 2026-10-09 | Quality & 60 fps, camera controls + Auto, crop to fill, adaptive streaming, lower PC latency (protocol v3). |
 | 1.2.0 | 2026-10-09 | Package `io.github.whoissaaif.mycam` (new app on phones), signed with the release key, 1.5 MB APK. |
 | 1.1.1 | 2026-10-09 | The phone's "get the app" link points to the GitHub repo. First GitHub release (exe + apk). |
 | 1.1.0 | 2026-10-09 | Pause on phone and PC, auto-pause on Windows lock, status pictures, Aero phone app. |
