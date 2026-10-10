@@ -147,7 +147,7 @@ struct SettingsWindow::Impl {
 
     // Motion and accessibility settings.
     bool reducedMotion = false;
-    Tween openFade, statusFade, badgePop, liveGlow;
+    Tween statusFade, badgePop, liveGlow;
     StatusView view = {}, prevView = {};
     bool viewShown = false, wasLive = false;
     uint64_t pairingSince = 0;
@@ -932,7 +932,7 @@ struct SettingsWindow::Impl {
     }
 
     bool Animating(uint64_t now) const {
-        bool any = openFade.Running(now) || statusFade.Running(now) || badgePop.Running(now) || liveGlow.Running(now) ||
+        bool any = statusFade.Running(now) || badgePop.Running(now) || liveGlow.Running(now) ||
                    previewFade.Running(now);
         for (const auto& t : groupOpen) any = any || t.Running(now);
         return any;
@@ -1387,17 +1387,6 @@ struct SettingsWindow::Impl {
         const LinkStatus s = Status();
 
         dc->Clear(D2D1::ColorF(0, 0, 0, 0));
-        // Window open: fade in from 96 % scale (150 ms).
-        const bool opening = openFade.Running(now);
-        if (opening) {
-            const float t = openFade.Value(now, EaseOut);
-            const float k = Lerp(0.96f, 1.f, t);
-            dc->SetTransform(D2D1::Matrix3x2F::Scale(k, k, D2D1::Point2F(kW / 2, kH / 2)));
-            D2D1_LAYER_PARAMETERS1 lp = D2D1::LayerParameters1();
-            lp.opacity = t;
-            dc->PushLayer(lp, nullptr);
-        }
-
         xp::WindowChrome(paint, kW, kH, L"MyCam", active, appIcon16.Get());
         const xp::Palette& pal = paint.Colors();
         // Task pane (blue gradient) and the beige surface.
@@ -1417,7 +1406,6 @@ struct SettingsWindow::Impl {
         }
         DrawFocus();
 
-        if (opening) dc->PopLayer();
         if (!surface.End()) Invalidate(); // Device lost: rebuild and draw again, or the window stays empty.
         ScheduleTimers();
     }
@@ -1740,7 +1728,11 @@ struct SettingsWindow::Impl {
         UpdateStatus();
         statusFade.Set(1);
         badgePop.Set(1);
-        openFade.Start(1, Now(), Dur(150), Dur(150) > 0 ? 0.f : 1.f);
+        // Draw the first frame before the window is shown. WS_EX_NOREDIRECTIONBITMAP means it has no
+        // surface of its own, so showing it before the swap chain holds a frame flashes a see-through
+        // window for one or two frames.
+        Paint();
+        ValidateRect(hwnd, nullptr);
         ShowWindow(hwnd, SW_SHOW);
         SetForegroundWindow(hwnd);
         SetFocus(hwnd);

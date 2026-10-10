@@ -34,6 +34,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
   - [ ] Release APK test (R8) before publishing
   - [~] First-run guide shown only once (persist on Skip, "Got it" or first connection)
   - [~] "Scan for PCs" (phone) and "Scan for phones" (PC) buttons
+- [ ] Designer mockup pass: sidebar nav, cards, dropdowns/toggles/sliders, splash, QR pairing ([redesign-v2.md](redesign-v2.md)) [7]
+- [x] PC window opened as a transparent flash (first frame now drawn before ShowWindow)
 
 ## Backlog
 
