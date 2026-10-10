@@ -12,7 +12,7 @@ namespace mycam {
 // image size). The source of truth is the "marquee x y w h" line in design/tools/frame_layout.txt, written
 // by the frame generator: keep these four numbers in sync with it.
 constexpr int kMarqueeTrackX = 490;
-constexpr int kMarqueeTrackY = 560;
+constexpr int kMarqueeTrackY = 447;
 constexpr int kMarqueeTrackW = 300;
 constexpr int kMarqueeTrackH = 18;
 constexpr int kMarqueeRefWidth = 1280;
