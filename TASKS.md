@@ -31,6 +31,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
   - [ ] Test the PC window with a real phone; check high contrast and reduced motion by eye
   - [ ] Narrator pass on the PC window (UI Automation)
   - [ ] Release APK test (R8) before publishing
+  - [~] First-run guide shown only once (persist on Skip, "Got it" or first connection)
+  - [~] "Scan for PCs" (phone) and "Scan for phones" (PC) buttons
 
 ## Backlog
 
