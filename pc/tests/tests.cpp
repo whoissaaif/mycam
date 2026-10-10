@@ -14,7 +14,17 @@
 #include "../companion/marquee.h"
 #include "../companion/protocol.h"
 #include "../companion/wifi_crypto.h"
+#include "../companion/capabilities.h"
+#include "../companion/preview_convert.h"
+#include "../companion/status_text.h"
+#include "../companion/ui_layout.h"
+#include "../companion/ui_model.h"
+#include "../companion/ui_motion.h"
 #include "../vcam/frame_transform.h"
+
+#include <cmath>
+
+#undef small // rpcndr.h (via status_text.h -> windows.h) defines it; the marquee tests use it as a name.
 
 using namespace mycam;
 
@@ -531,6 +541,192 @@ void TestMarqueeRestore() {
     CHECK(small.data == before.data);
 }
 
+// --- Companion UI (layout, motion, capabilities, element model, preview, status text) ---------------
+
+void TestUiFlow() {
+    using namespace mycam::ui;
+    float bottom = 0;
+    // Three 60-wide items in 150: two on the first line, the third wraps.
+    auto boxes = Flow({{60, 16}, {60, 16}, {60, 16}}, 10, 20, 150, 10, 4, &bottom);
+    CHECK(boxes.size() == 3);
+    CHECK(boxes[0].l == 10 && boxes[1].l == 80 && boxes[0].t == 20);
+    CHECK(boxes[2].l == 10 && boxes[2].t == 40);
+    CHECK(bottom == 56);
+    for (size_t i = 0; i < boxes.size(); ++i) {
+        CHECK(boxes[i].r <= 160.01f);
+        for (size_t j = i + 1; j < boxes.size(); ++j) CHECK(!boxes[i].Intersects(boxes[j]));
+    }
+    // An item wider than the line gets its own line, clipped to the width; shorter items are centred.
+    boxes = Flow({{300, 20}, {40, 10}, {40, 20}}, 0, 0, 100, 6, 0, &bottom);
+    CHECK(boxes[0].W() == 100 && boxes[1].t == 20 + 5 && boxes[2].t == 20);
+    CHECK(Flow({}, 0, 7, 100, 0, 0, &bottom).empty() && bottom == 7);
+    // Split: fixed columns first, the flexible ones share the rest.
+    auto cols = Split(0, 0, 100, 10, {20, 0, 0}, 10);
+    CHECK(cols[0].W() == 20 && cols[1].W() == 30 && cols[2].l == 70 && cols[2].r == 100);
+    Column c(5, 5, 50);
+    Box a = c.Row(10);
+    c.Gap(3);
+    Box b = c.Item({20, 8}, 2);
+    CHECK(a.t == 5 && b.t == 18 && b.l == 35 && c.Y() == 26);
+}
+
+void TestUiMotion() {
+    using namespace mycam::ui;
+    CHECK(EaseOut(0) == 0 && EaseOut(1) == 1 && EaseInOut(0.5f) > 0.49f && EaseInOut(0.5f) < 0.51f);
+    CHECK(std::fabs(BackOut(1) - 1) < 1e-5f);
+    bool overshoots = false;
+    for (int i = 1; i < 20; ++i) overshoots |= BackOut(i / 20.f) > 1.f;
+    CHECK(overshoots);
+    Tween t;
+    t.Start(1, 1000, 200, 0);
+    CHECK(t.Running(1100) && !t.Running(1200) && t.Value(1000) == 0 && t.Value(1300) == 1);
+    t.Start(0, 1000, 0, 1); // Reduced motion: instant.
+    CHECK(!t.Running(1000) && t.Value(1000) == 0);
+    // Marquee: snaps to chunk steps, crosses the whole track in 2.0 s, nothing during the 0.4 s pause.
+    const float track = 200, chunk = 8, gap = 2;
+    CHECK(MarqueeOffset(0, track, chunk, gap) == -30);
+    for (uint64_t ms = 0; ms < 2000; ms += 37) {
+        const float x = MarqueeOffset(ms, track, chunk, gap);
+        CHECK(std::fmod(x, 10.f) == 0 && x >= -30 && x <= track);
+    }
+    CHECK(MarqueeOffset(2100, track, chunk, gap) >= track);
+    CHECK(MarqueeOffset(2400, track, chunk, gap) == -30); // Next pass.
+    CHECK(MarqueeOffset(1000, track, chunk, gap) > MarqueeOffset(500, track, chunk, gap));
+    // Determinate: whole chunks only.
+    CHECK(DeterminateChunks(1, 98, 8, 2) == 10 && DeterminateChunks(0, 98, 8, 2) == 0);
+    CHECK(DeterminateChunks(0.55f, 98, 8, 2) == 5 && DeterminateChunks(2, 98, 8, 2) == 10);
+    wchar_t text[8];
+    FormatCountdown(42000, text, 8);
+    CHECK(wcscmp(text, L"0:42") == 0);
+    FormatCountdown(60000, text, 8);
+    CHECK(wcscmp(text, L"1:00") == 0);
+    FormatCountdown(1, text, 8);
+    CHECK(wcscmp(text, L"0:01") == 0);
+}
+
+void TestCapabilities() {
+    proto::CameraInfo c;
+    CHECK(!caps::QualityEnabled(true, c, proto::kQuality720p)); // No CameraInfo yet.
+    c.valid = true;
+    CHECK(caps::QualityEnabled(true, c, proto::kQuality4K));   // Unknown until the camera starts: offered.
+    CHECK(caps::FpsEnabled(true, c, 30) && !caps::FpsEnabled(true, c, 60));
+    c.width = 1920;
+    c.height = 1080;
+    c.quality = proto::kQuality1080p;
+    c.hasFpsModes = true;
+    c.fpsModes[0] = proto::kFps30Bit | proto::kFps60Bit | proto::kFps120Bit;
+    c.fpsModes[1] = proto::kFps30Bit | proto::kFps60Bit;
+    c.fpsModes[2] = proto::kFps30Bit;
+    CHECK(!caps::QualityEnabled(true, c, proto::kQuality4K)); // Known, and no 4K flag.
+    CHECK(caps::FpsEnabled(true, c, 60) && !caps::FpsEnabled(true, c, 120));
+    c.fps = 120;
+    CHECK(caps::EffectiveFps(c) == 60); // 120 asked, 60 is the best this quality does.
+    c.zoomX100 = 100; c.zoomMinX100 = 60; c.zoomMaxX100 = 500;
+    CHECK(caps::ZoomOutEnabled(true, c) && caps::ZoomInEnabled(true, c) && !caps::ZoomResetEnabled(true, c));
+    CHECK(!caps::AutoEnabled(true, c));
+    c.ev = 1;
+    CHECK(caps::AutoEnabled(true, c) && !caps::EvUpEnabled(true, c)); // evMax == evMin: no exposure control.
+    CHECK(!caps::QualityEnabled(false, c, proto::kQuality720p));
+    CHECK(wcscmp(caps::QualityLabel(1080), L"1080p") == 0 && wcscmp(caps::QualityLabel(2160), L"4K") == 0);
+}
+
+void TestUiModel() {
+    using namespace mycam::ui;
+    auto make = [](int id, Kind kind, int parent, int set = kSetNone, bool selected = false, bool enabled = true) {
+        Element e;
+        e.id = id;
+        e.kind = kind;
+        e.parent = parent;
+        e.radioSet = set;
+        e.selected = selected;
+        e.enabled = enabled;
+        e.focusable = kind != Kind::Text;
+        return e;
+    };
+    std::vector<Element> list = {
+        make(kPause, Kind::Button, kGroupNow),
+        make(kStatusHeadline, Kind::Text, kGroupNow),
+        make(kBack, Kind::Radio, kGroupCamera, kSetFacing, false),
+        make(kFront, Kind::Radio, kGroupCamera, kSetFacing, true),
+        make(kQ720, Kind::Radio, kGroupVideo, kSetQuality, false),
+        make(kQ1080, Kind::Radio, kGroupVideo, kSetQuality, false),
+        make(kQ4K, Kind::Radio, kGroupVideo, kSetQuality, false, false),
+        make(kMirror, Kind::Checkbox, kGroupPicture),
+        make(kFill, Kind::Checkbox, kGroupPicture),
+    };
+    list[7].name = L"Mirror the image";
+    list[7].accessKeyIndex = 0;
+    // A radio set is one tab stop: its selected option, else its first enabled one.
+    const std::vector<int> stops = TabStops(list);
+    CHECK((stops == std::vector<int>{kPause, kFront, kQ720, kMirror, kFill}));
+    CHECK(NextTabStop(list, kPause, false) == kFront);
+    CHECK(NextTabStop(list, kBack, false) == kQ720);   // From either option of the set.
+    CHECK(NextTabStop(list, kFill, false) == kPause);  // Wraps.
+    CHECK(NextTabStop(list, kPause, true) == kFill);
+    CHECK(NextTabStop(list, kNone, false) == kPause);
+    // Arrows stay inside the set and skip disabled options.
+    CHECK(ArrowTarget(list, kQ1080, 1) == kQ720);
+    CHECK(ArrowTarget(list, kQ720, -1) == kQ1080);
+    CHECK(ArrowTarget(list, kFront, 1) == kBack);
+    CHECK(ArrowTarget(list, kMirror, 1) == kFill && ArrowTarget(list, kFill, 1) == kMirror);
+    // Hidden (collapsed) elements are skipped.
+    list[7].visible = false;
+    CHECK(NextTabStop(list, kQ720, false) == kFill);
+    CHECK(AccessKeyTarget(list, L'm') == kNone);
+    list[7].visible = true;
+    CHECK(AccessKeyTarget(list, L'M') == kMirror && AccessKeyTarget(list, L'x') == kNone);
+    int key = -2;
+    CHECK(StripAccessKey(L"&Pause the camera", &key) == L"Pause the camera" && key == 0);
+    CHECK(StripAccessKey(L"Fish && chips", &key) == L"Fish & chips" && key == -1);
+    Element off = make(kOpenLog, Kind::Link, kGroupTasks);
+    off.rect = {0, 600, 50, 615};
+    off.clip = {0, 30, 240, 497};
+    CHECK(off.Offscreen());
+    off.rect = {0, 400, 50, 415};
+    CHECK(!off.Offscreen());
+}
+
+void TestPreviewConvert() {
+    // 4x2 NV12 -> 2x1 BGRA: each output pixel averages a 2x2 luma block.
+    const uint8_t nv12[] = {16, 16, 235, 235, 16, 16, 235, 235, 128, 128, 128, 128};
+    uint8_t out[8] = {};
+    Nv12ToBgraHalf(nv12, 2, 1, out);
+    CHECK(out[0] == 0 && out[1] == 0 && out[2] == 0 && out[3] == 255);
+    CHECK(out[4] == 255 && out[5] == 255 && out[6] == 255 && out[7] == 255);
+    // Pure red from BgraToNV12 comes back red.
+    std::vector<uint8_t> bgra(4 * 4 * 4);
+    for (size_t i = 0; i < bgra.size(); i += 4) { bgra[i] = 0; bgra[i + 1] = 0; bgra[i + 2] = 255; bgra[i + 3] = 255; }
+    std::vector<uint8_t> yuv(4 * 4 * 3 / 2);
+    BgraToNV12(bgra.data(), 16, 4, 4, yuv.data());
+    uint8_t back[2 * 2 * 4];
+    Nv12ToBgraHalf(yuv.data(), 2, 2, back);
+    CHECK(back[2] > 240 && back[1] < 15 && back[0] < 15);
+}
+
+void TestStatusText() {
+    LinkStatus s;
+    s.state = LinkState::Waiting;
+    s.wireless = true;
+    s.phoneName = L"Pixel 8";
+    s.pairingCode = L"554 294";
+    StatusView v = DescribeStatus(s, true);
+    CHECK(v.headline == L"Pairing with Pixel 8…");
+    CHECK(v.progress == StatusProgress::Pairing && v.facts.find(L"554 294") != std::wstring::npos);
+    s.pairingCode.clear();
+    CHECK(DescribeStatus(s, true).progress == StatusProgress::Working);
+    s.state = LinkState::Streaming;
+    s.width = 1920;
+    s.height = 1080;
+    v = DescribeStatus(s, true);
+    CHECK(v.headline == L"Streaming" && v.progress == StatusProgress::None && v.icon == kIconStreaming);
+    CHECK(v.facts == L"Back camera · 1920 × 1080 · Wi-Fi");
+    s.state = LinkState::Idle;
+    CHECK(DescribeStatus(s, true).progress == StatusProgress::None); // Never in steady states.
+    s.lockPaused = true;
+    CHECK(DescribeStatus(s, true).icon == kIconPaused);
+    CHECK(DescribeStatus(s, false).icon == kIconError);
+}
+
 } // namespace
 
 int main() {
@@ -561,6 +757,12 @@ int main() {
     printf("marquee draw 1920x1080\n");    TestMarqueeDraw(1920, 1080);
     printf("marquee draw 854x480\n");      TestMarqueeDraw(854, 480);
     printf("marquee restore\n");           TestMarqueeRestore();
+    printf("ui flow layout\n");            TestUiFlow();
+    printf("ui motion\n");                 TestUiMotion();
+    printf("ui capabilities\n");           TestCapabilities();
+    printf("ui element model\n");          TestUiModel();
+    printf("preview convert\n");           TestPreviewConvert();
+    printf("status text\n");               TestStatusText();
 
     printf("%d checks, %d failed\n", g_checks, g_failures);
     return g_failures ? 1 : 0;

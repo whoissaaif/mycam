@@ -26,6 +26,10 @@ namespace wifi { class RecordKey; }
 // Forgets every phone paired over Wi-Fi (they must pair again with a code). Settings window.
 void ForgetPairedPhones();
 
+// How long the phone gives its user to answer a pairing request (the PC waits a little longer, see
+// kUserTimeoutMs in phone_link_wifi.cpp). The pairing dialog counts this down.
+constexpr uint64_t kPairingAnswerMs = 60000;
+
 enum class LinkState {
     NoDriver,    // UsbDk is not installed; we cannot talk to phones.
     Searching,   // No phone found.
@@ -72,6 +76,9 @@ public:
     void RequestReconnect() { reconnect_ = true; }
     // Wireless mode (beta): also look for phones on the local network and connect over Wi-Fi.
     void SetWireless(bool on) { wireless_ = on; }
+    // Abandons a Wi-Fi pairing that is waiting for the phone's answer: the PC closes the socket (no
+    // protocol message), and that phone isn't asked again for a while. No effect when not pairing.
+    void CancelPairing() { cancelPairing_ = true; }
     // Pause / resume the camera (the phone stores the choice). Needs a connected phone.
     void RequestPause(bool pause) { pendingPause_ = pause ? 1 : 0; }
     // Windows locked / asleep: keep the phone camera off until unlocked. Independent of RequestPause.
@@ -138,6 +145,7 @@ private:
     bool marqueeActive_ = false; // The animated waiting picture is on screen: write it at ~15 fps.
 
     std::atomic<bool> wireless_{false};
+    std::atomic<bool> cancelPairing_{false};
     bool usbReady_ = false;
     uintptr_t udp_ = ~uintptr_t(0);       // SOCKET for discovery (INVALID_SOCKET when closed).
     uintptr_t tcp_ = ~uintptr_t(0);       // SOCKET of the current Wi-Fi session.
