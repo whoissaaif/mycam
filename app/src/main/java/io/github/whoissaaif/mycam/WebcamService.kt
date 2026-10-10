@@ -75,6 +75,14 @@ class WebcamService : Service() {
         val pairedPcs: List<PairedPc> = emptyList(),
         /** Name of the PC connected over Wi-Fi. */
         val wirelessPc: String? = null,
+        /** IP address of the PC connected over Wi-Fi (marks it in the nearby list). */
+        val wirelessPcIp: String? = null,
+        /** PCs looking for phones on this Wi-Fi right now (probes in the last 6 s), by name. */
+        val nearbyPcs: List<NearbyPc> = emptyList(),
+        /** "Scan for PCs" is running (6 s: three of the PC's probe intervals). */
+        val scanning: Boolean = false,
+        /** A scan has finished since wireless mode was turned on (the UI can say "No PC found"). */
+        val scanned: Boolean = false,
     )
 
     private lateinit var cameraThread: HandlerThread
@@ -102,6 +110,15 @@ class WebcamService : Service() {
     private var handshaking = false                      // A PC is pairing or proving its pairing key.
     private var pendingAnswer: ((Boolean) -> Unit)? = null // Waiting for Allow / Don't allow on a pairing.
     private val pairedPcs by lazy { PairedPcs(getSharedPreferences(PREFS, MODE_PRIVATE)) }
+    private val nearby = NearbyPcs()
+    /** Drops PCs that stopped probing; runs every second while the nearby list isn't empty. */
+    private val expireNearby = object : Runnable {
+        override fun run() {
+            publishNearby()
+            if (!nearby.isEmpty()) main.postDelayed(this, 1_000)
+        }
+    }
+    private val endScan = Runnable { _state.update { it.copy(scanning = false, scanned = true) } }
 
     // Owned by the camera thread.
     private var wantStreaming = false
@@ -195,6 +212,12 @@ class WebcamService : Service() {
                 setWireless(intent.getBooleanExtra(EXTRA_ON, false))
                 return START_NOT_STICKY
             }
+            ACTION_SCAN -> {
+                // "Turn on and scan": the user asked for wireless mode too.
+                if (!wirelessOn) setWireless(true)
+                if (wirelessOn) startScan()
+                return START_NOT_STICKY
+            }
             ACTION_FORGET_PCS -> {
                 val id = intent.getStringExtra(EXTRA_PC_ID)
                 if (id != null) forgetPc(id) else forgetPcs()
@@ -225,7 +248,11 @@ class WebcamService : Service() {
         if (on) {
             if (!goForeground()) { stopSelf(); return }
             wirelessOn = true
-            wireless = WirelessServer(this) { sock, name -> main.post { offerPc(sock, name) } }.also { it.start() }
+            wireless = WirelessServer(
+                this,
+                onProbe = { ip, name -> main.post { onProbe(ip, name) } },
+                onClient = { sock, name -> main.post { offerPc(sock, name) } },
+            ).also { it.start() }
             _state.update {
                 it.copy(wirelessOn = true, wirelessAddress = WirelessServer.localAddress(this), pairedPcs = pairedPcs.list())
             }
@@ -234,7 +261,10 @@ class WebcamService : Service() {
             wireless?.stop()
             wireless = null
             answerPc(false)
-            _state.update { it.copy(wirelessOn = false, wirelessAddress = null) }
+            main.removeCallbacks(endScan)
+            main.removeCallbacks(expireNearby)
+            nearby.clear()
+            _state.update { it.copy(wirelessOn = false, wirelessAddress = null, nearbyPcs = emptyList(), scanning = false, scanned = false) }
             if (socket != null) {
                 val id = linkId
                 camera.post { onLinkLost(id) }
@@ -243,6 +273,35 @@ class WebcamService : Service() {
             }
         }
         updateNotification()
+    }
+
+    /**
+     * Main thread. "Scan for PCs": the phone never probes (PROTOCOL.md "Wireless transport"), so a scan is
+     * listening for three of the PCs' 2 s probes while the UI shows progress. The nearby list itself is kept
+     * all the time wireless mode is on. Also refreshes this phone's address (it may have changed networks).
+     */
+    private fun startScan() {
+        main.removeCallbacks(endScan)
+        publishNearby()
+        _state.update { it.copy(scanning = true, wirelessAddress = WirelessServer.localAddress(this)) }
+        main.postDelayed(endScan, NearbyPcs.MAX_AGE_MS)
+    }
+
+    /** Main thread. A PC's discovery probe arrived. */
+    private fun onProbe(ip: String, name: String) {
+        if (!wirelessOn) return
+        val wasEmpty = nearby.isEmpty()
+        if (nearby.seen(ip, name, SystemClock.elapsedRealtime())) publishNearby()
+        if (wasEmpty) {
+            main.removeCallbacks(expireNearby)
+            main.postDelayed(expireNearby, 1_000)
+        }
+    }
+
+    /** Main thread. Shows the current nearby PCs (only when the list changed, not on every probe). */
+    private fun publishNearby() {
+        val list = nearby.list(SystemClock.elapsedRealtime())
+        if (list != _state.value.nearbyPcs) _state.update { it.copy(nearbyPcs = list) }
     }
 
     /**
@@ -354,6 +413,7 @@ class WebcamService : Service() {
         } catch (_: IOException) {}
         socket = sock
         startLink(secure.output, secure.input, wirelessPc = secure.pcName)
+        _state.update { it.copy(wirelessPcIp = sock.inetAddress?.hostAddress) }
         if (secure.newlyPaired) _state.update { it.copy(pairedPcs = pairedPcs.list()) }
         wifiLock = getSystemService(WifiManager::class.java)?.createWifiLock(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) WifiManager.WIFI_MODE_FULL_LOW_LATENCY
@@ -746,7 +806,7 @@ class WebcamService : Service() {
         wifiLock?.release()
         wifiLock = null
         orientationListener?.disable()
-        _state.update { it.copy(connected = false, streaming = false, resolution = "", wireless = false, wirelessPc = null) }
+        _state.update { it.copy(connected = false, streaming = false, resolution = "", wireless = false, wirelessPc = null, wirelessPcIp = null) }
         updateNotification()
     }
 
@@ -764,6 +824,8 @@ class WebcamService : Service() {
         cameraThread.quitSafely()
         wireless?.stop()
         wireless = null
+        main.removeCallbacks(endScan)
+        main.removeCallbacks(expireNearby)
         pendingAnswer?.invoke(false) // Unblocks a pairing that is waiting for the user.
         pendingAnswer = null
         closeLink()
@@ -794,7 +856,9 @@ class WebcamService : Service() {
         const val EXTRA_ON = "on"
         const val ACTION_WIRELESS_ANSWER = "io.github.whoissaaif.mycam.WIRELESS_ANSWER"
         const val EXTRA_ALLOW = "allow"
-        const val ACTION_FORGET_PCS = "io.github.whoissaaif.mycam.FORGET_PCS"
+        /** "Scan for PCs": turns wireless mode on if needed, then shows progress for 6 s while PCs are heard. */
+        const val ACTION_SCAN = "io.github.whoissaaif.mycam.SCAN"
+        const val ACTION_FORGET_PCS ="io.github.whoissaaif.mycam.FORGET_PCS"
         /** With ACTION_FORGET_PCS: forget only this PC (PairedPc.id); without it, forget them all. */
         const val EXTRA_PC_ID = "pc_id"
         /** Dim the screen automatically while streaming (Settings > Phone). */

@@ -27,6 +27,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
 import androidx.core.content.edit
 import io.github.whoissaaif.mycam.ui.DimScreen
+import io.github.whoissaaif.mycam.ui.FirstRun
 import io.github.whoissaaif.mycam.ui.FirstRunScreen
 import io.github.whoissaaif.mycam.ui.ScreenActions
 import io.github.whoissaaif.mycam.ui.WebcamScreen
@@ -58,12 +59,17 @@ class MainActivity : ComponentActivity() {
         val acc = pendingAccessory
         pendingAccessory = null
         if (results[Manifest.permission.CAMERA] == true && acc != null) startWebcam(acc)
-        if (pendingWireless && granted(Manifest.permission.CAMERA)) setWireless(true)
+        if (pendingWireless && granted(Manifest.permission.CAMERA)) {
+            if (pendingScan) scanForPcs() else setWireless(true)
+        }
         pendingWireless = false
+        pendingScan = false
     }
 
     /** Wireless was switched on before camera access was granted. */
     private var pendingWireless = false
+    /** ...by "Turn on and scan". */
+    private var pendingScan = false
 
     private val usbPermissionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -89,16 +95,15 @@ class MainActivity : ComponentActivity() {
         WebcamService.showIdleCamera(WebcamService.loadCameraSettings(prefs))
         WebcamService.showPairedPcs(PairedPcs(prefs).list())
         autoDim = prefs.getBoolean(WebcamService.PREF_AUTO_DIM, true)
-        // First run until the first connection. Phones that already paired a PC have connected before.
-        // Skipping hides them for this session, which survives a rotation.
-        firstRun = !prefs.getBoolean(WebcamService.PREF_FIRST_RUN_DONE, false) && PairedPcs(prefs).list().isEmpty() &&
-            savedInstanceState?.getBoolean(STATE_FIRST_RUN_HIDDEN) != true
+        // First run: shown once, to a new user. Skip, Got it and the first connection end it for good.
+        firstRun = FirstRun.shouldShow(prefs) && savedInstanceState?.getBoolean(STATE_FIRST_RUN_HIDDEN) != true
         ContextCompat.registerReceiver(
             this, usbPermissionReceiver, IntentFilter(ACTION_USB_PERMISSION), ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         val actions = ScreenActions(
             onFacing = ::setFacing, onPause = ::setPaused, onCommand = ::sendCommand, onDim = { dimmed = true },
             onWireless = ::setWireless, onAnswerPc = ::answerPc, onForgetPc = ::forgetPc, onForgetAllPcs = ::forgetPcs,
+            onScan = ::scanForPcs,
             onAutoDim = ::changeAutoDim, onDismissTimedOut = WebcamService::dismissPairingTimedOut,
         )
         setContent {
@@ -122,14 +127,17 @@ class MainActivity : ComponentActivity() {
                 }
                 // The first successful connection ends the first-run cards for good.
                 LaunchedEffect(state.connected) {
-                    if (state.connected && !prefs.getBoolean(WebcamService.PREF_FIRST_RUN_DONE, false)) {
-                        prefs.edit { putBoolean(WebcamService.PREF_FIRST_RUN_DONE, true) }
+                    if (state.connected) {
+                        FirstRun.done(prefs)
                         firstRun = false
                     }
                 }
                 when {
                     dimmed -> DimScreen(state)
-                    firstRun && !state.connected && state.pendingPc == null -> FirstRunScreen(onDone = { firstRun = false })
+                    firstRun && !state.connected && state.pendingPc == null -> FirstRunScreen(onDone = {
+                        FirstRun.done(prefs)
+                        firstRun = false
+                    })
                     else -> WebcamScreen(state = state, actions = actions, autoDim = autoDim)
                 }
             }
@@ -257,6 +265,19 @@ class MainActivity : ComponentActivity() {
         if (on) ContextCompat.startForegroundService(this, intent)
         else if (WebcamService.state.value.wirelessOn) startService(intent)
         else getSharedPreferences(WebcamService.PREFS, MODE_PRIVATE).edit().putBoolean(WebcamService.PREF_WIRELESS, false).apply()
+    }
+
+    /** "Scan for PCs" (or "Turn on and scan": the service turns wireless mode on first). */
+    private fun scanForPcs() {
+        if (!granted(Manifest.permission.CAMERA)) {
+            pendingWireless = true
+            pendingScan = true
+            requestPermissions.launch(missingPermissions().toTypedArray())
+            return
+        }
+        val intent = Intent(this, WebcamService::class.java).setAction(WebcamService.ACTION_SCAN)
+        if (WebcamService.state.value.wirelessOn) startService(intent)
+        else ContextCompat.startForegroundService(this, intent)
     }
 
     private fun forgetPcs() {

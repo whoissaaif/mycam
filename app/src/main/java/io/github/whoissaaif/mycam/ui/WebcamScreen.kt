@@ -97,6 +97,7 @@ data class ScreenActions(
     val onForgetAllPcs: () -> Unit = {},
     val onAutoDim: (Boolean) -> Unit = {},
     val onDismissTimedOut: () -> Unit = {},
+    val onScan: () -> Unit = {},
 )
 
 private data class StatusView(val icon: Int, val headline: String, val detail: String, val live: Boolean = false)
@@ -315,6 +316,10 @@ private fun HeroGroup(
                 })
             }
         }
+        if (!state.connected && state.wirelessOn) {
+            Spacer(Modifier.height(12.dp))
+            ScanForPcs(state, actions.onScan, showAddress = true)
+        }
         heatWarning(state.thermal)?.let { (text, _) ->
             Spacer(Modifier.height(8.dp))
             Text(text, style = MaterialTheme.typography.bodyMedium, color = Xp.WarningText)
@@ -406,6 +411,8 @@ private fun SettingsTab(
                 },
                 style = MaterialTheme.typography.bodyMedium, color = Xp.Subtle,
             )
+            Spacer(Modifier.height(8.dp))
+            ScanForPcs(state, actions.onScan, showAddress = false)
         }
     }
     val paired: @Composable (Modifier) -> Unit = { m ->

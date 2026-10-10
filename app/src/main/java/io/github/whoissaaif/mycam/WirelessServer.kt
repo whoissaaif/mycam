@@ -23,8 +23,13 @@ import java.util.concurrent.ConcurrentHashMap
  * rule. Discovery and the TCP stream are described in protocol/PROTOCOL.md ("Wireless transport").
  *
  * Every accepted connection goes to [onClient]; the service asks the user before anything is streamed.
+ * Every discovery probe goes to [onProbe] (IP address, PC name; on the discovery thread) for "Scan for PCs".
  */
-class WirelessServer(private val context: Context, private val onClient: (Socket, String) -> Unit) {
+class WirelessServer(
+    private val context: Context,
+    private val onProbe: (ip: String, name: String) -> Unit,
+    private val onClient: (Socket, String) -> Unit,
+) {
     @Volatile private var running = false
     private var server: ServerSocket? = null
     private var discovery: DatagramSocket? = null
@@ -87,7 +92,9 @@ class WirelessServer(private val context: Context, private val onClient: (Socket
                 val text = String(packet.data, 0, packet.length, Charsets.UTF_8)
                 if (!text.startsWith(Protocol.WIRELESS_ASK)) continue
                 val ip = packet.address.hostAddress ?: continue
-                text.substringAfter(' ', "").trim().take(64).takeIf { it.isNotEmpty() }?.let { pcNames[ip] = it }
+                val name = text.substringAfter(' ', "").trim().take(64).takeIf { it.isNotEmpty() }
+                name?.let { pcNames[ip] = it }
+                onProbe(ip, name ?: ip)
                 socket.send(DatagramPacket(reply, reply.size, packet.address, packet.port))
             }
         } catch (e: IOException) {

@@ -312,6 +312,17 @@ About            Get MyCam for Windows (link + QR) · Version · Licences
 The fps reason is computed from the masks of all qualities ("needs 1080p or lower", or "this camera does
 30 fps"), so it stays capability-driven.
 
+**Scan for PCs.** An XP push button in the Wireless group, and in the Now hero while Wi-Fi is on and nothing
+is connected. The phone never probes (no protocol change): it lists the PCs whose "Find phones on Wi-Fi"
+probes (`MYCAM?1 <name>`, every 2 s) it heard in the last 6 s, kept by `NearbyPcs` all the time wireless mode
+is on. Pressing the button shows the green marquee and "Looking for PCs on this Wi-Fi…" for 6 s (three probe
+intervals), then "N PCs on this Wi-Fi:" with one row per PC: a status dot, the name, its IP in subtle text and
+"Connected", "Paired" (matched by name, best effort) or "Not paired yet: it will ask for a code when it
+connects". With none: "No PC found. On the PC, open MyCam and turn on 'Find phones on Wi-Fi'…" plus the
+phone's own IP on Now. With Wi-Fi off the button reads **Turn on and scan** and switches wireless mode on
+(a user action, saved like the checkbox). The status line is a polite live region; with reduced motion the
+marquee is left out and the static "Looking for PCs…" line stands in for "Working…".
+
 ### 5.5 Pairing dialog (A3)
 
 A modal XP dialog (title bar, beige body) over a **blurred, dimmed** Now screen (§6.2):
@@ -342,7 +353,8 @@ animates except the drift.
 
 ### 5.7 First run (A9)
 
-Three cards on the hills background, until the first connection:
+Three cards on the hills background, shown once to a new user: Skip, Got it on the last card or the first
+connection end them for good (`PREF_FIRST_RUN_DONE`), and a phone that already has a paired PC never sees them:
 1. **Install MyCam on your Windows PC**: link and QR.
 2. **Plug in this phone**: "Tap OK when Android asks. Tick *Always*."
 3. **Pick "MyCam" as the camera in any app.**
