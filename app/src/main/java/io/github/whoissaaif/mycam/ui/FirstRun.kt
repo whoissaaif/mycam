@@ -53,6 +53,10 @@ import io.github.whoissaaif.mycam.ui.theme.Xp
 import io.github.whoissaaif.mycam.ui.xp.GoButton
 import io.github.whoissaaif.mycam.ui.xp.HillsScene
 import io.github.whoissaaif.mycam.ui.xp.SkyTextShadow
+import android.content.SharedPreferences
+import androidx.core.content.edit
+import io.github.whoissaaif.mycam.PairedPcs
+import io.github.whoissaaif.mycam.WebcamService
 import io.github.whoissaaif.mycam.ui.xp.XpLink
 import io.github.whoissaaif.mycam.ui.xp.XpProgressBar
 import io.github.whoissaaif.mycam.ui.xp.motionMs
@@ -60,7 +64,23 @@ import io.github.whoissaaif.mycam.ui.xp.motionMs
 private const val STEPS = 3
 
 /**
- * First run (A9, redesign.md 5.7): three cards over the sunny hills, shown until the first connection.
+ * The first-run cards are shown once, to a new user. Skip, Got it on the last card and the first connection
+ * all end them for good ([done]). A phone that has paired a PC has connected before (an upgrade from a
+ * version without the flag), so it never sees them either.
+ */
+object FirstRun {
+    fun shouldShow(prefs: SharedPreferences): Boolean =
+        !prefs.getBoolean(WebcamService.PREF_FIRST_RUN_DONE, false) && PairedPcs(prefs).list().isEmpty()
+
+    fun done(prefs: SharedPreferences) {
+        if (!prefs.getBoolean(WebcamService.PREF_FIRST_RUN_DONE, false)) {
+            prefs.edit { putBoolean(WebcamService.PREF_FIRST_RUN_DONE, true) }
+        }
+    }
+}
+
+/**
+ * First run (A9, redesign.md 5.7): three cards over the sunny hills, shown once (see [FirstRun]).
  * [onDone] hides them (Skip, or Got it on the last card).
  */
 @Composable

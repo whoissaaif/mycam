@@ -15,6 +15,7 @@ import androidx.activity.ComponentActivity
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
 import io.github.whoissaaif.mycam.CameraStreamer
+import io.github.whoissaaif.mycam.NearbyPc
 import io.github.whoissaaif.mycam.PairedPc
 import io.github.whoissaaif.mycam.Protocol
 import io.github.whoissaaif.mycam.WebcamService.UiState
@@ -62,12 +63,12 @@ class PhoneSnapshots {
     )
     private val streaming = UiState(connected = true, streaming = true, resolution = "1920×1080", cameraInfo = info)
 
-    private fun shot(name: String, fontScale: Float = 1f, content: @Composable () -> Unit) {
+    private fun shot(name: String, fontScale: Float = 1f, reduced: Boolean = true, content: @Composable () -> Unit) {
         compose.mainClock.autoAdvance = false
         compose.setContent {
             val d = LocalDensity.current
             CompositionLocalProvider(LocalDensity provides Density(d.density, fontScale)) {
-                MycamTheme(reducedMotion = true, content = content)
+                MycamTheme(reducedMotion = reduced, content = content)
             }
         }
         compose.mainClock.advanceTimeBy(1_000)
@@ -130,6 +131,40 @@ class PhoneSnapshots {
     @Test fun dimHot() = shot("11-dim-heat") { DimScreen(streaming.copy(thermal = 4)) }
     @Test fun heatWarning() = shot("12-streaming-heat") { WebcamScreen(streaming.copy(thermal = 2)) }
     @Test fun error() = shot("13-error") { WebcamScreen(UiState(connected = true, error = "The camera is in use by another app.")) }
+
+    // Scan for PCs (redesign.md 5.4): Now while listening (with the marquee), Settings with results, Now with none.
+    private val scanBase = UiState(wirelessOn = true, wirelessAddress = "192.168.1.23", pairedPcs = listOf(PairedPc("a1", "DESKTOP-ABC")))
+
+    @Test fun scanning() = shot("15-scan-scanning", reduced = false) {
+        WebcamScreen(scanBase.copy(scanning = true, nearbyPcs = listOf(NearbyPc("DESKTOP-ABC", "192.168.1.20"))))
+    }
+    @Test fun scanningReduced() = shot("15-scan-scanning-reduced") { WebcamScreen(scanBase.copy(scanning = true)) }
+
+    @Config(qualifiers = "w360dp-h1400dp-xhdpi")
+    @Test fun scanResults() = shot("15-scan-results") {
+        WebcamScreen(
+            scanBase.copy(
+                connected = true, wireless = true, wirelessPc = "STUDIO", wirelessPcIp = "192.168.1.31", scanned = true,
+                pairedPcs = listOf(PairedPc("a1", "DESKTOP-ABC"), PairedPc("c3", "STUDIO")),
+                nearbyPcs = listOf(
+                    NearbyPc("DESKTOP-ABC", "192.168.1.20"), NearbyPc("LIVING-ROOM-PC", "192.168.1.44"), NearbyPc("STUDIO", "192.168.1.31"),
+                ),
+            ),
+            initialTab = 1,
+        )
+    }
+
+    @Config(qualifiers = "w360dp-h1000dp-xhdpi")
+    @Test fun scanResultsLarge() = shot("15-scan-results-fs13", 1.3f) {
+        WebcamScreen(
+            scanBase.copy(scanned = true, nearbyPcs = listOf(NearbyPc("DESKTOP-ABC", "192.168.1.20"), NearbyPc("LIVING-ROOM-PC", "192.168.1.44"))),
+        )
+    }
+
+    @Test fun scanNone() = shot("15-scan-none") { WebcamScreen(scanBase.copy(scanned = true)) }
+
+    @Config(qualifiers = "w360dp-h1400dp-xhdpi")
+    @Test fun scanWifiOff() = shot("15-scan-wifi-off") { WebcamScreen(UiState(), initialTab = 1) }
 
     @Test fun progressBars() = shot("14-progress") {
         Column(Modifier.fillMaxSize().background(Xp.Surface).padding(16.dp)) {

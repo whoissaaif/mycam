@@ -92,6 +92,22 @@
     <string name="status_wireless_waiting">Waiting for your PC</string>
     <string name="status_wireless_waiting_detail">Over Wi-Fi. The camera turns on when an app on the PC uses MyCam.</string>
 
+    <!-- Scan for PCs (redesign.md 5.4) -->
+    <string name="scan_button">Scan for PCs</string>
+    <string name="scan_button_turn_on">Turn on and scan</string>
+    <string name="scan_button_turn_on_description">Turn on Use over Wi-Fi and scan for PCs</string>
+    <string name="scan_looking">Looking for PCs on this Wi-Fi…</string>
+    <plurals name="scan_found">
+        <item quantity="one">%1$d PC on this Wi-Fi:</item>
+        <item quantity="other">%1$d PCs on this Wi-Fi:</item>
+    </plurals>
+    <string name="scan_none">No PC found. On the PC, open MyCam and turn on “Find phones on Wi-Fi”. Both must be on the same Wi-Fi.</string>
+    <string name="scan_phone_address">This phone is %1$s.</string>
+    <string name="scan_status_connected">Connected</string>
+    <string name="scan_status_paired">Paired</string>
+    <string name="scan_status_new">Not paired yet: it will ask for a code when it connects</string>
+    <string name="scan_row_description">%1$s, %2$s, %3$s</string>
+
     <!-- Pairing (dialog and notification) -->
     <string name="wireless_pair_title">Pair with %1$s?</string>
     <string name="wireless_pair_text">Code %1$s. Check that MyCam on the PC shows the same code, then allow. Paired PCs connect without asking.</string>
