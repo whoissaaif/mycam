@@ -18,7 +18,7 @@ namespace mycam::ui {
 
 // Shown on the About page. Keep in step with app/build.gradle.kts, installer/mycam.iss and
 // installer/build.ps1 when releasing (see CLAUDE.md "Release steps").
-constexpr wchar_t kAppVersion[] = L"1.4.0-beta4";
+constexpr wchar_t kAppVersion[] = L"1.4.0";
 
 enum class Kind {
     Group,          // Collapsible task-pane group (or the fixed "Now" group). UIA: Group + ExpandCollapse.
@@ -50,7 +50,7 @@ enum Id : int {
     kGroupNow = 100, kGroupCamera = 101, kGroupVideo = 102, kGroupPicture = 103, kGroupWifi = 104, kGroupTasks = 105,
     // Cards (v2 pages).
     kCardUsb = 110, kCardWifi = 111, kCardDevices = 112, kCardControls = 113, kCardSettings = 114,
-    kCardAbout = 115, kCardStatus = 116, kCardPairing = 117,
+    kCardAbout = 115, kCardStatus = 116, kCardPairing = 117, kCardConnected = 118,
     // "Now" group / the Home page's status area.
     kStatusHeadline = 200, kStatusDetail = 201, kPause = 202, kLivePill = 203, kStatusProgress = 204,
     kShowPairing = 205, kScanNow = 206, // "Scan for phones" in Now (only while no phone is connected).
@@ -71,6 +71,12 @@ enum Id : int {
     // (a Group whose children are the rows, see ScanRowId). Shown in Now while no phone is connected, else
     // in the Wi-Fi group.
     kScan = 603, kScanProgress = 604, kScanResult = 605, kScanList = 606,
+    // The Devices page keeps the phone in use apart from the ones that are only available (§2.1): a heading
+    // and a list of its own for each.
+    kConnectedList = 607, kConnectedTitle = 608, kAvailableTitle = 609,
+    kConnectedNote = 610, kAvailableNote = 611,
+    // "Connect a phone to choose." under the Camera page's controls while nothing is connected.
+    kCameraHint = 612,
     // Task links.
     kReconnect = 700, kOpenLog = 701,
     // Right side: preview and live camera controls.

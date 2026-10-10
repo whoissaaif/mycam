@@ -120,6 +120,9 @@ bool Surface::End() {
         return false;
     }
     hr = swapChain_->Present(1, 0);
+    // Present(1, 0) normally waits for one vertical blank, which is what paces the animations. Fully
+    // covered, it returns immediately instead, so the caller must fall back to a timer.
+    occluded_ = hr == DXGI_STATUS_OCCLUDED;
     if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
         Reset();
         return false;
@@ -242,6 +245,7 @@ void Painter::CreateFormats() {
         ellipsisFormat_[i]->SetTrimming(&trimming, sign.Get());
     }
     measureCache_.clear();
+    layoutCache_.clear(); // The formats changed: every cached layout refers to an old one.
 }
 
 Size Painter::Measure(Font font, const std::wstring& text, float maxWidth) {
@@ -266,18 +270,25 @@ float Painter::LineHeight(Font font) { return Measure(font, L"Ag").h; }
 void Painter::Text(Font font, const std::wstring& text, const Box& box, D2D1_COLOR_F color, Align align, int underline,
                    bool ellipsis, bool vcenter) {
     if (text.empty() || !dc_) return;
-    IDWriteTextFormat* format = (ellipsis ? ellipsisFormat_ : formats_)[int(font)].Get();
-    ComPtr<IDWriteTextLayout> layout;
-    if (FAILED(dwrite_->CreateTextLayout(text.c_str(), UINT32(text.size()), format, std::max(box.W(), 1.f),
-                                         std::max(box.H(), 1.f), &layout))) {
-        return;
+    // The layout only depends on these, never on the colour or the position, so it is reused between
+    // frames: building one per string per frame is what made page transitions stutter.
+    const float w = std::max(box.W(), 1.f), h = std::max(box.H(), 1.f);
+    const int flags = (ellipsis ? 1 : 0) | (int(align) << 1) | (vcenter ? 1 << 4 : 0);
+    const auto key = std::make_tuple(int(font), flags, underline, int(w * 4), int(h * 4), text);
+    auto it = layoutCache_.find(key);
+    if (it == layoutCache_.end()) {
+        IDWriteTextFormat* format = (ellipsis ? ellipsisFormat_ : formats_)[int(font)].Get();
+        ComPtr<IDWriteTextLayout> made;
+        if (FAILED(dwrite_->CreateTextLayout(text.c_str(), UINT32(text.size()), format, w, h, &made))) return;
+        made->SetTextAlignment(align == Align::Center     ? DWRITE_TEXT_ALIGNMENT_CENTER
+                               : align == Align::Trailing ? DWRITE_TEXT_ALIGNMENT_TRAILING
+                                                          : DWRITE_TEXT_ALIGNMENT_LEADING);
+        made->SetParagraphAlignment(vcenter ? DWRITE_PARAGRAPH_ALIGNMENT_CENTER : DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
+        if (underline >= 0 && underline < int(text.size())) made->SetUnderline(TRUE, {UINT32(underline), 1});
+        if (layoutCache_.size() > 600) layoutCache_.clear(); // Values change (addresses, counts): don't grow.
+        it = layoutCache_.emplace(key, std::move(made)).first;
     }
-    layout->SetTextAlignment(align == Align::Center   ? DWRITE_TEXT_ALIGNMENT_CENTER
-                             : align == Align::Trailing ? DWRITE_TEXT_ALIGNMENT_TRAILING
-                                                        : DWRITE_TEXT_ALIGNMENT_LEADING);
-    layout->SetParagraphAlignment(vcenter ? DWRITE_PARAGRAPH_ALIGNMENT_CENTER : DWRITE_PARAGRAPH_ALIGNMENT_NEAR);
-    if (underline >= 0 && underline < int(text.size())) layout->SetUnderline(TRUE, {UINT32(underline), 1});
-    dc_->DrawTextLayout(D2D1::Point2F(box.l, box.t), layout.Get(), Brush(color), D2D1_DRAW_TEXT_OPTIONS_NONE);
+    dc_->DrawTextLayout(D2D1::Point2F(box.l, box.t), it->second.Get(), Brush(color), D2D1_DRAW_TEXT_OPTIONS_NONE);
 }
 
 // --- Painter: primitives ------------------------------------------------------------------------------

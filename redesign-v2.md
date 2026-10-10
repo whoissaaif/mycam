@@ -1,7 +1,7 @@
 # MyCam redesign v2: matching the designer's mockup
 
 An analysis of the mockup the owner's designer supplied (`design/previews/designer-mockup.png`), compared
-with what MyCam has today on branch `xp-redesign` (1.4.0-beta4), and the work needed to match it.
+with what MyCam has today on branch `xp-redesign` (1.4.0), and the work needed to match it.
 
 Companion documents: [redesign.md](redesign.md) (the XP spec we built) and
 [design/STYLE.md](design/STYLE.md) (the token rulebook). Where this file and those disagree, **this file
@@ -85,9 +85,14 @@ USB Devices" maps to a re-enumerate plus the existing `Reconnect phone`).
 
 ### 2.3 Page 2, Devices
 
-- Header "Available Devices" with a **Refresh** button at the right.
+- Header "Devices" with a **Refresh** button at the right.
+- Two sections, each a heading over its own card: **Connected Device** and **Available Devices**
+  (owner's note, 2026-10-11: the phone in use must not be mixed into the list of ones to pick from). The
+  connected section always shows, saying "No device is connected yet." when there is none, so the state is
+  stated rather than left to be inferred.
 - Rows: a phone glyph, the device name in bold, the IP beneath it, a **transport icon** (Wi-Fi arcs or the
   USB trident) and a blue **Connect** button.
+- "Scan for Devices" on Home lands here, because this is where its results are.
 
 We built almost exactly this in "Scan for phones" (name, IP, status, Connect link). Changes needed:
 a dedicated page, the transport icon, Connect as a **button** rather than a link, and USB devices listed in
@@ -345,7 +350,10 @@ Honest notes, since the mockup is a design and not a specification:
    the one thing users read at a glance, and it should stay on the PC Home page and the phone Connect
    screen.
 3. **Dropdowns hide capability.** Radio groups made "this phone cannot do 4K" visible at a glance. With
-   dropdowns, keep the unavailable entries visible but disabled, with the reason underneath.
+   dropdowns, keep the unavailable entries visible but disabled, with the reason underneath. The dropdown
+   itself therefore stays **openable even with no phone connected** (every entry greyed, and a line saying
+   "Connect a phone to choose. Each phone reports which of these it can do."): a control that refuses to
+   open shows nothing at all, which is worse than showing a list that cannot be used yet.
 4. **"Reject"** should be "Don't allow", to match Android's own language.
 5. **The radar animation** must have a reduced-motion fallback.
 6. **Maximise** on a fixed-layout window is a trap. Either make the layout genuinely resizable or drop the
@@ -399,6 +407,14 @@ The owner asked for every animation to feel smooth, and for page transitions on 
 - **Interruptible.** A transition that is interrupted retargets from where it is, and never snaps.
 - **Frame-rate aware.** The PC drives animation from the real frame clock, not a fixed timer tick, and
   stops the timer the moment nothing is moving. The phone uses Compose's animation clock.
+  Concretely, on the PC (both are needed; either alone still judders):
+  - the clock is `QueryPerformanceCounter` (`xp::NowMs`), never `GetTickCount64`, whose ~15.6 ms step is
+    coarser than a frame, so neighbouring frames would read the same time and the tween would stand still;
+  - while anything is moving the window repaints as soon as the last frame was presented, because
+    `Present(1, 0)` has already waited for the vertical blank. A 16 ms `WM_TIMER` beats against the
+    16.67 ms blank and drops or doubles frames. The timer is only the fallback for an occluded window.
+  - text layouts are built once and cached (`Painter::Text`), because a page transition draws two pages
+    every frame and building a `IDWriteTextLayout` per string per frame is what makes it miss them.
 - **Reduced motion still wins.** Every transition becomes instant; nothing below is exempt.
 
 **Page transitions**

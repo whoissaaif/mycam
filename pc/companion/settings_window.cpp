@@ -81,6 +81,8 @@ struct DeviceRow {
     std::wstring name, where, status;
     uint32_t ipv4 = 0;
     bool usb = false, connected = false;
+    int card = kNone;     // The card this row is laid out in (Connected or Available).
+    bool firstInCard = false; // No divider above the first row of a card.
     Box glyphBox, nameBox, whereBox, transportBox;
 };
 
@@ -203,7 +205,7 @@ struct SettingsWindow::Impl {
     ComPtr<ID2D1Effect> artBlur;
     int effectGen = -1;
 
-    static uint64_t Now() { return GetTickCount64(); }
+    static uint64_t Now() { return xp::NowMs(); }
     float Dur(float ms) const { return reducedMotion || paint.HighContrast() ? 0.f : ms; }
 
     // --- State ---------------------------------------------------------------------------------------
@@ -227,7 +229,9 @@ struct SettingsWindow::Impl {
         case kFps30: return caps::FpsEnabled(connected, c, 30);
         case kFps60: return caps::FpsEnabled(connected, c, 60);
         case kFps120: return caps::FpsEnabled(connected, c, 120);
-        case kDdQuality: case kDdFps: return connected && c.valid;
+        // The lists open even with no phone, so the choices can be seen; each entry is still gated on what
+        // the connected phone reports (CLAUDE.md "Works on every phone"), and a note says so.
+        case kDdQuality: case kDdFps: return true;
         case kZoomSlider: return known && c.zoomMaxX100 > c.zoomMinX100;
         case kEvValue: return known && c.evMax > c.evMin;
         case kFocusAuto: case kFocusLock: return caps::FocusEnabled(known, c);
@@ -719,13 +723,68 @@ struct SettingsWindow::Impl {
         return rows;
     }
 
+    // One section of the Devices page: a small heading, then a card with `which` of the rows. Advances *y
+    // past it, and does nothing when no row belongs to it.
+    void LayoutDeviceSection(int titleId, int cardId, int groupId, int noteId, const std::wstring& heading,
+                             const std::wstring& empty, bool connectedSection, float x, float* y, float w) {
+        std::vector<size_t> mine;
+        for (size_t i = 0; i < deviceRows.size(); ++i)
+            if (deviceRows[i].connected == connectedSection) mine.push_back(i);
+        if (mine.empty() && empty.empty()) return;
+
+        const Size ht = paint.Measure(Font::BodyBold, heading, w);
+        Item& h = Add(titleId, Kind::Text, L"", MakeBox(x, *y, w, ht.h), kNone);
+        h.e.name = h.label = heading;
+        *y += ht.h + 6;
+        if (mine.empty()) {
+            const Size et = paint.Measure(Font::Small, empty, w);
+            Item& n = Add(noteId, Kind::Text, L"", MakeBox(x + 2, *y, w, et.h), kNone);
+            n.e.name = n.label = empty;
+            *y += et.h + kGap;
+            return;
+        }
+
+        const float rowH = std::max(52.f, lineH + smallH + 26);
+        const Box card = BeginCard(cardId, x, *y, w, rowH * float(mine.size()) + 2, heading);
+        Add(groupId, Kind::Group, heading, card, cardId);
+        const Size connect = ButtonSize(L"Connect", 84);
+        for (size_t slot = 0; slot < mine.size(); ++slot) {
+            const size_t i = mine[slot];
+            DeviceRow& r = deviceRows[i];
+            r.card = cardId;
+            r.firstInCard = slot == 0;
+            const float ry = card.t + 1 + rowH * float(slot);
+            const bool canConnect = !r.connected && !r.usb && model->connectTo;
+            r.glyphBox = MakeBox(card.l + kCardPad, ry + (rowH - 24) / 2, 24, 24);
+            const float nameL = r.glyphBox.r + 12;
+            const float nameR = card.r - kCardPad - (canConnect ? connect.w + 12 : 0) - 26;
+            r.nameBox = {nameL, ry + (rowH - lineH - smallH - 2) / 2, nameR, ry + (rowH - lineH - smallH - 2) / 2 + lineH};
+            r.whereBox = {nameL, r.nameBox.b + 1, nameR, r.nameBox.b + 1 + smallH};
+            r.transportBox = MakeBox(nameR + 4, ry + (rowH - 18) / 2, 18, 18);
+            const Box rowBox = {card.l, ry, card.r, ry + rowH};
+            {
+                Item& row = Add(ScanRowId(int(i), 0), Kind::Text, L"", rowBox, groupId);
+                row.e.name = r.name + L", " + r.where + L", " + r.status;
+                row.drawGroup = cardId;
+            }
+            if (canConnect) {
+                Item& c = AddButton(ScanRowId(int(i), 1), L"Connect", FlatStyle::Primary,
+                                    MakeBox(card.r - kCardPad - connect.w, ry + (rowH - connect.h) / 2, connect.w, connect.h),
+                                    groupId);
+                c.e.name = L"Connect to " + r.name;
+                c.drawGroup = cardId;
+            }
+        }
+        *y = card.b + kGap;
+    }
+
     void LayoutDevices(const LinkStatus& s, uint64_t now, float x, float* y, float w) {
         const Size refresh = ButtonSize(L"&Refresh", 96);
         const float titleW = w - refresh.w - 12;
-        const Size t = paint.Measure(Font::Instruction, L"Available Devices", titleW);
+        const Size t = paint.Measure(Font::Instruction, L"Devices", titleW);
         {
             Item& h = Add(kPageTitle, Kind::Text, L"", MakeBox(x, *y, titleW, t.h), kNone);
-            h.e.name = h.label = L"Available Devices";
+            h.e.name = h.label = L"Devices";
         }
         AddButton(kScan, L"&Refresh", FlatStyle::Secondary, MakeBox(x + w - refresh.w, *y - 3, refresh.w, refresh.h), kNone)
             .glyph = Glyph::Refresh;
@@ -758,37 +817,13 @@ struct SettingsWindow::Impl {
             *y += sh.h + kGap;
         }
 
+        // The phone in use is kept apart from the ones that are only there to pick (§2.1): the connected
+        // section always shows, so "nothing is connected" is said rather than left to be inferred.
         deviceRows = BuildRows(s);
-        if (deviceRows.empty()) return;
-        const float rowH = std::max(52.f, lineH + smallH + 26);
-        const Box card = BeginCard(kCardDevices, x, *y, w, rowH * float(deviceRows.size()) + 2, L"Available devices");
-        Add(kScanList, Kind::Group, L"Available devices", card, kCardDevices);
-        const Size connect = ButtonSize(L"Connect", 84);
-        for (size_t i = 0; i < deviceRows.size(); ++i) {
-            DeviceRow& r = deviceRows[i];
-            const float ry = card.t + 1 + rowH * float(i);
-            const bool canConnect = !r.connected && !r.usb && model->connectTo;
-            r.glyphBox = MakeBox(card.l + kCardPad, ry + (rowH - 24) / 2, 24, 24);
-            const float nameL = r.glyphBox.r + 12;
-            const float nameR = card.r - kCardPad - (canConnect ? connect.w + 12 : 0) - 26;
-            r.nameBox = {nameL, ry + (rowH - lineH - smallH - 2) / 2, nameR, ry + (rowH - lineH - smallH - 2) / 2 + lineH};
-            r.whereBox = {nameL, r.nameBox.b + 1, nameR, r.nameBox.b + 1 + smallH};
-            r.transportBox = MakeBox(nameR + 4, ry + (rowH - 18) / 2, 18, 18);
-            const Box rowBox = {card.l, ry, card.r, ry + rowH};
-            {
-                Item& row = Add(ScanRowId(int(i), 0), Kind::Text, L"", rowBox, kScanList);
-                row.e.name = r.name + L", " + r.where + L", " + r.status;
-                row.drawGroup = kCardDevices;
-            }
-            if (canConnect) {
-                Item& c = AddButton(ScanRowId(int(i), 1), L"Connect", FlatStyle::Primary,
-                                    MakeBox(card.r - kCardPad - connect.w, ry + (rowH - connect.h) / 2, connect.w, connect.h),
-                                    kScanList);
-                c.e.name = L"Connect to " + r.name;
-                c.drawGroup = kCardDevices;
-            }
-        }
-        *y = card.b;
+        LayoutDeviceSection(kConnectedTitle, kCardConnected, kConnectedList, kConnectedNote, L"Connected Device",
+                            L"No device is connected yet.", true, x, y, w);
+        LayoutDeviceSection(kAvailableTitle, kCardDevices, kScanList, kAvailableNote, L"Available Devices",
+                            scanning ? L"" : L"Nothing else has answered yet.", false, x, y, w);
     }
 
     // --- Camera -------------------------------------------------------------------------------------
@@ -863,6 +898,14 @@ struct SettingsWindow::Impl {
             cy += r.h;
         }
         cy += kGap;
+        // With no phone every entry above is greyed out, which on its own looks like a broken control.
+        if (!Connected(s) || !c.valid) {
+            const std::wstring note = L"Connect a phone to choose. Each phone reports which of these it can do.";
+            const Size n = paint.Measure(Font::Small, note, iw);
+            Item& it = Add(kCameraHint, Kind::Text, L"", MakeBox(ix, cy, iw, n.h), kCardControls);
+            it.e.name = it.label = note;
+            cy += n.h + kGap;
+        }
         if (!known) {
             const std::wstring note = L"Zoom, brightness, focus and torch appear when an app uses the camera.";
             const Size n = paint.Measure(Font::Small, note, iw);
@@ -1213,8 +1256,9 @@ struct SettingsWindow::Impl {
         case kOpenLog: model->openLogFolder(); break;
         case kForgetPhones: if (model->forgetPhones) model->forgetPhones(); break; // They pair again (with a code).
         case kShowPairing: GoTo(Page::Pairing); break;
-        case kScan: StartScan(); break;
-        case kScanNow: StartScan(); break;
+        // "Scan for Devices" shows its results, so it goes to Devices (Refresh on that page stays put).
+        case kScan: StartScan(); GoTo(Page::Devices); break;
+        case kScanNow: StartScan(); GoTo(Page::Devices); break;
         case kScanUsb: // No passive wait: drop the session and look at the bus again (§2.2).
             usbScanAt = Now();
             model->reconnect();
@@ -1277,7 +1321,14 @@ struct SettingsWindow::Impl {
         if (!hwnd) return;
         const bool visible = IsWindowVisible(hwnd) && !IsIconic(hwnd);
         const uint64_t now = Now();
-        if (visible && Animating(now)) SetTimer(hwnd, kTimerAnim, 16, nullptr);
+        // While something is animating, repaint straight away rather than on a timer: Present already
+        // waited for the vertical blank, so this runs at exactly the refresh rate. A 16 ms WM_TIMER beats
+        // against the 16.67 ms blank and drops or doubles frames, which is what makes a slide look rough.
+        if (visible && Animating(now) && !surface.Occluded()) {
+            KillTimer(hwnd, kTimerAnim);
+            Invalidate();
+        }
+        else if (visible && Animating(now)) SetTimer(hwnd, kTimerAnim, 16, nullptr);
         else if (visible && MarqueeRunning()) SetTimer(hwnd, kTimerAnim, 50, nullptr);
         else if (visible && PairingCountdown()) SetTimer(hwnd, kTimerAnim, 250, nullptr);
         else KillTimer(hwnd, kTimerAnim);
@@ -1592,8 +1643,11 @@ struct SettingsWindow::Impl {
             paint.Text(e.id == kAboutText ? Font::Body : Font::Body, it.label, e.rect, pal.subtle);
             break;
         case kPageSubtitle: case kAboutLicence: case kFpsReason: case kScanResult: case kUsbNote: case kControlsNote:
-        case kNowMode: case kStatusSentence:
+        case kNowMode: case kStatusSentence: case kConnectedNote: case kAvailableNote: case kCameraHint:
             paint.Text(Font::Small, it.label, e.rect, pal.subtle);
+            break;
+        case kConnectedTitle: case kAvailableTitle:
+            paint.Text(Font::BodyBold, it.label, e.rect, pal.text);
             break;
         default: {
             int part = 0;
@@ -1610,9 +1664,10 @@ struct SettingsWindow::Impl {
     }
 
     void DrawDeviceRow(const DeviceRow& r, int index) {
+        (void)index;
         const xp::Palette& pal = paint.Colors();
-        if (index > 0) {
-            const Box card = CardBox(kCardDevices);
+        if (!r.firstInCard) { // A hairline between the rows of the same card, never above its first row.
+            const Box card = CardBox(r.card);
             paint.Line(card.l + kCardPad, r.glyphBox.t - (r.glyphBox.H() / 2) - 8, card.r - kCardPad,
                        r.glyphBox.t - (r.glyphBox.H() / 2) - 8, pal.cardBorder);
         }
@@ -1753,6 +1808,11 @@ struct SettingsWindow::Impl {
         dc->Clear(D2D1::ColorF(0, 0, 0, 0));
         xp::WindowChrome(paint, kW, kH, L"MyCam", active, appIcon16.Get());
         const xp::Palette& pal = paint.Colors();
+        // Minimise and Close sit in the title bar, so they are drawn with the chrome and not with a page:
+        // DrawPageContent skips them, and they must stay outside the content clip and the page animation.
+        for (const Item& it : items) {
+            if (it.e.kind == Kind::CaptionButton) DrawItem(dc, it, s, now);
+        }
         paint.Fill(content, pal.pageBg);
         DrawSidebar(dc, s, now);
 
