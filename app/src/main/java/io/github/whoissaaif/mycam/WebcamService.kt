@@ -329,7 +329,7 @@ class WebcamService : Service() {
     }
 
     /** Handshake thread. Shows "Pair with <PC>? Code …" and waits for Allow / Don't allow (or the timeout). */
-    private fun askUser(pcName: String, code: String): Boolean {
+    private fun askUser(pcName: String, code: String, pcGone: () -> Boolean): Boolean {
         val latch = java.util.concurrent.CountDownLatch(1)
         val answer = java.util.concurrent.atomic.AtomicBoolean(false)
         main.post {
@@ -338,12 +338,21 @@ class WebcamService : Service() {
             _state.update { it.copy(pendingPc = pcName, pendingCode = code, pendingDeadline = deadline, pairingTimedOut = null) }
             showApprovalNotification(pcName, code)
         }
-        val answered = latch.await(APPROVAL_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+        // Wait for the answer, the timeout, or the PC hanging up (Cancel pairing on the PC).
+        val giveUp = android.os.SystemClock.elapsedRealtime() + APPROVAL_TIMEOUT_MS
+        var answered = false
+        while (!answered && !pcGone()) {
+            val left = giveUp - android.os.SystemClock.elapsedRealtime()
+            if (left <= 0) break
+            answered = latch.await(minOf(left, 250L), java.util.concurrent.TimeUnit.MILLISECONDS)
+        }
+        val cancelled = !answered && pcGone()
         main.post {
-            // Unanswered: refuse, and let the dialog say "Pairing timed out" instead of vanishing.
+            // Unanswered: refuse, and let the dialog say "Pairing timed out" instead of vanishing (unless the
+            // PC cancelled: then it just closes).
             if (!answered && pendingAnswer != null) {
                 answerPc(false)
-                _state.update { it.copy(pairingTimedOut = pcName) }
+                if (!cancelled) _state.update { it.copy(pairingTimedOut = pcName) }
             }
         }
         return answered && answer.get()

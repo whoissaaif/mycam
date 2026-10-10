@@ -10,6 +10,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.Socket
+import java.net.SocketTimeoutException
 import java.security.MessageDigest
 import java.security.SecureRandom
 
@@ -23,8 +24,11 @@ class WifiHandshake(
     private val store: PairedPcs,
     private val phoneId: ByteArray,
     private val phoneName: String,
-    /** Pairing: show the PC name and code, return true if the user allowed it (blocks up to ~60 s). */
-    private val askUser: (pcName: String, code: String) -> Boolean,
+    /**
+     * Pairing: show the PC name and code, return true if the user allowed it (blocks up to ~60 s). Stop
+     * asking (and return false) once [pcGone] says the PC hung up, e.g. "Cancel pairing" on the PC.
+     */
+    private val askUser: (pcName: String, code: String, pcGone: () -> Boolean) -> Boolean,
 ) {
     class Result(val input: InputStream, val output: OutputStream, val pcName: String, val newlyPaired: Boolean)
 
@@ -78,8 +82,16 @@ class WifiHandshake(
         if (!finishedFromPc(keys)) { reject(REJECT_AUTH); return null }
 
         val code = WifiCrypto.sas(pcPub, phonePub, na, nb)
-        socket.soTimeout = 0 // The PC waits while the user decides.
-        if (!askUser(pcName, code)) { reject(REJECT_REFUSED); return null }
+        // The PC sends nothing while the user decides. If it hangs up meanwhile (Cancel pairing on the PC, or
+        // its timeout), close the question, and never store a key for a pairing the PC abandoned.
+        val watch = HangUpWatch().also { it.start() }
+        val allowed = try {
+            askUser(pcName, code) { watch.gone }
+        } finally {
+            watch.finish()
+        }
+        if (watch.gone) throw IOException("the PC hung up while pairing")
+        if (!allowed) { reject(REJECT_REFUSED); return null }
         store.put(pcId, pairKey, pcName)
         return finish(keys, pcName, newlyPaired = true)
     }
@@ -127,6 +139,42 @@ class WifiHandshake(
         return body
     }
 
+    /**
+     * Reads the socket while the user decides on a pairing: the PC must send nothing then, so end of stream,
+     * an error or any byte means it hung up. Polls with a short timeout so [finish] can stop it.
+     */
+    private inner class HangUpWatch : Thread("wifi-pair-watch") {
+        @Volatile var gone = false
+            private set
+        @Volatile private var done = false
+
+        override fun run() {
+            try {
+                while (!done) {
+                    try {
+                        input.read()
+                        gone = true
+                        return
+                    } catch (_: SocketTimeoutException) {
+                    }
+                }
+            } catch (_: IOException) {
+                gone = true
+            }
+        }
+
+        fun finish() {
+            done = true
+            join()
+            socket.soTimeout = 0
+        }
+
+        override fun start() {
+            socket.soTimeout = WATCH_POLL_MS
+            super.start()
+        }
+    }
+
     private fun transcriptSoFar(): ByteArray = (transcript.clone() as MessageDigest).digest()
 
     private fun randomBytes(n: Int) = ByteArray(n).also { random.nextBytes(it) }
@@ -147,6 +195,7 @@ class WifiHandshake(
         private const val VERSION = 1
         private const val FLAG_FORCE_PAIR = 0x01
         private const val STEP_TIMEOUT_MS = 10_000
+        private const val WATCH_POLL_MS = 250
         const val TYPE_CLIENT_HELLO = 1
         const val TYPE_SERVER_HELLO = 2
         const val TYPE_NONCE_A = 3
