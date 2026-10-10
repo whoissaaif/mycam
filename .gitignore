@@ -37,3 +37,6 @@ local.properties
 /keystore.properties
 *.jks
 *.keystore
+
+pc/tools/assets/*
+!pc/tools/assets/.gitkeep
