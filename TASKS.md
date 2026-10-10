@@ -32,7 +32,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [~] Lower phone-side latency (capture→encoded 150–230 ms on the test phone) [3.4]: camera/encoder tweaks and a camera-vs-encoder split in the log built; measure on the phone
 - [~] 30 / 60 / 120 fps choice; 60 and 120 on the back camera through high-speed capture [3.2]: built, test on the phone
 - [ ] Adaptive-bitrate Int overflow fix at 4K (in `WebcamService.kt`): test, then release as 1.3.2
-- [ ] Screen-reader support for the settings window (UI Automation) [5.2]
+- [~] Screen-reader support (UI Automation) for the settings window and pairing dialog [5.2]: built (`uia_provider.cpp`, checked with `pc/tools/uia_dump`); try with Narrator
 - [ ] Code-sign the installer and companion [5.3]
 - [ ] USB debugging on: the accessory shows up as accessory+adb (composite), WinUSB isn't bound to its interface, so it never connects; bind the MI_00 interface too [2.1]
 - [ ] Test the release APK (not just debug) on a phone before every release: R8 only runs on release builds

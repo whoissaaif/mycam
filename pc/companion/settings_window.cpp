@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -15,6 +16,7 @@
 #include "protocol.h"
 #include "status_images.h"
 #include "status_text.h"
+#include "uia_provider.h"
 #include "ui_layout.h"
 #include "ui_motion.h"
 #include "xp_draw.h"
@@ -115,6 +117,9 @@ struct SettingsWindow::Impl {
     Box pane, paneView, right, previewBox, sentenceBox, controlsBox;
     float scroll = 0, contentH = 0;
     size_t lastSignature = 0;
+
+    // Screen readers (UI Automation, uia_provider.h). Created with the window, disconnected on destroy.
+    std::unique_ptr<UiaHost> uia;
 
     // Interaction.
     int hot = kNone, pressed = kNone, focus = kNone;
@@ -424,7 +429,9 @@ struct SettingsWindow::Impl {
             g.body = MakeBox(gx, bodyTop, gw, bodyH * open);
             const Box clip = {std::max(g.body.l, paneView.l), std::max(g.body.t, paneView.t), std::min(g.body.r, paneView.r),
                               std::min(g.body.b, paneView.b)};
-            for (size_t k = firstChild; k < items.size(); ++k) items[k].e.clip = clip;
+            for (size_t k = firstChild; k < items.size(); ++k) {
+                if (items[k].e.id != kLivePill) items[k].e.clip = clip; // The pill sits in the header, not the body.
+            }
             (void)firstDeco;
             groups.push_back(g);
             y = bodyTop + bodyH * open + kPad;
@@ -1282,8 +1289,7 @@ struct SettingsWindow::Impl {
         paint.SetTextScale(xp::TextScaleFactor());
     }
 
-    bool HandleKey(WPARAM key) {
-        std::vector<Element> list = Elements();
+    bool HandleKey(WPARAM key) {        std::vector<Element> list = Elements();
         switch (key) {
         case VK_TAB:
             SetFocusTo(NextTabStop(list, focus, GetKeyState(VK_SHIFT) < 0), true);
@@ -1310,6 +1316,10 @@ struct SettingsWindow::Impl {
     }
 
     LRESULT Handle(UINT msg, WPARAM wp, LPARAM lp) {
+        if (uia) {
+            LRESULT r = 0;
+            if (uia->HandleMessage(msg, wp, lp, &r)) return r;
+        }
         switch (msg) {
         case WM_NCCALCSIZE:
             if (wp) return 0; // The whole window is client area; we draw our own frame.
@@ -1331,6 +1341,7 @@ struct SettingsWindow::Impl {
             BeginPaint(hwnd, &ps);
             Paint();
             EndPaint(hwnd, &ps);
+            if (uia) uia->Update(); // After the layout: states, focus, rectangles and UIA events.
             return 0;
         }
         case WM_ERASEBKGND:
@@ -1479,6 +1490,7 @@ struct SettingsWindow::Impl {
         case WM_GETDLGCODE:
             return DLGC_WANTALLKEYS;
         case WM_DESTROY:
+            if (uia) uia->Disconnect(); // Kept until the next Create: this may run inside its own action.
             KillTimer(hwnd, kTimerAnim);
             KillTimer(hwnd, kTimerPreview);
             preview.Close();
@@ -1560,6 +1572,13 @@ struct SettingsWindow::Impl {
         if (!hwnd) return;
         scale = forcedScale > 0 ? forcedScale : GetDpiForWindow(hwnd) / 96.f;
         surface.Attach(hwnd);
+        uia = std::make_unique<UiaHost>(hwnd, UiaSource{
+            [this] { return owner->Elements(); },
+            [this](int id) { return owner->Invoke(id); },
+            [this](int id) { return owner->Focus(id); },
+            [this] { return owner->FocusedId(); },
+            [this](const Box& b) { return owner->ClientDipsToScreen(b); },
+        });
 
         // XP silhouette: square bottom corners from DWM (the rounded top ones are drawn, transparent
         // outside), no Windows 11 accent border, and keep the DWM drop shadow.
