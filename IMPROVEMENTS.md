@@ -146,7 +146,10 @@ error (red). 16–256 px, DPI-aware.
 ### 5.2 Settings window (M): ✅
 Aero window (Direct2D): glass title bar, live status with a LIVE pill, Pause / Resume, back/front camera,
 mirror, start with Windows, reconnect, open log folder. Keyboard: Tab / arrows, Space / Enter, Esc.
-- ⏳ Follow-up: the controls are custom-drawn, so screen readers can't see them (needs UI Automation).
+- ⏳ Screen readers: a UI Automation provider (`uia_provider.cpp`, redesign.md §8.4) gives one fragment per
+  element of `ui_model.h` (Invoke, Toggle, Selection / SelectionItem per radio set, ExpandCollapse, read-only
+  RangeValue) and makes the status headline and sentence live regions. Checked with `pc/tools/uia_dump`
+  (`-DMYCAM_BUILD_TOOLS=ON`); still to try with Narrator itself.
 
 ### 5.3 Real installer (M): ✅, code signing pending
 Inno Setup wizard with Aero artwork (`installer/`, built by `installer/build.ps1`). It installs UsbDk if

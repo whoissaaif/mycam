@@ -458,10 +458,22 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     model.forgetPhones = ForgetPairedPhones; // They pair again (with a code) next time.
     model.showPairing = [] { if (g_pairing && g_settings) g_pairing->Show(g_settings->Hwnd()); };
     model.testPattern = testPattern;
-    SettingsWindow settings(std::move(model));
-    g_settings = &settings;
     LinkStatus demo;
     const bool demoMode = DemoStatus(&demo);
+    if (demoMode && !testPattern) {
+        // No phone link: Pause flips the made-up state, so status changes (and what Narrator announces
+        // for them) can be checked too.
+        model.setPaused = [](bool pause) {
+            {
+                std::lock_guard<std::mutex> lock(g_statusLock);
+                if (g_status.state != LinkState::Streaming && g_status.state != LinkState::Paused) return;
+                g_status.state = pause ? LinkState::Paused : LinkState::Streaming;
+            }
+            PostMessageW(g_hwnd, WM_STATUS, 0, 0);
+        };
+    }
+    SettingsWindow settings(std::move(model));
+    g_settings = &settings;
     if (demoMode) {
         std::lock_guard<std::mutex> lock(g_statusLock);
         g_status = demo;

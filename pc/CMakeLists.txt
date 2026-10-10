@@ -54,6 +54,7 @@ add_executable(MyCamCompanion WIN32
     vcam/frame_transform.cpp
     companion/settings_window.cpp
     companion/pairing_dialog.cpp
+    companion/uia_provider.cpp
     companion/xp_draw.cpp
     companion/preview_source.cpp
     companion/preview_convert.cpp
@@ -61,15 +62,17 @@ add_executable(MyCamCompanion WIN32
     companion/companion.manifest
 )
 target_link_libraries(MyCamCompanion PRIVATE usb mfplat mfuuid mfsensorgroup ole32 shell32 advapi32 setupapi newdev cfgmgr32
-    comctl32 d2d1 dwrite windowscodecs dwmapi wtsapi32 taskschd ws2_32 iphlpapi bcrypt crypt32 d3d11 dxgi dcomp dxguid)
+    comctl32 d2d1 dwrite windowscodecs dwmapi wtsapi32 taskschd ws2_32 iphlpapi bcrypt crypt32 d3d11 dxgi dcomp dxguid uiautomationcore)
 
 # --- Developer tools (not shipped; install.ps1 copies only the two binaries above) -------------------
-option(MYCAM_BUILD_TOOLS "Build developer tools (capture_test, usb_probe)" OFF)
+option(MYCAM_BUILD_TOOLS "Build developer tools (capture_test, usb_probe, uia_dump)" OFF)
 if(MYCAM_BUILD_TOOLS)
     add_executable(capture_test tools/capture_test.cpp)
     target_link_libraries(capture_test PRIVATE mfplat mf mfreadwrite mfuuid ole32)
     add_executable(usb_probe tools/usb_probe.cpp)
     target_link_libraries(usb_probe PRIVATE usb)
+    add_executable(uia_dump tools/uia_dump.cpp)
+    target_link_libraries(uia_dump PRIVATE ole32 oleaut32 uiautomationcore)
 endif()
 
 # --- Unit tests ------------------------------------------------------------------------------------

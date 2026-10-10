@@ -4,9 +4,12 @@
 #include <windowsx.h>
 
 #include <algorithm>
+#include <cmath>
+#include <memory>
 #include <string>
 
 #include "status_text.h"
+#include "uia_provider.h"
 #include "ui_layout.h"
 #include "ui_motion.h"
 #include "xp_draw.h"
@@ -42,6 +45,7 @@ struct PairingDialog::Impl {
     Tween openFade;
     int hot = kNone, pressed = kNone;
     std::vector<Element> elements;
+    std::unique_ptr<UiaHost> uia; // Screen readers (uia_provider.h); disconnected on destroy.
 
     static uint64_t Now() { return GetTickCount64(); }
 
@@ -174,6 +178,10 @@ struct PairingDialog::Impl {
     }
 
     LRESULT Handle(UINT msg, WPARAM wp, LPARAM lp) {
+        if (uia) {
+            LRESULT r = 0;
+            if (uia->HandleMessage(msg, wp, lp, &r)) return r;
+        }
         switch (msg) {
         case WM_NCCALCSIZE:
             if (wp) return 0;
@@ -194,6 +202,7 @@ struct PairingDialog::Impl {
             BeginPaint(hwnd, &ps);
             Paint();
             EndPaint(hwnd, &ps);
+            if (uia) uia->Update();
             return 0;
         }
         case WM_ERASEBKGND:
@@ -265,6 +274,7 @@ struct PairingDialog::Impl {
             Cancel();
             return 0;
         case WM_DESTROY:
+            if (uia) uia->Disconnect(); // Kept until the next Create: this may run inside its own action.
             KillTimer(hwnd, kTimerTick);
             surface.Reset();
             icon16.Reset();
@@ -342,6 +352,23 @@ struct PairingDialog::Impl {
         if (!hwnd) return;
         scale = GetDpiForWindow(hwnd) / 96.f;
         surface.Attach(hwnd);
+        uia = std::make_unique<UiaHost>(hwnd, UiaSource{
+            [this] { return hwnd ? elements : std::vector<Element>{}; },
+            [this](int id) {
+                if (id != kPairCancel && id != kCaptionClose) return false;
+                Cancel(); // Closes the dialog.
+                return true;
+            },
+            [](int id) { return id == kPairCancel; }, // The only focusable element.
+            [this] { return hwnd ? int(kPairCancel) : int(kNone); },
+            [this](const Box& b) {
+                POINT a = {LONG(std::floor(b.l * scale)), LONG(std::floor(b.t * scale))};
+                POINT c = {LONG(std::ceil(b.r * scale)), LONG(std::ceil(b.b * scale))};
+                ClientToScreen(hwnd, &a);
+                ClientToScreen(hwnd, &c);
+                return RECT{a.x, a.y, c.x, c.y};
+            },
+        });
         MARGINS margins = {0, 0, 0, 1};
         DwmExtendFrameIntoClientArea(hwnd, &margins);
         const DWORD corners = 1; // DWMWCP_DONOTROUND
