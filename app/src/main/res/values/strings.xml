@@ -11,6 +11,45 @@
     <string name="action_resume">Resume</string>
     <string name="error_open_accessory">Could not open the USB connection. Unplug and plug in again.</string>
 
+    <!-- Bottom navigation, splash and the v2 pages (redesign-v2.md section 3) -->
+    <string name="nav_connect">Connect</string>
+    <string name="nav_camera">Camera</string>
+    <string name="nav_settings">Settings</string>
+    <string name="splash_tagline">Turn your phone into a webcam</string>
+    <string name="splash_start">Get Started</string>
+    <string name="splash_skip_description">Continue to MyCam</string>
+    <string name="connect_title">Connect to PC</string>
+    <string name="connect_subtitle">Choose how you want to connect.</string>
+    <string name="connect_qr">Scan QR Code</string>
+    <string name="connect_qr_detail">Pair using code from PC</string>
+    <string name="coming_soon">Coming soon</string>
+    <string name="connect_find">Find Devices</string>
+    <string name="connect_find_detail">Search on the same Wi-Fi</string>
+    <string name="connect_usb">USB Connection</string>
+    <string name="connect_usb_detail">Connect via USB cable</string>
+    <string name="connect_usb_help">Plug this phone into the PC with a USB cable and tap OK when Android asks (tick “Always” so it doesn’t ask again). The cable is faster than Wi-Fi and charges the phone.</string>
+    <string name="scan_title">Scanning for devices…</string>
+    <string name="scan_title_done">Devices found</string>
+    <string name="scan_hint">Make sure your PC app is open and both devices are on the same Wi-Fi network.</string>
+    <string name="scan_radar_description">Radar: looking for PCs on this Wi-Fi</string>
+    <string name="scan_again">Scan again</string>
+    <string name="back">Back</string>
+
+    <!-- Live preview on the phone (redesign-v2.md 6.1) -->
+    <string name="section_preview">Preview</string>
+    <string name="preview_toggle">Show the camera on this phone</string>
+    <string name="preview_toggle_detail">Off while the screen is dimmed, and when MyCam is in the background.</string>
+    <string name="preview_waiting">The preview appears when an app on the PC uses the camera.</string>
+    <string name="preview_off">Preview is off.</string>
+    <string name="preview_needs_android9">A preview needs Android 9 or newer on this phone.</string>
+    <string name="preview_not_at_fps">No preview at this frame rate: the camera uses a high-speed mode that carries one output only.</string>
+    <string name="preview_refused">This camera wouldn’t show a preview while streaming. The stream comes first, so the preview stays off.</string>
+    <string name="preview_too_hot">The phone is hot, so the preview turned itself off. The stream keeps running.</string>
+    <string name="stat_resolution">Resolution</string>
+    <string name="stat_fps">FPS</string>
+    <string name="stat_zoom">Zoom</string>
+    <string name="focus_auto_toggle">Auto focus</string>
+
     <!-- Tabs and shared bits -->
     <string name="tab_now">Now</string>
     <string name="tab_settings">Settings</string>

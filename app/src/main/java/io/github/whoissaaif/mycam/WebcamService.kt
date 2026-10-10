@@ -161,9 +161,15 @@ class WebcamService : Service() {
         paused = prefs.getBoolean(PREF_PAUSED, false)
         camSettings = loadCameraSettings(prefs)
         _state.update { UiState(facing = facing, paused = paused, camera = camSettings, pairedPcs = pairedPcs.list()) }
+        // The phone's own preview (redesign-v2.md 6.1): the screen hands over a surface, this thread hands it
+        // to the running capture session. The streamer decides whether the mode can carry it.
+        PhonePreview.setOn(prefs.getBoolean(PREF_PREVIEW, true))
+        PhonePreview.onTargetChanged = { surface -> camera.post { streamer?.setPreviewSurface(surface) } }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val listener = PowerManager.OnThermalStatusChangedListener { status ->
                 _state.update { it.copy(thermal = status) }
+                // Severe heat turns the preview off by itself; the stream is never sacrificed for it.
+                PhonePreview.setThermal(status)
                 camera.post { remoteLog("thermal status $status") }
             }
             getSystemService(PowerManager::class.java).addThermalStatusListener(mainExecutor, listener)
@@ -659,6 +665,8 @@ class WebcamService : Service() {
         val s = CameraStreamer(this, camera, facing, camSettings, object : CameraStreamer.Listener {
             override fun onLog(message: String) = remoteLog(message)
 
+            override fun onPreviewSupport(support: PreviewSupport) = PhonePreview.reportSupport(support)
+
             override fun onCameraInfo(info: Protocol.CameraInfo) {
                 lastCameraInfo = info
                 _state.update { it.copy(cameraInfo = info) }
@@ -709,12 +717,15 @@ class WebcamService : Service() {
         framesDropped = 0
         slowestWriteMs = 0
         lastBitrateChange = SystemClock.elapsedRealtime()
+        // Whatever the screen is asking for right now; it is attached once the session is configured.
+        s.setPreviewSurface(PhonePreview.target())
         s.start()
     }
 
     private fun stopStreamer() {
         streamer?.stop()
         streamer = null
+        PhonePreview.cameraStopped()
         lastConfig = null
         _state.update { it.copy(streaming = false, resolution = "") }
         sendState()
@@ -821,6 +832,8 @@ class WebcamService : Service() {
 
     override fun onDestroy() {
         unregisterReceiver(detachReceiver)
+        PhonePreview.onTargetChanged = null
+        PhonePreview.cameraStopped()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             (thermalListener as? PowerManager.OnThermalStatusChangedListener)
                 ?.let { getSystemService(PowerManager::class.java).removeThermalStatusListener(it) }
@@ -872,6 +885,8 @@ class WebcamService : Service() {
         const val EXTRA_PC_ID = "pc_id"
         /** Dim the screen automatically while streaming (Settings > Phone). */
         const val PREF_AUTO_DIM = "auto_dim"
+        /** The phone's own live preview (redesign-v2.md 6.1). Default on. */
+        const val PREF_PREVIEW = "preview"
         /** Set after the first successful connection: the first-run cards stop showing. */
         const val PREF_FIRST_RUN_DONE = "first_run_done"
 

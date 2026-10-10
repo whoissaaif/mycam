@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PLACEHOLDER for R.drawable.bg_hills (the hills photo, supplied by the art pipeline as a JPEG).
+     Delete this file as soon as the real drawable lands; the app only references the name. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:type="linear"
+        android:angle="270"
+        android:startColor="#FF3F86E8"
+        android:centerColor="#FFBFE0FF"
+        android:endColor="#FF5DB443" />
+</shape>

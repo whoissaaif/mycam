@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PLACEHOLDER for R.drawable.app_logo (the 512 px "Snap" mark, supplied by the art pipeline).
+     Delete this file as soon as the real drawable lands; the app only references the name. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="512dp" android:height="512dp"
+    android:viewportWidth="512" android:viewportHeight="512">
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M96,152h80l28,-40h104l28,40h80a40,40 0 0 1 40,40v176a40,40 0 0 1 -40,40H96a40,40 0 0 1 -40,-40V192a40,40 0 0 1 40,-40z" />
+    <path android:fillColor="#FF1E6FE8"
+        android:pathData="M96,168h88l28,-40h88l28,40h88a24,24 0 0 1 24,24v168a24,24 0 0 1 -24,24H96a24,24 0 0 1 -24,-24V192a24,24 0 0 1 24,-24z" />
+    <path android:fillColor="#FFBFE0FF"
+        android:pathData="M256,196a84,84 0 1 0 0,168a84,84 0 0 0 0,-168z" />
+    <path android:fillColor="#FF3E9B2F"
+        android:pathData="M184,320c22,-30 36,-26 52,-8c14,16 28,-22 46,-22c18,0 26,20 46,30c-16,26 -44,44 -78,44c-26,0 -50,-17 -66,-44z" />
+</vector>

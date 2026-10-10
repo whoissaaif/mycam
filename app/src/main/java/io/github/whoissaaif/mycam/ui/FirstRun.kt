@@ -47,11 +47,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import io.github.whoissaaif.mycam.R
 import io.github.whoissaaif.mycam.ui.theme.MycamTheme
 import io.github.whoissaaif.mycam.ui.theme.Xp
-import io.github.whoissaaif.mycam.ui.xp.GoButton
-import io.github.whoissaaif.mycam.ui.xp.HillsScene
+import io.github.whoissaaif.mycam.ui.v2.PrimaryButton
 import io.github.whoissaaif.mycam.ui.xp.SkyTextShadow
 import android.content.SharedPreferences
 import androidx.core.content.edit
@@ -89,7 +89,7 @@ fun FirstRunScreen(onDone: () -> Unit, modifier: Modifier = Modifier) {
     BackHandler(enabled = step > 0) { step-- }
     val uri = LocalUriHandler.current
     Box(modifier.fillMaxSize()) {
-        HillsScene(Modifier.fillMaxSize())
+        Image(painterResource(R.drawable.bg_hills), contentDescription = null, modifier = Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         Column(
             Modifier
                 .fillMaxSize()
@@ -99,7 +99,7 @@ fun FirstRunScreen(onDone: () -> Unit, modifier: Modifier = Modifier) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Image(painterResource(R.drawable.status_ready), contentDescription = null, modifier = Modifier.size(40.dp))
+                Image(painterResource(R.drawable.app_logo), contentDescription = null, modifier = Modifier.size(40.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge.copy(shadow = SkyTextShadow), color = Color.White, modifier = Modifier.weight(1f))
                 XpLink(stringResource(R.string.first_skip), onClick = onDone, color = Color.White)
@@ -141,7 +141,7 @@ fun FirstRunScreen(onDone: () -> Unit, modifier: Modifier = Modifier) {
                 }
                 Spacer(Modifier.height(16.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    GoButton(
+                    PrimaryButton(
                         stringResource(if (step < STEPS - 1) R.string.first_next else R.string.first_done),
                         onClick = { if (step < STEPS - 1) step++ else onDone() },
                     )

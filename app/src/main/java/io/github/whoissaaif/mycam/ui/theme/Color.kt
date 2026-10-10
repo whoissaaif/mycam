@@ -107,3 +107,43 @@ object Xp {
     val HeatWarm = Color(0xFFFFC94D)
     val HeatHot = Color(0xFFFF7A6B)
 }
+
+/**
+ * The v2 flat interior (redesign-v2.md section 4): XP chrome on the outside, a clean modern app inside.
+ * White cards on a near-white page, one blue accent, flat line icons. Every pair here is WCAG AA:
+ * white on [Blue] is 4.6 : 1, [Text] on [Page] is 15 : 1, [Subtle] on [Card] is 5.9 : 1,
+ * [Subtle] on [Page] is 5.6 : 1 and [Disabled] on [Card] is 4.6 : 1.
+ */
+object V2 {
+    val Page = Color(0xFFF5F7FA)
+    val Card = Color(0xFFFFFFFF)
+    val CardBorder = Color(0xFFE3E8EF)
+    val Shadow = Color(0x14121A2B)
+
+    val Blue = Color(0xFF1E6FE8)
+    val BluePressed = Color(0xFF1760D0)
+    val BlueSoft = Color(0xFFE8F0FE)
+
+    val Text = Color(0xFF111827)
+    val Subtle = Color(0xFF5B6472)
+    val Disabled = Color(0xFF767F8C)
+
+    // Secondary (white) button and other outlined controls.
+    val Border = Color(0xFFD0D7E2)
+    val BorderStrong = Color(0xFF9AA5B4)
+    val Pressed = Color(0xFFEDF1F7)
+
+    // Toggle switch: the off state is a grey track with a border, never colour alone.
+    val TrackOff = Color(0xFFE3E8EF)
+    val TrackOffBorder = Color(0xFF9AA5B4)
+    val Thumb = Color(0xFFFFFFFF)
+
+    // The dark pills over the live preview, at about 70 % black.
+    val Chip = Color(0xB3000000)
+    val ChipText = Color(0xFFFFFFFF)
+
+    // The radar on the scan screen.
+    val RadarRing = Color(0xFFC9D6EA)
+    val RadarSweep = Color(0x4D1E6FE8)
+    val RadarDot = Color(0xFF1E6FE8)
+}
