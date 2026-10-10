@@ -174,7 +174,7 @@ private fun PairingBody(pcName: String, code: String, deadline: Long, onAnswer: 
     Spacer(Modifier.height(12.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
         XpProgressBar(remaining.toFloat() / total, Modifier.weight(1f))
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(12.dp))
         Text(
             stringResource(R.string.pair_waiting, String.format(Locale.US, "%d:%02d", seconds / 60, seconds % 60)),
             style = MaterialTheme.typography.bodyMedium, color = Xp.Subtle,

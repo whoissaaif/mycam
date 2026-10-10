@@ -11,7 +11,15 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsBottomHeight
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -169,7 +177,30 @@ fun WebcamScreen(
 
     BackHandler(enabled = tab == TAB_SETTINGS && !modal) { tab = TAB_NOW }
 
-    Box(modifier.fillMaxSize()) {
+    val wifiLabel = stringResource(
+        when {
+            state.connected && state.wireless -> R.string.wifi_status_connected
+            state.wirelessOn -> R.string.wifi_status_on
+            else -> R.string.wifi_status_off
+        }
+    )
+    // The status-bar actions (A8): Dim (while live) and the Wi-Fi state, which opens the Wireless group.
+    val barItems: @Composable RowScope.(onTitleBar: Boolean) -> Unit = { onTitleBar ->
+        if (live) {
+            BottomBarItem(
+                stringResource(R.string.action_dim), onClick = actions.onDim, onTitleBar = onTitleBar,
+                icon = { GlossyBadge(BadgeKind.Dim, 24.dp) },
+            )
+        }
+        if (!onTitleBar) Spacer(Modifier.weight(1f))
+        BottomBarItem(wifiLabel, onClick = { tab = TAB_SETTINGS; wirelessOpen = true }, onTitleBar = onTitleBar)
+    }
+
+    val sideInsets = WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal)
+    BoxWithConstraints(modifier.fillMaxSize()) {
+        // Short windows (a phone in landscape): a compact caption that also carries the bottom-bar actions,
+        // so the content gets the height.
+        val short = maxHeight < 480.dp
         Column(
             Modifier
                 .fillMaxSize()
@@ -177,12 +208,15 @@ fun WebcamScreen(
                 .then(if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && blur > 0.dp) Modifier.blur(blur) else Modifier)
                 .then(if (modal) Modifier.clearAndSetSemantics { } else Modifier),
         ) {
-            TitleBarHeader(stringResource(R.string.app_name), R.drawable.status_ready)
+            TitleBarHeader(
+                stringResource(R.string.app_name), R.drawable.status_ready, compact = short,
+                trailing = if (short) ({ barItems(true) }) else null,
+            )
             XpTabs(
                 titles = listOf(stringResource(R.string.tab_now), stringResource(R.string.tab_settings)),
-                selected = tab, onSelect = { tab = it },
+                selected = tab, onSelect = { tab = it }, modifier = Modifier.windowInsetsPadding(sideInsets),
             )
-            Crossfade(tab, Modifier.weight(1f), animationSpec = tween(motionMs(150)), label = "tab") { t ->
+            Crossfade(tab, Modifier.weight(1f).windowInsetsPadding(sideInsets), animationSpec = tween(motionMs(150)), label = "tab") { t ->
                 if (t == TAB_NOW) {
                     NowTab(
                         state, applying != null, actions, onFacing, onCommand, onGetIt = { tab = TAB_SETTINGS },
@@ -196,21 +230,11 @@ fun WebcamScreen(
                     )
                 }
             }
-            BottomBar {
-                if (live) {
-                    BottomBarItem(stringResource(R.string.action_dim), onClick = actions.onDim, icon = { GlossyBadge(BadgeKind.Dim, 24.dp) })
-                }
-                Spacer(Modifier.weight(1f))
-                BottomBarItem(
-                    stringResource(
-                        when {
-                            state.connected && state.wireless -> R.string.wifi_status_connected
-                            state.wirelessOn -> R.string.wifi_status_on
-                            else -> R.string.wifi_status_off
-                        }
-                    ),
-                    onClick = { tab = TAB_SETTINGS; wirelessOpen = true },
-                )
+            if (short) {
+                // The caption has no navigation-bar inset; keep the content clear of it.
+                Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars))
+            } else {
+                BottomBar { barItems(false) }
             }
         }
 
@@ -279,7 +303,7 @@ private fun HeroGroup(
         kind = if (state.paused) GroupKind.Paused else GroupKind.Hero,
         bodyColor = Xp.Card,
         trailing = if (view.live) ({ LivePill(sweep = sweepLive, onSwept = onLiveSwept) }) else null,
-        belowHeader = if (applying) ({ XpProgressBar(null, Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp)) }) else null,
+        belowHeader = if (applying) ({ XpProgressBar(null, Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp)) }) else null,
     ) {
         Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
             StatusIllustration(view.icon)
@@ -367,7 +391,7 @@ private fun SettingsTab(
     val video: @Composable (Modifier) -> Unit = { m ->
         TaskGroup(
             stringResource(R.string.section_video), m, expanded = videoOpen, onToggle = { videoOpen = !videoOpen },
-            belowHeader = if (applying) ({ XpProgressBar(null, Modifier.padding(start = 12.dp, end = 12.dp, top = 10.dp)) }) else null,
+            belowHeader = if (applying) ({ XpProgressBar(null, Modifier.padding(start = 12.dp, end = 12.dp, top = 12.dp)) }) else null,
         ) { VideoSettings(state.camera, state.cameraInfo, state.streaming, onCommand) }
     }
     val wireless: @Composable (Modifier) -> Unit = { m ->

@@ -75,6 +75,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_FIRST_RUN_HIDDEN, !firstRun)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -85,7 +90,9 @@ class MainActivity : ComponentActivity() {
         WebcamService.showPairedPcs(PairedPcs(prefs).list())
         autoDim = prefs.getBoolean(WebcamService.PREF_AUTO_DIM, true)
         // First run until the first connection. Phones that already paired a PC have connected before.
-        firstRun = !prefs.getBoolean(WebcamService.PREF_FIRST_RUN_DONE, false) && PairedPcs(prefs).list().isEmpty()
+        // Skipping hides them for this session, which survives a rotation.
+        firstRun = !prefs.getBoolean(WebcamService.PREF_FIRST_RUN_DONE, false) && PairedPcs(prefs).list().isEmpty() &&
+            savedInstanceState?.getBoolean(STATE_FIRST_RUN_HIDDEN) != true
         ContextCompat.registerReceiver(
             this, usbPermissionReceiver, IntentFilter(ACTION_USB_PERMISSION), ContextCompat.RECEIVER_NOT_EXPORTED,
         )
@@ -322,5 +329,6 @@ class MainActivity : ComponentActivity() {
         const val ACCESSORY_MANUFACTURER = "MyCam"
         private const val DIM_AFTER_MS = 30_000L
         private const val DIM_BRIGHTNESS = 0.02f
+        private const val STATE_FIRST_RUN_HIDDEN = "first_run_hidden"
     }
 }

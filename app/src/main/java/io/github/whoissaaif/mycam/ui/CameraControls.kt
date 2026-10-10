@@ -1,12 +1,13 @@
 package io.github.whoissaaif.mycam.ui
 
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -110,47 +111,43 @@ fun QuickControls(info: Protocol.CameraInfo, onCommand: (Int, Int) -> Unit) {
     fun setZoom(z: Float) = onCommand(Protocol.CMD_SET_ZOOM, (z.coerceIn(zoomMin, zoomMax) * 10).roundToInt().coerceIn(1, 255))
 
     Column(Modifier.fillMaxWidth()) {
-        // Zoom: lens-style presets (the ultrawide shows up as a preset below 1x where the phone supports it).
+        // Zoom: − value + on one line (lined up with Brightness), then lens-style presets across the full
+        // width (the ultrawide shows up as a preset below 1x where the phone supports it).
         if (zoomMax > zoomMin) {
             val presets = listOfNotNull(zoomMin.takeIf { it < 0.95f }, 1f, 2f.takeIf { zoomMax >= 2f }, 5f.takeIf { zoomMax >= 5f })
-            Text(stringResource(R.string.control_zoom_value, format(zoom) + "×"), style = MaterialTheme.typography.bodyMedium, color = Xp.Text)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                StepButton("−", stringResource(R.string.zoom_out), enabled = zoom > zoomMin + 0.01f) { setZoom(zoom / 1.25f) }
-                XpToggleRow(
-                    options = presets.map { format(it) + "×" },
-                    selectedIndex = presets.indices.minByOrNull { abs(presets[it] - zoom) }?.takeIf { abs(presets[it] - zoom) < 0.05f } ?: -1,
-                    onSelect = { setZoom(presets[it]) },
-                    modifier = Modifier.weight(1f),
-                )
-                StepButton("+", stringResource(R.string.zoom_in), enabled = zoom < zoomMax - 0.01f) { setZoom(zoom * 1.25f) }
-            }
+            StepperRow(
+                label = stringResource(R.string.control_zoom), value = format(zoom) + "×",
+                minusDescription = stringResource(R.string.zoom_out), plusDescription = stringResource(R.string.zoom_in),
+                minusEnabled = zoom > zoomMin + 0.01f, plusEnabled = zoom < zoomMax - 0.01f,
+                onMinus = { setZoom(zoom / 1.25f) }, onPlus = { setZoom(zoom * 1.25f) },
+            )
+            Spacer(Modifier.height(4.dp))
+            XpToggleRow(
+                options = presets.map { format(it) + "×" },
+                selectedIndex = presets.indices.minByOrNull { abs(presets[it] - zoom) }?.takeIf { abs(presets[it] - zoom) < 0.05f } ?: -1,
+                onSelect = { setZoom(presets[it]) },
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
 
         // Brightness (exposure compensation).
         if (info.evMax > info.evMin) {
             Spacer(Modifier.height(8.dp))
             val evValue = info.ev * info.evStepX100 / 100f
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.control_brightness), style = MaterialTheme.typography.bodyMedium, color = Xp.Text, modifier = Modifier.weight(1f))
-                StepButton("−", stringResource(R.string.brightness_down), enabled = info.ev > info.evMin) {
-                    onCommand(Protocol.CMD_SET_EXPOSURE, (info.ev - 1) and 0xFF)
-                }
-                Text(
-                    (if (evValue > 0) "+" else "") + format(evValue) + " EV",
-                    style = MaterialTheme.typography.bodyMedium, color = Xp.Text, textAlign = TextAlign.Center,
-                    modifier = Modifier.width(76.dp),
-                )
-                StepButton("+", stringResource(R.string.brightness_up), enabled = info.ev < info.evMax) {
-                    onCommand(Protocol.CMD_SET_EXPOSURE, (info.ev + 1) and 0xFF)
-                }
-            }
+            StepperRow(
+                label = stringResource(R.string.control_brightness), value = (if (evValue > 0) "+" else "") + format(evValue) + " EV",
+                minusDescription = stringResource(R.string.brightness_down), plusDescription = stringResource(R.string.brightness_up),
+                minusEnabled = info.ev > info.evMin, plusEnabled = info.ev < info.evMax,
+                onMinus = { onCommand(Protocol.CMD_SET_EXPOSURE, (info.ev - 1) and 0xFF) },
+                onPlus = { onCommand(Protocol.CMD_SET_EXPOSURE, (info.ev + 1) and 0xFF) },
+            )
         }
 
         // Focus.
         if (info.flags and Protocol.CAM_HAS_AUTOFOCUS != 0) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.control_focus), style = MaterialTheme.typography.bodyMedium, color = Xp.Text, modifier = Modifier.width(96.dp))
+                ControlLabel(stringResource(R.string.control_focus))
                 XpRadioGroup(
                     options = listOf(stringResource(R.string.focus_auto), stringResource(R.string.focus_lock)),
                     selectedIndex = if (info.flags and Protocol.CAM_FOCUS_LOCKED != 0) 1 else 0,
@@ -185,6 +182,35 @@ fun QuickControls(info: Protocol.CameraInfo, onCommand: (Int, Int) -> Unit) {
                 contentDescription = stringResource(R.string.controls_reset_description),
             )
         }
+    }
+}
+
+/** The label column shared by the quick-control rows, so their controls line up. */
+@Composable
+private fun ControlLabel(text: String) {
+    Text(text, style = MaterialTheme.typography.bodyMedium, color = Xp.Text, modifier = Modifier.widthIn(min = 104.dp).padding(end = 8.dp))
+}
+
+/** Label, −, the current value, +. */
+@Composable
+private fun StepperRow(
+    label: String,
+    value: String,
+    minusDescription: String,
+    plusDescription: String,
+    minusEnabled: Boolean,
+    plusEnabled: Boolean,
+    onMinus: () -> Unit,
+    onPlus: () -> Unit,
+) {
+    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+        ControlLabel(label)
+        StepButton("−", minusDescription, enabled = minusEnabled, onClick = onMinus)
+        Text(
+            value, style = MaterialTheme.typography.bodyMedium, color = Xp.Text, textAlign = TextAlign.Center, maxLines = 1,
+            modifier = Modifier.width(96.dp),
+        )
+        StepButton("+", plusDescription, enabled = plusEnabled, onClick = onPlus)
     }
 }
 

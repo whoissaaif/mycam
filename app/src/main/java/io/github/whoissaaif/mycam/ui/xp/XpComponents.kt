@@ -41,10 +41,15 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.progressSemantics
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
@@ -60,6 +65,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -75,6 +81,8 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipRect
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawOutline
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onPlaced
 import androidx.compose.ui.layout.positionInParent
@@ -116,37 +124,61 @@ fun rememberTick(): () -> Unit {
 
 /** XP caption as the app header: blue gloss, a light highlight line, white bold title with a dark shadow. */
 @Composable
-fun TitleBarHeader(title: String, iconRes: Int, modifier: Modifier = Modifier) {
-    Box(
+fun TitleBarHeader(
+    title: String,
+    iconRes: Int,
+    modifier: Modifier = Modifier,
+    compact: Boolean = false,
+    trailing: (@Composable RowScope.() -> Unit)? = null,
+) {
+    // The caption gloss starts below the status bar; the status bar itself gets the caption's deep blue.
+    val statusTop = WindowInsets.statusBars.getTop(LocalDensity.current).toFloat()
+    Row(
         modifier
             .fillMaxWidth()
-            .drawBehind { drawTitleBar() }
+            .drawBehind { drawTitleBar(statusTop) }
             .windowInsetsPadding(WindowInsets.statusBars)
-            .heightIn(min = 52.dp)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        contentAlignment = Alignment.CenterStart,
+            .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Horizontal))
+            .heightIn(min = if (compact) 48.dp else 56.dp)
+            .padding(start = 12.dp, end = if (trailing != null) 4.dp else 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Image(painterResource(iconRes), contentDescription = null, modifier = Modifier.size(28.dp))
-            Spacer(Modifier.width(8.dp))
-            Text(
-                title,
-                style = MaterialTheme.typography.titleLarge.copy(shadow = Shadow(Xp.TitleShadow, Offset(2f, 2f), 1f)),
-                color = Xp.TitleText,
-                modifier = Modifier.semantics { heading() },
-            )
-        }
+        Image(painterResource(iconRes), contentDescription = null, modifier = Modifier.size(if (compact) 24.dp else 32.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(
+            title,
+            style = (if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.titleLarge).copy(shadow = TitleTextShadow),
+            color = Xp.TitleText,
+            modifier = Modifier.weight(1f).semantics { heading() },
+        )
+        trailing?.invoke(this)
     }
 }
 
-private fun DrawScope.drawTitleBar() {
+/** XP caption text shadow: 1 dp down and right, dark navy. */
+val TitleTextShadow = Shadow(Xp.TitleShadow, Offset(2f, 2f), 1f)
+
+/** White text over the sky picture (first run): a soft navy halo so it reads on clouds too. */
+val SkyTextShadow = Shadow(Xp.TitleShadow.copy(alpha = 0.85f), Offset(0f, 2f), 10f)
+
+/**
+ * The XP Luna caption (redesign.md 3.2): a light gloss band at the top with a 1 dp highlight line, deepening
+ * to the main blue, then a darker bottom edge. [captionTop] is where the caption starts (below the status bar).
+ */
+private fun DrawScope.drawTitleBar(captionTop: Float = 0f) {
+    if (captionTop > 0f) drawRect(Xp.TitleBarGloss, size = Size(size.width, captionTop))
+    val h = size.height - captionTop
     drawRect(
         Brush.verticalGradient(
-            0f to Xp.TitleBarTop, 0.08f to Xp.TitleBarGloss, 0.5f to Xp.TitleBarMid, 1f to Xp.TitleBarBottom,
-        )
+            0f to Xp.TitleBarTop, 0.14f to Xp.TitleBarTop, 0.32f to Xp.TitleBarGloss, 0.62f to Xp.TitleBarMid,
+            0.9f to Xp.TitleBarBottom, 1f to Xp.TitleBarBottom,
+            startY = captionTop, endY = size.height,
+        ),
+        topLeft = Offset(0f, captionTop), size = Size(size.width, h),
     )
-    drawLine(Xp.TitleBarHighlight, Offset(0f, 0.5f), Offset(size.width, 0.5f), strokeWidth = 1.dp.toPx())
-    drawLine(Xp.TitleBarEdge, Offset(0f, size.height - 1f), Offset(size.width, size.height - 1f), strokeWidth = 2f)
+    val px = 1.dp.toPx()
+    drawLine(Xp.TitleBarHighlight, Offset(0f, captionTop + px * 1.5f), Offset(size.width, captionTop + px * 1.5f), strokeWidth = px)
+    drawLine(Xp.TitleBarEdge, Offset(0f, size.height - px), Offset(size.width, size.height - px), strokeWidth = px * 2)
 }
 
 // --- Property-sheet tabs ----------------------------------------------------------------------------
@@ -167,7 +199,7 @@ fun XpTabs(titles: List<String>, selected: Int, onSelect: (Int) -> Unit, modifie
             .drawBehind {
                 drawLine(Xp.TabBorder, Offset(0f, size.height - 0.5f), Offset(size.width, size.height - 0.5f), 1.dp.toPx())
             }
-            .padding(start = 8.dp, top = 6.dp),
+            .padding(start = 8.dp, top = 8.dp),
     ) {
         Row(Modifier.selectableGroup(), verticalAlignment = Alignment.Bottom) {
             titles.forEachIndexed { i, title ->
@@ -188,7 +220,7 @@ fun XpTabs(titles: List<String>, selected: Int, onSelect: (Int) -> Unit, modifie
                             selected = isSel, role = Role.Tab,
                             interactionSource = remember { MutableInteractionSource() }, indication = null,
                         ) { if (!isSel) { tick(); onSelect(i) } }
-                        .padding(horizontal = 18.dp),
+                        .padding(horizontal = 16.dp),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -361,7 +393,7 @@ fun XpButtonFrame(
     selected: Boolean = false,
     role: Role = Role.Button,
     contentDescription: String? = null,
-    contentPadding: Dp = 14.dp,
+    contentPadding: Dp = 16.dp,
     content: @Composable RowScope.() -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
@@ -538,7 +570,7 @@ fun HeroCommandButton(
                 if (go) drawGoButton(pressed) else drawXpButton(enabled = true, pressed = pressed, isDefault = true, selected = false)
             }
             .clickable(interaction, indication = null, role = Role.Button) { tick(); onClick() }
-            .padding(horizontal = 14.dp, vertical = 10.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp)
             .offset(shift, shift),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -574,7 +606,7 @@ fun GoButton(text: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
             .widthIn(min = 112.dp)
             .drawBehind { drawGoButton(pressed) }
             .clickable(interaction, indication = null, role = Role.Button) { tick(); onClick() }
-            .padding(horizontal = 18.dp)
+            .padding(horizontal = 16.dp)
             .offset(shift, shift),
         contentAlignment = Alignment.Center,
     ) {
@@ -588,10 +620,13 @@ fun XpLink(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, col
     Box(
         modifier
             .heightIn(min = 48.dp)
+            .widthIn(min = 48.dp)
             .clickable(role = Role.Button, onClick = onClick),
-        contentAlignment = Alignment.CenterStart,
+        contentAlignment = Alignment.Center,
     ) {
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = color, textDecoration = TextDecoration.Underline)
+        // Over a picture (first run) the white link gets the caption shadow so it reads on the sky.
+        val style = MaterialTheme.typography.bodyMedium.let { if (color == Color.White) it.copy(shadow = SkyTextShadow) else it }
+        Text(text, style = style, color = color, textDecoration = TextDecoration.Underline)
     }
 }
 
@@ -632,7 +667,7 @@ fun XpCheckbox(
                 )
             }
         }
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(12.dp))
         Text(text, style = MaterialTheme.typography.bodyMedium, color = if (enabled) Xp.Text else Xp.DisabledText)
     }
 }
@@ -699,7 +734,7 @@ fun XpRadioGroup(
  * a static "Working…" label.
  */
 @Composable
-fun XpProgressBar(progress: Float?, modifier: Modifier = Modifier) {
+fun XpProgressBar(progress: Float?, modifier: Modifier = Modifier, segments: Int = 0) {
     val reduced = LocalReducedMotion.current
     if (progress == null && reduced) {
         Text(stringResource(R.string.working), style = MaterialTheme.typography.bodyMedium, color = Xp.Subtle, modifier = modifier)
@@ -738,7 +773,12 @@ fun XpProgressBar(progress: Float?, modifier: Modifier = Modifier) {
             startY = pad, endY = pad + chunkH,
         )
         fun chunk(x: Float) = drawRect(chunkBrush, Offset(x, pad), Size(chunkW, chunkH))
-        if (progress != null) {
+        if (progress != null && segments > 0) {
+            // A step indicator: [segments] equal chunks, filled in whole steps.
+            val segW = (innerW - (segments - 1) * gap) / segments
+            val filled = Math.round(progress.coerceIn(0f, 1f) * segments)
+            for (i in 0 until filled) drawRect(chunkBrush, Offset(pad + i * (segW + gap), pad), Size(segW, chunkH))
+        } else if (progress != null) {
             val filled = (progress.coerceIn(0f, 1f) * slots).toInt()
             for (i in 0 until filled) chunk(pad + i * (chunkW + gap))
         } else {
@@ -785,7 +825,7 @@ fun LivePill(modifier: Modifier = Modifier, sweep: Boolean = false, onSwept: () 
                     )
                 }
             }
-            .padding(horizontal = 10.dp, vertical = 2.dp),
+            .padding(horizontal = 12.dp, vertical = 2.dp),
     ) {
         Text(
             stringResource(R.string.live), style = MaterialTheme.typography.labelSmall, color = Color.White,
@@ -815,7 +855,13 @@ fun BottomBar(modifier: Modifier = Modifier, content: @Composable RowScope.() ->
 
 /** A flat tappable item in the bottom bar: an optional leading icon and a label, 48 dp tall. */
 @Composable
-fun BottomBarItem(text: String, onClick: () -> Unit, modifier: Modifier = Modifier, icon: (@Composable () -> Unit)? = null) {
+fun BottomBarItem(
+    text: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onTitleBar: Boolean = false,
+    icon: (@Composable () -> Unit)? = null,
+) {
     val tick = rememberTick()
     Row(
         modifier
@@ -829,7 +875,11 @@ fun BottomBarItem(text: String, onClick: () -> Unit, modifier: Modifier = Modifi
             icon()
             Spacer(Modifier.width(8.dp))
         }
-        Text(text, style = MaterialTheme.typography.bodyMedium, color = Xp.Link, textDecoration = TextDecoration.Underline)
+        Text(
+            text,
+            style = if (onTitleBar) MaterialTheme.typography.bodyMedium.copy(shadow = TitleTextShadow) else MaterialTheme.typography.bodyMedium,
+            color = if (onTitleBar) Xp.TitleText else Xp.Link, textDecoration = TextDecoration.Underline,
+        )
     }
 }
 
@@ -851,7 +901,13 @@ fun XpDialogFrame(
             .fillMaxWidth()
             .clip(shape)
             .background(Xp.Surface)
-            .drawBehind { drawRoundRect(Xp.TitleBarEdge, cornerRadius = CornerRadius(8.dp.toPx()), style = Stroke(2.dp.toPx())) },
+            .drawWithContent {
+                drawContent()
+                // The window frame on top of the content, following the shape (rounded top, square-ish bottom).
+                val w = 2.dp.toPx()
+                val outline = shape.createOutline(Size(size.width - w, size.height - w), layoutDirection, this)
+                translate(w / 2, w / 2) { drawOutline(outline, Xp.TitleBarEdge, style = Stroke(w)) }
+            },
     ) {
         Row(
             Modifier
@@ -862,12 +918,13 @@ fun XpDialogFrame(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                title, style = MaterialTheme.typography.titleMedium.copy(shadow = Shadow(Xp.TitleShadow, Offset(2f, 2f), 1f)),
+                title, style = MaterialTheme.typography.titleMedium.copy(shadow = TitleTextShadow),
                 color = Xp.TitleText, modifier = Modifier.weight(1f).semantics { heading() },
             )
             if (onClose != null) CloseBox(onClose)
         }
-        Column(Modifier.padding(horizontal = 16.dp, vertical = 16.dp), content = content)
+        // Scrolls when the window is short (landscape, large text), so the buttons keep their full size.
+        Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 16.dp), content = content)
     }
 }
 
