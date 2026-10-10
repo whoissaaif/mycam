@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "../companion/packet_parser.h"
+#include "../companion/marquee.h"
 #include "../companion/protocol.h"
 #include "../vcam/frame_transform.h"
 
@@ -324,6 +325,154 @@ void TestBgraToNV12() {
     CHECK(out[0] == 16 && out[1] == 235 && out[4] == 128 && out[5] == 128);
 }
 
+// --- Waiting-picture marquee ----------------------------------------------------------------------
+
+Nv12Image PatternImage(uint32_t w, uint32_t h) {
+    Nv12Image img;
+    img.width = w;
+    img.height = h;
+    img.data.resize(size_t(w) * h * 3 / 2);
+    for (size_t i = 0; i < img.data.size(); ++i) img.data[i] = uint8_t((i * 7 + i / w * 13) & 0xFF);
+    return img;
+}
+
+// True if pixel (x, y) is covered by a visible chunk at time t (clipped to the interior).
+bool InChunk(const MarqueeGeometry& g, double t, int x, int y) {
+    if (y < g.iy || y >= g.iy + g.ih || x < g.ix || x >= g.ix + g.iw) return false;
+    for (int i = 0; i < kMarqueeChunks; ++i) {
+        int left = 0;
+        if (MarqueeChunkLeft(g, t, i, &left) && x >= left && x < left + g.chunkW) return true;
+    }
+    return false;
+}
+
+void TestMarqueeGeometry() {
+    MarqueeGeometry g = MarqueeGeometryFor(1280, 720);
+    CHECK(g.valid());
+    CHECK(g.x == kMarqueeTrackX && g.y == kMarqueeTrackY && g.w == kMarqueeTrackW && g.h == kMarqueeTrackH);
+    CHECK(g.ix == g.x + 2 && g.iy == g.y + 2 && g.iw == g.w - 4 && g.ih == g.h - 4);
+    CHECK(g.chunkW == 8 && g.gap == 2);
+    MarqueeGeometry half = MarqueeGeometryFor(640, 360);
+    CHECK(half.valid() && half.chunkW == 4 && half.gap == 1);
+    CHECK(half.x == (kMarqueeTrackX + 1) / 2 && half.w == kMarqueeTrackW / 2);
+    MarqueeGeometry big = MarqueeGeometryFor(1920, 1080);
+    CHECK(big.chunkW == 12 && big.gap == 3 && big.x == kMarqueeTrackX * 3 / 2);
+    CHECK(!MarqueeGeometryFor(0, 0).valid());
+    CHECK(!MarqueeGeometryFor(16, 16).valid()); // Track falls outside a tiny image.
+}
+
+void TestMarqueeChunkPositions() {
+    const MarqueeGeometry g = MarqueeGeometryFor(1280, 720);
+    const int group = 3 * g.chunkW + 2 * g.gap; // 28
+    int l0 = 0, l1 = 0, l2 = 0;
+    // Start of a pass: the whole group sits just left of the interior.
+    CHECK(MarqueeChunkLeft(g, 0.0, 0, &l0) && MarqueeChunkLeft(g, 0.0, 2, &l2));
+    CHECK(l2 == g.ix - group && l0 + g.chunkW == g.ix);
+    // Halfway: linear, chunk 0 leads, chunks 10 px apart.
+    CHECK(MarqueeChunkLeft(g, 1.0, 0, &l0) && MarqueeChunkLeft(g, 1.0, 1, &l1) && MarqueeChunkLeft(g, 1.0, 2, &l2));
+    CHECK(l2 == g.ix - group + (g.iw + group) / 2);
+    CHECK(l1 == l2 + g.chunkW + g.gap && l0 == l1 + g.chunkW + g.gap);
+    // Monotonic left to right over the pass, and the group ends past the right edge.
+    int prev = -100000;
+    bool monotonic = true;
+    for (double t = 0; t < kMarqueePassSec; t += 0.01) {
+        int l = 0;
+        CHECK(MarqueeChunkLeft(g, t, 2, &l));
+        if (l < prev) monotonic = false;
+        prev = l;
+    }
+    CHECK(monotonic);
+    CHECK(MarqueeChunkLeft(g, 1.9999, 2, &l2) && l2 >= g.ix + g.iw - 1);
+    // Repeats every pass + pause.
+    const double period = kMarqueePassSec + kMarqueePauseSec;
+    CHECK(MarqueeChunkLeft(g, 1.0 + 5 * period, 0, &l1) && MarqueeChunkLeft(g, 1.0, 0, &l0) && l0 == l1);
+    CHECK(!MarqueeChunkLeft(g, 1.0, 3, &l0)); // Only 3 chunks.
+}
+
+void TestMarqueePause() {
+    const MarqueeGeometry g = MarqueeGeometryFor(1280, 720);
+    int l = 0;
+    CHECK(!MarqueeChunkLeft(g, 2.0, 0, &l));
+    CHECK(!MarqueeChunkLeft(g, 2.2, 1, &l));
+    CHECK(!MarqueeChunkLeft(g, 2.39, 2, &l));
+    CHECK(MarqueeChunkLeft(g, 2.4, 0, &l));
+    const Nv12Image base = PatternImage(1280, 720);
+    Nv12Image img = base;
+    DrawMarquee(img, base, 1.0);
+    CHECK(img.data != base.data);
+    DrawMarquee(img, base, 2.2); // Pause: the empty track (the base picture) comes back.
+    CHECK(img.data == base.data);
+}
+
+void TestMarqueeDraw(uint32_t w, uint32_t h) {
+    const MarqueeGeometry g = MarqueeGeometryFor(w, h);
+    const Nv12Image base = PatternImage(w, h);
+    const int x0 = g.x & ~1, y0 = g.y & ~1, x1 = (g.x + g.w + 1) & ~1, y1 = (g.y + g.h + 1) & ~1;
+    const uint8_t* by = base.data.data();
+    const uint8_t* buv = by + size_t(w) * h;
+    for (double t : {0.05, 0.37, 1.0, 1.23, 1.71, 1.98}) {
+        Nv12Image img = base;
+        DrawMarquee(img, base, t);
+        const uint8_t* y = img.data.data();
+        const uint8_t* uv = y + size_t(w) * h;
+        bool outsideClean = true, chunksDrawn = true, gapsClean = true, chromaOk = true;
+        int painted = 0;
+        for (uint32_t r = 0; r < h; ++r) {
+            for (uint32_t c = 0; c < w; ++c) {
+                const size_t i = size_t(r) * w + c;
+                const bool inRect = int(c) >= x0 && int(c) < x1 && int(r) >= y0 && int(r) < y1;
+                if (!inRect && y[i] != by[i]) outsideClean = false;
+                if (InChunk(g, t, c, r)) ++painted;
+                else if (inRect && y[i] != by[i]) gapsClean = false;
+            }
+        }
+        // Chroma: changed only for whole blocks inside a chunk; every such block is painted green.
+        for (uint32_t br = 0; br < h / 2; ++br) {
+            for (uint32_t bx = 0; bx < w / 2; ++bx) {
+                const size_t i = size_t(br) * w + 2 * bx;
+                const bool full = InChunk(g, t, 2 * bx, 2 * br) && InChunk(g, t, 2 * bx + 1, 2 * br) &&
+                                  InChunk(g, t, 2 * bx, 2 * br + 1) && InChunk(g, t, 2 * bx + 1, 2 * br + 1);
+                const bool changed = uv[i] != buv[i] || uv[i + 1] != buv[i + 1];
+                const bool inRect = int(2 * bx) >= x0 && int(2 * bx) < x1 && int(2 * br) >= y0 && int(2 * br) < y1;
+                if (!inRect && changed) outsideClean = false;
+                if (!full && inRect && changed) chromaOk = false;
+                if (full && !(uv[i] < 128 && uv[i + 1] < 128)) chromaOk = false; // Green: U and V below neutral.
+            }
+        }
+        // Painted pixels: lighter at the top highlight than at the dark 55 % band.
+        for (int c = g.ix; c < g.ix + g.iw; ++c) {
+            if (!InChunk(g, t, c, g.iy)) continue;
+            if (!(y[size_t(g.iy) * w + c] > y[size_t(g.iy + g.ih * 55 / 100) * w + c])) chunksDrawn = false;
+        }
+        CHECK(outsideClean);
+        CHECK(gapsClean);
+        CHECK(chromaOk);
+        CHECK(chunksDrawn);
+        CHECK(painted > 0);
+    }
+}
+
+void TestMarqueeRestore() {
+    const Nv12Image base = PatternImage(1280, 720);
+    Nv12Image img = base;
+    // Successive frames only ever show the current chunks: earlier ones are wiped by the restore.
+    DrawMarquee(img, base, 0.5);
+    DrawMarquee(img, base, 1.5);
+    Nv12Image fresh = base;
+    DrawMarquee(fresh, base, 1.5);
+    CHECK(img.data == fresh.data);
+    // Garbage inside the track is restored too.
+    const MarqueeGeometry g = MarqueeGeometryFor(1280, 720);
+    for (int r = g.y; r < g.y + g.h; ++r) memset(img.data.data() + size_t(r) * 1280 + g.x, 0x55, g.w);
+    DrawMarquee(img, base, 2.3);
+    CHECK(img.data == base.data);
+    // Mismatched sizes are ignored rather than overrun.
+    Nv12Image small = PatternImage(640, 360);
+    const Nv12Image before = small;
+    DrawMarquee(small, base, 1.0);
+    CHECK(small.data == before.data);
+}
+
 } // namespace
 
 int main() {
@@ -346,6 +495,13 @@ int main() {
     printf("transform downscale\n");       TestDownscale();
     printf("transform pitch\n");           TestPitch();
     printf("bgra to nv12\n");              TestBgraToNV12();
+    printf("marquee geometry\n");          TestMarqueeGeometry();
+    printf("marquee chunk positions\n");   TestMarqueeChunkPositions();
+    printf("marquee pause\n");             TestMarqueePause();
+    printf("marquee draw 1280x720\n");     TestMarqueeDraw(1280, 720);
+    printf("marquee draw 1920x1080\n");    TestMarqueeDraw(1920, 1080);
+    printf("marquee draw 854x480\n");      TestMarqueeDraw(854, 480);
+    printf("marquee restore\n");           TestMarqueeRestore();
 
     printf("%d checks, %d failed\n", g_checks, g_failures);
     return g_failures ? 1 : 0;

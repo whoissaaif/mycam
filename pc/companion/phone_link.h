@@ -67,6 +67,7 @@ public:
     void SetStatusImages(Nv12Image paused, Nv12Image waiting) {
         pausedImage_ = std::move(paused);
         waitingImage_ = std::move(waiting);
+        waitingFrame_ = waitingImage_;
     }
 
 private:
@@ -84,6 +85,8 @@ private:
     void LogStats(uint64_t now);
     void SyncLockPaused();
     void WriteStatusFrame(uint64_t now);
+    // How long the loops may wait before the next status frame is due (shorter while the marquee runs).
+    uint32_t StatusWaitMs() const { return marqueeActive_ ? 66 : 100; }
 
     StatusCallback onStatus_;
     std::function<void()> onNeedDriver_;
@@ -99,6 +102,8 @@ private:
     std::atomic<bool> lockPaused_{false};
     Nv12Image pausedImage_, waitingImage_;
     uint64_t lastStatusFrame_ = 0;
+    Nv12Image waitingFrame_;     // waitingImage_ with the marquee drawn in (worker thread only).
+    bool marqueeActive_ = false; // The animated waiting picture is on screen: write it at ~15 fps.
 
     libusb_context* ctx_ = nullptr;       // UsbDk backend: switches phones into accessory mode.
     libusb_context* winusbCtx_ = nullptr; // WinUSB backend: streams from accessory-mode phones (WinUSB-bound).
