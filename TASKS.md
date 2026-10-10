@@ -25,14 +25,19 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [~] No UAC prompt for new phones (SYSTEM scheduled task from the installer) [2.2]: built and installed (1.3.2), test with a never-connected phone
 
 - [~] Dim the phone screen while streaming, with a heat warning [4.1]: built, test on the phone
-- [ ] Write `design/STYLE.md` [7.2]
+- [x] Write `design/STYLE.md` [7.2]
+- [~] Windows XP redesign (branch `xp-redesign`, redesign.md) [7]: phone app, PC window + preview + pairing dialog, logo, hills pictures, waiting marquee built
+  - [ ] Test on the phone over USB and Wi-Fi (pairing dialog, countdown, per-PC forget, first run, dim screen)
+  - [ ] Test the PC window with a real phone; check high contrast and reduced motion by eye
+  - [ ] Narrator pass on the PC window (UI Automation)
+  - [ ] Release APK test (R8) before publishing
 
 ## Backlog
 
 - [~] Lower phone-side latency (capture→encoded 150–230 ms on the test phone) [3.4]: camera/encoder tweaks and a camera-vs-encoder split in the log built; measure on the phone
 - [~] 30 / 60 / 120 fps choice; 60 and 120 on the back camera through high-speed capture [3.2]: built, test on the phone
 - [ ] Adaptive-bitrate Int overflow fix at 4K (in `WebcamService.kt`): test, then release as 1.3.2
-- [ ] Screen-reader support for the settings window (UI Automation) [5.2]
+- [~] Screen-reader support for the settings window (UI Automation) [5.2]: part of the XP redesign
 - [ ] Code-sign the installer and companion [5.3]
 - [ ] USB debugging on: the accessory shows up as accessory+adb (composite), WinUSB isn't bound to its interface, so it never connects; bind the MI_00 interface too [2.1]
 - [ ] Test the release APK (not just debug) on a phone before every release: R8 only runs on release builds
@@ -86,6 +91,7 @@ run `installer\build.ps1` and `gradlew assembleDebug`, commit, tag `vX.Y.Z`, pus
 | 2026-10-09 | Transport: Android Open Accessory (no Developer Options) + Windows 11 virtual camera |
 | 2026-10-09 | UsbDk only switches the phone into accessory mode; streaming uses Windows' WinUSB driver |
 | 2026-10-09 | Design language: Windows 7 Aero (option A) |
+| 2026-10-10 | Design language changed to **Windows XP, Luna Blue only**, no dark mode; DejaVu Sans on the phone; new "Snap" camera logo (not an eye); preview on the PC only; original hills art (the photo in `inspo/` is a reference only) (redesign.md) |
 | 2026-10-09 | The phone owns the pause state; Windows-lock pause is PC-only and never undoes a user pause |
 | 2026-10-09 | License: MIT. Repo private on `whoissaaif`. `inspo/` (Microsoft artwork) never committed |
 | 2026-10-09 | Commits use the GitHub no-reply email |

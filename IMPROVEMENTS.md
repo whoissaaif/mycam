@@ -170,51 +170,51 @@ close the running companion cleanly; the uninstaller asks before removing UsbDk.
 
 ---
 
-## 7. Design language and assets: 🟡 mostly done
+## 7. Design language and assets: 🟡 Windows XP redesign built (branch `xp-redesign`), testing left
 
-### 7.1 Decision: ✅ A, Aero (Windows 7)
-Everything uses the Windows 7 Aero look. The Windows 95/98 "Classic" images in the local `inspo/` folder
-are not a style source. `inspo/` holds Microsoft artwork and stays out of the repository.
+### 7.1 Decision: ✅ Windows XP (Luna Blue), replacing Windows 7 Aero (2026-10-10)
+The owner moved the look from Win7 Aero (the 2026-10-09 decision) to **Windows XP, Luna Blue only**:
+- no dark mode;
+- a new friendly camera logo, because the old webcam read as an eye and felt like surveillance;
+- a camera preview on the PC only;
+- a sunny "hills and sky" pause picture. The photo in the local `inspo/` folder is a reference only; the
+  scene is painted by script.
 
-### 7.2 Style guide (S): 🟡
-The tokens are implemented in code and shared by both apps: `app/.../ui/theme/Color.kt` and
-`pc/companion/settings_window.cpp`.
-- ⏳ Write `design/STYLE.md`: tokens, type ramp, spacing, components, do's and don'ts.
+The full spec, findings and roadmap are in [redesign.md](redesign.md).
 
-| Token | Value |
-|---|---|
-| Glass header / frame | `#C9DDF3` → `#A9C6EA` → `#8FB2DD`, edge `#3E5F8A`, white aurora sheens |
-| Body / command area | `#FFFFFF` / `#F0F0F0` with a `#DFDFDF` top line |
-| Main instruction / heading | `#003399` / `#1E3287` |
-| Button, normal | two-tone `#F2F2F2 · #EBEBEB │ #DDDDDD · #CFCFCF`, border `#707070`, radius 3 |
-| Button, pressed / selected | `#E5F4FC · #C4E5F6 │ #98D1EF · #68B3DB`, border `#2C628B` |
-| Live green | `#8BE07A · #37C12B │ #06B025 · #3CCB47`, border `#0A7A1A` |
-| Paused amber / error red | `#FFE482 → #D68000` / `#FF968C → #C41818` |
-| Text | `#000000`, secondary `#5A5A5A`, link `#0066CC` |
-| Type | Segoe UI (PC), Selawik (phone, OFL) |
+### 7.2 Style guide (S): ✅ [design/STYLE.md](design/STYLE.md)
+The tokens live in `app/.../ui/theme/Color.kt`, `pc/companion/xp_draw.cpp` and `design/tools/luna_draw.ps1`.
+Type: DejaVu Sans on the phone (shipped, free licence). Tahoma and Trebuchet MS on the PC (installed with
+Windows, not shipped).
 
-### 7.3 Assets: ✅
-All drawn from scratch by scripts in `design/tools/` (shared library `aero_draw.ps1`).
+### 7.3 Assets: ✅ redrawn for XP
+All of it is drawn from scratch by scripts in `design/tools/` (shared library `luna_draw.ps1`).
 
 | Asset | Status |
 |---|---|
-| App icon (Windows `.ico`, Android adaptive / legacy / themed) | ✅ |
-| Tray status icons (5 states) | ✅ |
-| Android notification icon (monochrome) | ✅ |
-| Camera pictures: "Camera paused", "Waiting for the phone" | ✅ "Phone locked" isn't needed: a lock shows "Camera paused" |
-| Phone UI kit (Compose: header, buttons, command link, badges, LIVE pill) | ✅ |
-| Settings window chrome | ✅ |
-| Installer art (wizard panel, header) | ✅ |
-| Dimmed streaming screen (night aurora, crescent-moon "Dim" badge) | ✅ `ui/DimScreen.kt` (with 4.1) |
-| Play Store 512 px icon and 1024×500 feature graphic | ✅ `design/assets/store/` (`make_store_art.ps1`) |
+| "Snap" logo: Windows `.ico`, Android adaptive / legacy / round / themed, notification icon | ✅ |
+| Status family (tray, window, phone): ready, streaming (green ▶), paused (amber ‖), error (red ×), disconnected (grey) | ✅ |
+| Camera pictures: "Camera paused" (hills + frosted glass card), "Waiting for the phone" (morning tint + animated green marquee drawn by the companion) | ✅ |
+| Installer art, Play Store icon and feature graphic | ✅ |
+| Phone first-run and Dim-screen hills (drawn in Compose) | ✅ |
 
-### 7.4 Mockups: skipped
-The UI was built directly in the chosen style and reviewed from screenshots instead.
+### 7.4 What the redesign changed (S–L): 🟡 built, testing left
+- **Phone:**
+  - Now / Settings tabs and XP task groups, with the hero Pause.
+  - A pairing dialog with a blurred backdrop and a countdown bar, and per-PC Forget.
+  - First-run cards, a landscape two-pane layout, per-state frame-rate reasons, and the night-hills Dim screen.
+  - Accessibility semantics.
+- **PC:**
+  - A 720 × 500 task-pane window that fits small screens, with a live preview (frosted LIVE / mode chips).
+  - A pairing dialog with Cancel and a countdown, a green marquee while connecting, keyboard groups and
+    access keys, and tray check marks plus a Quality submenu.
+  - A UI Automation provider.
+- **Left to do:** real-phone tests of every flow (USB and Wi-Fi), a Narrator pass, and checking high contrast
+  and reduced motion by eye.
 
 ### Notes and risks
-- **Tray menu** uses the native Windows 11 menu (accessible); the Aero look lives in the icons and the
-  settings window.
-- **Accessibility:** keep text at WCAG AA contrast on the glossy surfaces.
+- **Tray menu:** uses the native Windows 11 menu, which is accessible.
+- **Accessibility:** every text pair meets WCAG AA. Amber and red are used only in badges and icons.
 - **Licensing:** no Microsoft artwork, wallpapers or fonts are shipped.
 
 ---
