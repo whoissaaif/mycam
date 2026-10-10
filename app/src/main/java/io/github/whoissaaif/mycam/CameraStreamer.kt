@@ -12,6 +12,9 @@ import android.hardware.camera2.CameraMetadata
 import android.hardware.camera2.CaptureRequest
 import android.hardware.camera2.CaptureResult
 import android.hardware.camera2.TotalCaptureResult
+import android.hardware.camera2.params.OutputConfiguration
+import android.hardware.camera2.params.SessionConfiguration
+import android.graphics.SurfaceTexture
 import android.media.MediaCodec
 import android.media.MediaCodecInfo
 import android.media.MediaCodecList
@@ -49,6 +52,9 @@ class CameraStreamer(
     )
 
     interface Listener {
+        /** Whether this mode carries the phone's own preview, and why not when it doesn't. */
+        fun onPreviewSupport(support: PreviewSupport) {}
+
         /** Codec config (SPS/PPS) is ready. Called before the first frame. */
         fun onConfig(width: Int, height: Int, sensorOrientation: Int, facing: Int, csd: ByteArray)
         fun onFrame(data: ByteArray, ptsUs: Long, keyFrame: Boolean)
@@ -96,6 +102,15 @@ class CameraStreamer(
     private var iso = 0
     private var fpsModes = IntArray(3) // Per quality (720p, 1080p, 4K): Protocol.FPS_* bits that work.
 
+    // The phone's own preview (redesign-v2.md 6.1): a second, deferred output of the same session, so the
+    // encoder stream never changes and the camera is never restarted. Owned by the camera thread.
+    private var previewSize: Size? = null
+    private var previewConfig: OutputConfiguration? = null  // API 28+, created with the session.
+    private var previewSurface: Surface? = null             // The surface currently in the repeating request.
+    private var previewFinalized = false
+    private var previewWanted: Surface? = null              // What the UI last asked for.
+    private var previewRefused = false                      // This camera refused the second output; don't retry.
+
     /** How a camera delivers a quality at a frame rate: output size, capture range, normal or high-speed. */
     private class Mode(val size: Size, val fps: Int, val range: Range<Int>, val highSpeed: Boolean)
 
@@ -140,6 +155,8 @@ class CameraStreamer(
             fps = mode.fps
             captureFps = if (mode.highSpeed) mode.range.upper else fps
             fallbackRange = chooseFpsRange(chars.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES), 30)
+            // The preview's own output: a smaller size with the stream's aspect ratio, so it costs little.
+            previewSize = if (PhonePreview.possible) previewSizeFor(chars, mode.size) else null
 
             // Which frame rates each quality can have on this phone (any camera facing this way), so the phone
             // and PC only offer combinations that work.
@@ -223,6 +240,79 @@ class CameraStreamer(
         encoder?.setParameters(Bundle().apply { putInt(MediaCodec.PARAMETER_KEY_REQUEST_SYNC_FRAME, 0) })
     }
 
+    /**
+     * Shows (or stops showing) the camera on the phone's own screen. [surface] comes from the Camera
+     * screen's TextureView; null turns the preview off.
+     *
+     * The preview is a **second output of the running session**: its output configuration is created
+     * deferred with the session and finalised when the surface arrives, so neither the encoder stream nor
+     * the camera is touched. Turning it off removes it from the repeating request only. If the camera
+     * refuses it (or this mode can't take it), the preview is dropped and the reason is reported; the
+     * stream is never sacrificed for it.
+     */
+    fun setPreviewSurface(surface: Surface?) {
+        previewWanted = surface
+        if (surface == null) {
+            detachPreview()
+            return
+        }
+        if (session != null) attachPreview(surface)
+    }
+
+    /** The size the preview surface should hold (the Camera screen sets the buffer size to it). */
+    fun previewSize(): Size? = previewSize
+
+    private fun attachPreview(s: Surface) {
+        val sess = session ?: return
+        val b = request ?: return
+        val cfg = previewConfig
+        if (cfg == null || Build.VERSION.SDK_INT < Build.VERSION_CODES.P) {
+            listener.onPreviewSupport(if (previewRefused) PreviewSupport.Refused else PreviewSupport.NotAtThisFrameRate)
+            return
+        }
+        if (previewSurface === s) return
+        try {
+            if (!previewFinalized) {
+                cfg.addSurface(s)
+                sess.finalizeOutputConfigurations(listOf(cfg))
+                previewFinalized = true
+            } else {
+                previewSurface?.let { old ->
+                    b.removeTarget(old)
+                    cfg.removeSurface(old)
+                }
+                cfg.addSurface(s)
+                sess.updateOutputConfiguration(cfg)
+            }
+            previewSurface = s
+            b.addTarget(s)
+            repeat(sess, b.build())
+            listener.onLog("preview on (${previewSize?.width}x${previewSize?.height})")
+            listener.onPreviewSupport(PreviewSupport.Ok)
+        } catch (e: Exception) {
+            previewRefused = true
+            previewSurface?.let { old -> try { b.removeTarget(old) } catch (_: Exception) {} }
+            previewSurface = null
+            try { repeat(sess, b.build()) } catch (_: Exception) {}
+            listener.onLog("preview refused: ${e.message}")
+            listener.onPreviewSupport(PreviewSupport.Refused)
+        }
+    }
+
+    private fun detachPreview() {
+        val s = previewSurface ?: return
+        previewSurface = null
+        val sess = session ?: return
+        val b = request ?: return
+        try {
+            b.removeTarget(s)
+            repeat(sess, b.build())
+            listener.onLog("preview off")
+        } catch (e: Exception) {
+            listener.onLog("preview could not be removed: ${e.message}")
+        }
+    }
+
     fun stop() {
         stopped = true
         try { session?.close() } catch (_: Exception) {}
@@ -231,6 +321,7 @@ class CameraStreamer(
         try { encoder?.release() } catch (_: Exception) {}
         inputSurface?.release()
         session = null; camera = null; encoder = null; inputSurface = null; request = null
+        previewConfig = null; previewSurface = null; previewFinalized = false
     }
 
     /** Cameras facing the requested way, in the order the phone lists them (the main one first). */
@@ -587,6 +678,24 @@ class CameraStreamer(
             captureFps = 30
             createSession(device, fallbackRange, false)
         }
+        // The phone's own preview rides along as a second, deferred output. A constrained high-speed session
+        // takes no extra output, and Android 8 can't finalise one later, so those modes have no preview.
+        val size = previewSize
+        val previewOut = if (
+            !highSpeed && !previewRefused && size != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P
+        ) {
+            try {
+                OutputConfiguration(size, SurfaceTexture::class.java).apply { enableSurfaceSharing() }
+            } catch (e: Exception) {
+                listener.onLog("preview output not available: ${e.message}")
+                null
+            }
+        } else {
+            null
+        }
+        previewConfig = previewOut
+        previewFinalized = false
+        previewSurface = null
         val callback = object : CameraCaptureSession.StateCallback() {
             override fun onConfigured(s: CameraCaptureSession) {
                 if (stopped) { s.close(); return }
@@ -606,20 +715,75 @@ class CameraStreamer(
                 } catch (e: Exception) {
                     if (highSpeed) { s.close(); fallBack(e.message ?: "request refused") }
                     else listener.onError("Capture failed: ${e.message}")
+                    return
+                }
+                // Only now is it known whether this mode can show a preview.
+                if (previewOut == null) {
+                    listener.onPreviewSupport(
+                        when {
+                            previewRefused -> PreviewSupport.Refused
+                            Build.VERSION.SDK_INT < Build.VERSION_CODES.P -> PreviewSupport.NeedsAndroid9
+                            else -> PreviewSupport.NotAtThisFrameRate
+                        }
+                    )
+                } else {
+                    previewWanted?.let { attachPreview(it) }
                 }
             }
 
             override fun onConfigureFailed(s: CameraCaptureSession) {
-                if (highSpeed) fallBack("session refused")
-                else listener.onError("Camera session configuration failed")
+                when {
+                    // A camera that won't take the preview output still has to stream: try again without it.
+                    previewOut != null -> {
+                        previewRefused = true
+                        listener.onLog("session refused with the preview output; retrying without it")
+                        listener.onPreviewSupport(PreviewSupport.Refused)
+                        createSession(device, fpsRange, highSpeed)
+                    }
+                    highSpeed -> fallBack("session refused")
+                    else -> listener.onError("Camera session configuration failed")
+                }
             }
         }
         try {
-            if (highSpeed) device.createConstrainedHighSpeedCaptureSession(listOf(surface), callback, handler)
-            else device.createCaptureSession(listOf(surface), callback, handler)
+            when {
+                highSpeed -> device.createConstrainedHighSpeedCaptureSession(listOf(surface), callback, handler)
+                previewOut != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.P -> device.createCaptureSession(
+                    SessionConfiguration(
+                        SessionConfiguration.SESSION_REGULAR,
+                        listOf(OutputConfiguration(surface), previewOut),
+                        { r: Runnable -> handler.post(r) },
+                        callback,
+                    )
+                )
+                else -> device.createCaptureSession(listOf(surface), callback, handler)
+            }
         } catch (e: Exception) {
-            if (highSpeed) fallBack(e.message ?: "session refused") else throw e
+            when {
+                previewOut != null -> {
+                    previewRefused = true
+                    listener.onLog("session with a preview output failed (${e.message}); retrying without it")
+                    listener.onPreviewSupport(PreviewSupport.Refused)
+                    createSession(device, fpsRange, highSpeed)
+                }
+                highSpeed -> fallBack(e.message ?: "session refused")
+                else -> throw e
+            }
         }
+    }
+
+    /**
+     * The size of the preview output: the largest size up to 1280 wide with the stream's aspect ratio (so
+     * the picture on the phone is never stretched), falling back to the closest aspect ratio available.
+     */
+    private fun previewSizeFor(chars: CameraCharacteristics, stream: Size): Size? {
+        val map = chars.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return null
+        val sizes = map.getOutputSizes(SurfaceTexture::class.java)?.toList().orEmpty()
+        if (sizes.isEmpty()) return null
+        val aspect = stream.width.toFloat() / stream.height
+        val capped = sizes.filter { it.width <= 1280 && it.height <= 1280 }.ifEmpty { sizes }
+        val same = capped.filter { kotlin.math.abs(it.width.toFloat() / it.height - aspect) < 0.02f }
+        return (same.ifEmpty { capped }).maxByOrNull { it.width.toLong() * it.height }
     }
 
     companion object {

@@ -30,6 +30,7 @@ import io.github.whoissaaif.mycam.ui.DimScreen
 import io.github.whoissaaif.mycam.ui.FirstRun
 import io.github.whoissaaif.mycam.ui.FirstRunScreen
 import io.github.whoissaaif.mycam.ui.ScreenActions
+import io.github.whoissaaif.mycam.ui.SplashGate
 import io.github.whoissaaif.mycam.ui.WebcamScreen
 import io.github.whoissaaif.mycam.ui.theme.MycamTheme
 import kotlinx.coroutines.delay
@@ -52,6 +53,15 @@ class MainActivity : ComponentActivity() {
 
     /** First-run cards (redesign.md 5.7): until the first connection, or Skip for this launch. */
     private var firstRun by mutableStateOf(false)
+
+    /** The splash (redesign-v2.md 3.2): about a second on every launch, never on a recreation. */
+    private var splash by mutableStateOf(true)
+
+    /** Settings > Preview: show the camera on this phone (persisted, default on). */
+    private var previewOn by mutableStateOf(true)
+
+    /** The activity is resumed: with the Dim screen, this decides whether a preview may run at all. */
+    private var resumed = false
 
     private val requestPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -95,6 +105,9 @@ class MainActivity : ComponentActivity() {
         WebcamService.showIdleCamera(WebcamService.loadCameraSettings(prefs))
         WebcamService.showPairedPcs(PairedPcs(prefs).list())
         autoDim = prefs.getBoolean(WebcamService.PREF_AUTO_DIM, true)
+        previewOn = prefs.getBoolean(WebcamService.PREF_PREVIEW, true)
+        PhonePreview.setOn(previewOn)
+        splash = savedInstanceState == null
         // First run: shown once, to a new user. Skip, Got it and the first connection end it for good.
         firstRun = FirstRun.shouldShow(prefs) && savedInstanceState?.getBoolean(STATE_FIRST_RUN_HIDDEN) != true
         ContextCompat.registerReceiver(
@@ -103,7 +116,7 @@ class MainActivity : ComponentActivity() {
         val actions = ScreenActions(
             onFacing = ::setFacing, onPause = ::setPaused, onCommand = ::sendCommand, onDim = { dimmed = true },
             onWireless = ::setWireless, onAnswerPc = ::answerPc, onForgetPc = ::forgetPc, onForgetAllPcs = ::forgetPcs,
-            onScan = ::scanForPcs,
+            onScan = ::scanForPcs, onPreview = ::changePreview,
             onAutoDim = ::changeAutoDim, onDismissTimedOut = WebcamService::dismissPairingTimedOut,
         )
         setContent {
@@ -124,6 +137,8 @@ class MainActivity : ComponentActivity() {
                     window.attributes = window.attributes.apply {
                         screenBrightness = if (dimmed) DIM_BRIGHTNESS else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
                     }
+                    // No preview surface runs behind the Dim screen (redesign-v2.md 6.1); waking brings it back.
+                    updatePreviewVisible()
                 }
                 // The first successful connection ends the first-run cards for good.
                 LaunchedEffect(state.connected) {
@@ -132,13 +147,17 @@ class MainActivity : ComponentActivity() {
                         firstRun = false
                     }
                 }
-                when {
-                    dimmed -> DimScreen(state)
-                    firstRun && !state.connected && state.pendingPc == null && state.pairingTimedOut == null -> FirstRunScreen(onDone = {
-                        FirstRun.done(prefs)
-                        firstRun = false
-                    })
-                    else -> WebcamScreen(state = state, actions = actions, autoDim = autoDim)
+                // The splash shows over everything for about a second, then fades and lifts into the app
+                // while the hills photo stays put. The setup cards still appear only once.
+                SplashGate(show = splash, onDone = { splash = false }) {
+                    when {
+                        dimmed -> DimScreen(state)
+                        firstRun && !state.connected && state.pendingPc == null && state.pairingTimedOut == null -> FirstRunScreen(onDone = {
+                            FirstRun.done(prefs)
+                            firstRun = false
+                        })
+                        else -> WebcamScreen(state = state, actions = actions, autoDim = autoDim, previewOn = previewOn)
+                    }
                 }
             }
         }
@@ -158,6 +177,22 @@ class MainActivity : ComponentActivity() {
         }
         return super.dispatchTouchEvent(ev)
     }
+
+    override fun onResume() {
+        super.onResume()
+        resumed = true
+        updatePreviewVisible()
+    }
+
+    override fun onPause() {
+        resumed = false
+        // Off in the background (redesign-v2.md 6.1), before the window goes away.
+        updatePreviewVisible()
+        super.onPause()
+    }
+
+    /** The preview may only run while the app is in front and the screen isn't dimmed. */
+    private fun updatePreviewVisible() = PhonePreview.setAppVisible(resumed && !dimmed)
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -290,6 +325,13 @@ class MainActivity : ComponentActivity() {
             Intent(this, WebcamService::class.java).setAction(WebcamService.ACTION_FORGET_PCS)
                 .putExtra(WebcamService.EXTRA_PC_ID, id)
         )
+    }
+
+    /** Settings / Camera: the phone's own preview on or off (persisted; the service picks it up). */
+    private fun changePreview(on: Boolean) {
+        previewOn = on
+        PhonePreview.setOn(on)
+        getSharedPreferences(WebcamService.PREFS, MODE_PRIVATE).edit { putBoolean(WebcamService.PREF_PREVIEW, on) }
     }
 
     private fun changeAutoDim(on: Boolean) {
