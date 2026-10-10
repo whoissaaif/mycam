@@ -77,6 +77,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 
 | Version | Date | What changed |
 |---|---|---|
+| 1.4.0-beta4 | 2026-10-11 | Windows XP (Luna) redesign of both apps, new camera logo, hills artwork, PC live preview, scan buttons, screen-reader support, Wi-Fi pairing dialog. |
 | 1.3.3 | 2026-10-10 | Hotfix: the 1.3.2 phone app crashed on launch (R8 packageScope); clearer frame-rate hint. |
 | 1.3.2 | 2026-10-10 | 30/60/120 fps per quality (high-speed capture), no-UAC phone setup, dim screen + heat warning, lower phone latency, 4K bitrate fixes. |
 | 1.3.1 | 2026-10-09 | Quality & 60 fps, camera controls + Auto, crop to fill, adaptive streaming, lower PC latency (protocol v3). |
