@@ -195,6 +195,40 @@ public static class LunaFx {
         return b;
     }
 
+    // Multiply dst's alpha by the inverse of mask's alpha (cut a shape out of a layer).
+    public static void CutAlpha(Bitmap dst, Bitmap mask) {
+        int[] d = Read(dst), m = Read(mask);
+        for (int i = 0; i < d.Length; i++) {
+            int a = ((d[i] >> 24) & 255) * (255 - ((m[i] >> 24) & 255)) / 255;
+            d[i] = (d[i] & 0xFFFFFF) | (a << 24);
+        }
+        Write(dst, d);
+    }
+
+    // Multiply the colour of every pixel by `f` (darkens a backdrop without touching alpha).
+    public static void Scale(Bitmap b, float f) {
+        int[] px = Read(b);
+        for (int i = 0; i < px.Length; i++) {
+            int p = px[i];
+            px[i] = Pack((p >> 24) & 255, Clamp(((p >> 16) & 255) * f), Clamp(((p >> 8) & 255) * f), Clamp((p & 255) * f));
+        }
+        Write(b, px);
+    }
+
+    // The bounding box of the pixels whose alpha is above `minAlpha`, as x, y, w, h (w = 0 if empty).
+    public static int[] AlphaBounds(Bitmap b, int minAlpha) {
+        int w = b.Width, h = b.Height;
+        int[] px = Read(b);
+        int x0 = w, y0 = h, x1 = -1, y1 = -1;
+        for (int y = 0; y < h; y++) for (int x = 0; x < w; x++) {
+            if (((px[y * w + x] >> 24) & 255) <= minAlpha) continue;
+            if (x < x0) x0 = x; if (x > x1) x1 = x;
+            if (y < y0) y0 = y; if (y > y1) y1 = y;
+        }
+        if (x1 < 0) return new int[] { 0, 0, 0, 0 };
+        return new int[] { x0, y0, x1 - x0 + 1, y1 - y0 + 1 };
+    }
+
     // Multiply src's alpha by mask's alpha (clip a soft layer to a shape).
     public static void MaskAlpha(Bitmap src, Bitmap mask) {
         int[] s = Read(src), m = Read(mask);
@@ -793,15 +827,77 @@ function Paint-Hills([int]$w, [int]$h, [switch]$Morning, [bool]$Clouds = $true, 
     [LunaFx]::Over($bmp, $hills, 1.0)
     $hills.Dispose()
 
-    if ($Morning) {
-        # Early morning: paler, softer, with a faint warm haze low in the sky.
-        [LunaFx]::Desaturate($bmp, 0.16, 0.13)
-        $hz2, $zg = New-Canvas $w $h
-        $hb = Linear-Brush (RectF 0 ($h * ($hz - 0.3)) $w ($h * 0.45)) (C 0 0 0 0) (C 0 0 0 0) 90 ([single[]]@(0, 0.6, 1)) @((C 0 255 236 205), (C 70 255 236 205), (C 0 255 236 205))
-        $zg.FillRectangle($hb, 0, 0, $w, $h); $hb.Dispose(); $zg.Dispose()
-        [LunaFx]::Atop($bmp, $hz2, 1.0); $hz2.Dispose()
-    }
+    if ($Morning) { Tint-Morning $bmp $hz }
     $bmp
+}
+
+# Early morning: paler, softer, with a faint warm haze low in the sky. Used by the procedural scene and
+# by the photo scene, so both "morning" variants match.
+function Tint-Morning([System.Drawing.Bitmap]$bmp, [double]$horizon = 0.58) {
+    $w = $bmp.Width; $h = $bmp.Height
+    [LunaFx]::Desaturate($bmp, 0.16, 0.13)
+    $hz2, $zg = New-Canvas $w $h
+    $hb = Linear-Brush (RectF 0 ($h * ($horizon - 0.3)) $w ($h * 0.45)) (C 0 0 0 0) (C 0 0 0 0) 90 ([single[]]@(0, 0.6, 1)) @((C 0 255 236 205), (C 70 255 236 205), (C 0 255 236 205))
+    $zg.FillRectangle($hb, 0, 0, $w, $h); $hb.Dispose(); $zg.Dispose()
+    [LunaFx]::Atop($bmp, $hz2, 1.0); $hz2.Dispose()
+}
+
+# =====================================================================================================
+#  The hills photograph (design\assets\source\hills-photo.png)
+# =====================================================================================================
+
+$script:LunaPhoto = $null
+
+# The source photo, loaded once per session from its bytes (so the file is never left locked).
+function Get-HillsPhoto {
+    if (-not $script:LunaPhoto) {
+        $path = Join-Path (Split-Path $PSScriptRoot -Parent) 'assets\source\hills-photo.png'
+        $ms = New-Object System.IO.MemoryStream (, [System.IO.File]::ReadAllBytes($path))
+        $script:LunaPhoto = [System.Drawing.Bitmap]::FromStream($ms)
+    }
+    $script:LunaPhoto
+}
+
+# The photo scaled to cover w x h and cropped (anchor 0 = top / left, 1 = bottom / right), optionally
+# blurred (sigma given for 720p and scaled with the height) and tinted for the morning variant.
+#   The default vertical anchor puts the horizon at about 57 % of the frame, where the XP scene had it.
+#   `zoom` above 1 crops in further, which is how a tall panel keeps a gentle horizon instead of a slice.
+function Photo-Scene([int]$w, [int]$h, [switch]$Morning, [double]$blur = 0, [double]$anchorY = 0.68, [double]$anchorX = 0.5, [double]$zoom = 1) {
+    $src = Get-HillsPhoto
+    $scale = [Math]::Max($w / [double]$src.Width, $h / [double]$src.Height) * $zoom
+    $sw = [int][Math]::Ceiling($src.Width * $scale); $sh = [int][Math]::Ceiling($src.Height * $scale)
+    $bmp, $g = New-Canvas $w $h $false
+    $g.InterpolationMode = 'HighQualityBicubic'; $g.PixelOffsetMode = 'HighQuality'
+    $g.CompositingQuality = 'HighQuality'; $g.SmoothingMode = 'AntiAlias'
+    $ia = New-Object System.Drawing.Imaging.ImageAttributes
+    $ia.SetWrapMode([System.Drawing.Drawing2D.WrapMode]::TileFlipXY)   # no dark fringe along the edges
+    $dst = New-Object System.Drawing.Rectangle ([int][Math]::Round(-($sw - $w) * $anchorX)), ([int][Math]::Round(-($sh - $h) * $anchorY)), $sw, $sh
+    $g.DrawImage($src, $dst, 0, 0, $src.Width, $src.Height, [System.Drawing.GraphicsUnit]::Pixel, $ia)
+    $ia.Dispose(); $g.Dispose()
+    if ($blur -gt 0) { [LunaFx]::Blur($bmp, $blur * $h / 720.0) }
+    if ($Morning) { Tint-Morning $bmp }
+    $bmp
+}
+
+# Saves a JPEG at the given quality (GDI+ has no shorthand for this).
+function Save-Jpeg([System.Drawing.Bitmap]$bmp, [string]$path, [int]$quality) {
+    $codec = [System.Drawing.Imaging.ImageCodecInfo]::GetImageEncoders() | Where-Object { $_.MimeType -eq 'image/jpeg' }
+    $ps = New-Object System.Drawing.Imaging.EncoderParameters 1
+    $ps.Param[0] = New-Object System.Drawing.Imaging.EncoderParameter ([System.Drawing.Imaging.Encoder]::Quality), ([int64]$quality)
+    New-Item -ItemType Directory -Force (Split-Path $path) | Out-Null
+    $rgb = To-Rgb24 $bmp
+    $rgb.Save($path, $codec, $ps)
+    $rgb.Dispose(); $ps.Dispose()
+    (Get-Item $path).Length
+}
+
+# Saves a JPEG that fits `maxBytes`, dropping the quality a step at a time. Returns "quality/bytes".
+function Save-JpegUnder([System.Drawing.Bitmap]$bmp, [string]$path, [int]$maxBytes, [int[]]$qualities = @(88, 85, 82, 78, 74, 70)) {
+    foreach ($q in $qualities) {
+        $size = Save-Jpeg $bmp $path $q
+        if ($size -le $maxBytes) { return "q$q, $([Math]::Round($size / 1KB)) KB" }
+    }
+    "q$($qualities[-1]), $([Math]::Round((Get-Item $path).Length / 1KB)) KB (over budget)"
 }
 
 # =====================================================================================================
@@ -862,4 +958,193 @@ function Draw-SoftText([System.Drawing.Bitmap]$bmp, [string]$text, $font, $color
     $g.TextRenderingHint = 'AntiAlias'
     $b = New-Object System.Drawing.SolidBrush($color)
     $g.DrawString($text, $font, $b, [single]$x, [single]$y); $b.Dispose(); $g.Dispose()
+}
+
+# Typographic string format that keeps spaces (GDI+ trims them by default when measuring).
+function Typo-Format() {
+    $f = New-Object System.Drawing.StringFormat ([System.Drawing.StringFormat]::GenericTypographic)
+    $f.FormatFlags = $f.FormatFlags -bor [System.Drawing.StringFormatFlags]::MeasureTrailingSpaces
+    , $f
+}
+
+function Measure-Spaced($g, [string]$text, $font, [double]$spacing) {
+    $fmt = Typo-Format
+    $total = 0.0
+    foreach ($ch in $text.ToCharArray()) {
+        $total += $g.MeasureString([string]$ch, $font, [System.Drawing.PointF]::Empty, $fmt).Width + $spacing
+    }
+    $fmt.Dispose()
+    if ($text.Length -gt 0) { $total - $spacing } else { 0.0 }
+}
+
+function Draw-SpacedOn($g, [string]$text, $font, $brush, [double]$x, [double]$y, [double]$spacing) {
+    $fmt = Typo-Format
+    foreach ($ch in $text.ToCharArray()) {
+        $s = [string]$ch
+        $g.DrawString($s, $font, $brush, [single]$x, [single]$y, $fmt)
+        $x += $g.MeasureString($s, $font, [System.Drawing.PointF]::Empty, $fmt).Width + $spacing
+    }
+    $fmt.Dispose()
+}
+
+# Letter-spaced text centred on `centerX`, with the soft shadow that keeps light type readable over
+# imagery. Returns the width it drew.
+function Draw-SpacedText([System.Drawing.Bitmap]$bmp, [string]$text, $font, $color, [double]$centerX, [double]$y, [double]$spacing, [double]$blur = 3, [int]$shadowAlpha = 150) {
+    $mg = [System.Drawing.Graphics]::FromImage($bmp); $mg.TextRenderingHint = 'AntiAlias'
+    $w = Measure-Spaced $mg $text $font $spacing
+    $mg.Dispose()
+    $x = $centerX - $w / 2
+    $sh, $sg = New-Canvas $bmp.Width $bmp.Height
+    $sg.TextRenderingHint = 'AntiAlias'
+    $b = New-Object System.Drawing.SolidBrush((C $shadowAlpha 8 26 56))
+    Draw-SpacedOn $sg $text $font $b ($x + 1) ($y + 2) $spacing
+    $b.Dispose(); $sg.Dispose()
+    [LunaFx]::Blur($sh, $blur)
+    [LunaFx]::Over($bmp, $sh, 1.0); $sh.Dispose()
+    $g = [System.Drawing.Graphics]::FromImage($bmp); Set-Quality $g; $g.TextRenderingHint = 'AntiAlias'
+    $b = New-Object System.Drawing.SolidBrush($color)
+    Draw-SpacedOn $g $text $font $b $x $y $spacing
+    $b.Dispose(); $g.Dispose()
+    $w
+}
+
+# The "video off" glyph of the paused picture: a camcorder (rounded body plus a lens horn) with a slash
+# across it, the slash separated from the body by a clean gap. Drawn into its own layer so the gap can be
+# cut out of the shape rather than painted over it. `w` is the full width, including the slash overhang.
+function Draw-CamcorderOff([System.Drawing.Bitmap]$dst, [double]$cx, [double]$cy, [double]$w, $color, [double]$opacity = 1.0) {
+    $layer, $g = New-Canvas $dst.Width $dst.Height
+    $bw = $w * 0.60; $bh = $w * 0.42; $r = $w * 0.075
+    $bx = $cx - $w * 0.45; $by = $cy - $bh / 2
+    $body = RoundRect-Path $bx $by $bw $bh $r
+    Fill-Solid $g $body $color; $body.Dispose()
+    # Lens horn: a triangle whose point meets the body, flat edge outwards.
+    $gap = $w * 0.025
+    $hx = $bx + $bw + $gap; $hw = $w * 0.19; $hh = $w * 0.30
+    $horn = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $horn.AddPolygon([System.Drawing.PointF[]]@((PtF $hx $cy), (PtF ($hx + $hw) ($cy - $hh / 2)), (PtF ($hx + $hw) ($cy + $hh / 2))))
+    Fill-Solid $g $horn $color; $horn.Dispose()
+    $g.Dispose()
+
+    # Cut the gap, then lay the slash into it.
+    $d = $w * 0.42; $k = 0.72          # the slash runs a little flatter than 45 degrees
+    $p1 = PtF ($cx - $d) ($cy - $d * $k); $p2 = PtF ($cx + $d) ($cy + $d * $k)
+    $stroke = [Math]::Max(1.5, $w * 0.072)
+    $cut, $cg = New-Canvas $dst.Width $dst.Height
+    $pen = New-Object System.Drawing.Pen($color, [single]($stroke + 2 * $w * 0.028))
+    $pen.StartCap = 'Round'; $pen.EndCap = 'Round'
+    $cg.DrawLine($pen, $p1, $p2); $pen.Dispose(); $cg.Dispose()
+    [LunaFx]::CutAlpha($layer, $cut); $cut.Dispose()
+    $g = [System.Drawing.Graphics]::FromImage($layer); Set-Quality $g
+    $pen = New-Object System.Drawing.Pen($color, [single]$stroke)
+    $pen.StartCap = 'Round'; $pen.EndCap = 'Round'
+    $g.DrawLine($pen, $p1, $p2); $pen.Dispose(); $g.Dispose()
+
+    [LunaFx]::Over($dst, $layer, [single]$opacity)
+    $layer.Dispose()
+}
+
+# =====================================================================================================
+#  The mark as a silhouette: one geometry for every outline asset
+# =====================================================================================================
+
+# The hill inside the lens (same curve as Draw-LensScene's front hill), as a path to clip to the glass.
+function Mark-HillPath([double]$cx, [double]$cy, [double]$r) {
+    $p = New-Object System.Drawing.Drawing2D.GraphicsPath
+    $p.AddBezier((PtF ($cx - 1.2 * $r) ($cy + 0.28 * $r)), (PtF ($cx - 0.6 * $r) ($cy - 0.42 * $r)), (PtF ($cx - 0.1 * $r) ($cy - 0.38 * $r)), (PtF ($cx + 0.35 * $r) ($cy + 0.02 * $r)))
+    $p.AddBezier((PtF ($cx + 0.35 * $r) ($cy + 0.02 * $r)), (PtF ($cx + 0.62 * $r) ($cy + 0.22 * $r)), (PtF ($cx + 0.85 * $r) ($cy + 0.18 * $r)), (PtF ($cx + 1.2 * $r) ($cy + 0.06 * $r)))
+    $p.AddLine((PtF ($cx + 1.2 * $r) ($cy + 0.06 * $r)), (PtF ($cx + 1.2 * $r) ($cy + 1.3 * $r)))
+    $p.AddLine((PtF ($cx + 1.2 * $r) ($cy + 1.3 * $r)), (PtF ($cx - 1.2 * $r) ($cy + 1.3 * $r)))
+    $p.CloseFigure()
+    , $p
+}
+
+# The silhouette of the "Snap" mark in an s x s box at (ox, oy), as named GraphicsPaths. Every outline
+# asset (the themed icon, the notification icon, the preview sheet) is built from these, so the body
+# proportions, the corner radius and the lens position can never drift from the colour logo: they all
+# come from Camera-Geometry.
+#   body    body outline with the lens opening cut out (even-odd)
+#   bezel   the ring around the glass (even-odd)
+#   glass   the circle the hill is clipped to
+#   hill    the hill inside the glass
+#   shutter the shutter button on top
+#   light   the "on" light
+function Mark-Paths([double]$s, [double]$ox = 0, [double]$oy = 0) {
+    $k = Camera-Geometry $s $ox $oy
+    $ln = [Math]::Max(1.0, $s * 0.028)
+    $m = @{}
+    $body = RoundRect-Path $k.bx $k.by $k.bw $k.bh $k.br
+    $body.AddPath((Circle-Path $k.cx $k.cy $k.R), $false)
+    $body.FillMode = 'Alternate'
+    $m.body = $body
+    $bezel = Circle-Path $k.cx $k.cy ($k.R * 0.82)
+    $bezel.AddPath((Circle-Path $k.cx $k.cy ($k.R * 0.63)), $false)
+    $bezel.FillMode = 'Alternate'
+    $m.bezel = $bezel
+    $m.glass = Circle-Path $k.cx $k.cy ($k.R * 0.52)
+    $m.hill = Mark-HillPath $k.cx $k.cy ($k.R * 0.52)
+    $sw = $k.bw * 0.22; $sh = $s * 0.1
+    $m.shutter = RoundRect-Path ($k.bx + $k.bw * 0.66) ($k.by - $s * 0.062) $sw $sh ([Math]::Max(1, $sh * 0.35))
+    $m.light = Circle-Path ($k.bx + $k.bw * 0.86) ($k.by + $k.bh * 0.135) ([Math]::Max(1, $k.bh * 0.075))
+    $m.geometry = $k
+    $m
+}
+
+# The mark's silhouette fitted into a square viewport: 'radius' keeps every pixel inside a circle of that
+# radius (the Android safe zone), 'width' makes the shape that many units wide. The paths come back
+# already transformed, ready to fill with GDI+ or to write out as android:pathData.
+function Mark-Silhouette([double]$viewport, [string]$mode, [double]$value) {
+    $m = Mark-Paths 100 0 0
+    $r = $m.body.GetBounds()
+    foreach ($key in 'shutter', 'light') {
+        $b = $m[$key].GetBounds()
+        $r = [System.Drawing.RectangleF]::Union($r, $b)
+    }
+    $cx = $r.X + $r.Width / 2; $cy = $r.Y + $r.Height / 2
+    $f = if ($mode -eq 'width') { $value / $r.Width }
+         else { $value / [Math]::Sqrt([Math]::Pow($r.Width / 2, 2) + [Math]::Pow($r.Height / 2, 2)) }
+    $mat = New-Object System.Drawing.Drawing2D.Matrix
+    $mat.Translate([single]($viewport / 2), [single]($viewport / 2))
+    $mat.Scale([single]$f, [single]$f)
+    $mat.Translate([single](-$cx), [single](-$cy))
+    foreach ($key in 'shutter', 'body', 'bezel', 'glass', 'hill', 'light') { $m[$key].Transform($mat) }
+    $mat.Dispose()
+    $m
+}
+
+# Fills a Mark-Silhouette into a Graphics in one colour (the themed icon, the notification icon and the
+# audit sheet all draw the same paths).
+function Draw-MarkSilhouette($g, $m, $color, [bool]$withLight = $true) {
+    $b = New-Object System.Drawing.SolidBrush($color)
+    $g.FillPath($b, $m.shutter)
+    $g.FillPath($b, $m.body)
+    $g.FillPath($b, $m.bezel)
+    $st = $g.Save(); $g.SetClip($m.glass)
+    $g.FillPath($b, $m.hill)
+    $g.Restore($st)
+    if ($withLight) { $g.FillPath($b, $m.light) }
+    $b.Dispose()
+}
+
+function Num([double]$v) { $v.ToString('0.###', [System.Globalization.CultureInfo]::InvariantCulture) }
+
+# A GraphicsPath as SVG / android:pathData (M, L, C and z only; GDI+ has already turned arcs into
+# beziers), optionally scaled and shifted into a vector drawable's viewport.
+function Path-To-PathData([System.Drawing.Drawing2D.GraphicsPath]$path, [double]$scale = 1, [double]$dx = 0, [double]$dy = 0) {
+    $pts = $path.PathPoints; $types = $path.PathTypes
+    $sb = New-Object System.Text.StringBuilder
+    $P = { param($i) "$(Num ($pts[$i].X * $scale + $dx)),$(Num ($pts[$i].Y * $scale + $dy))" }
+    $i = 0
+    while ($i -lt $pts.Length) {
+        $kind = $types[$i] -band 7
+        if ($kind -eq 3) {
+            [void]$sb.Append("C$(& $P $i) $(& $P ($i + 1)) $(& $P ($i + 2))")
+            $i += 3
+        } else {
+            [void]$sb.Append($(if ($kind -eq 0) { 'M' } else { 'L' }))
+            [void]$sb.Append((& $P $i))
+            $i++
+        }
+        if (($types[$i - 1] -band 128) -ne 0) { [void]$sb.Append('z') }
+    }
+    $sb.ToString()
 }
