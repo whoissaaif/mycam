@@ -13,8 +13,9 @@ $artDir = Join-Path $root 'installer\art'
 New-Item -ItemType Directory -Force $artDir | Out-Null
 
 function Wizard-Image([int]$w, [int]$h) {
-    # Tall panel: lots of sky, the hills along the bottom third.
-    $bmp = Paint-Hills $w $h -horizon 0.7
+    # Tall panel: lots of sky, the grass along the bottom third. Cropped from the hills photograph, zoomed
+    # in a little so the panel gets a gentle slope rather than a narrow slice of it.
+    $bmp = Photo-Scene $w $h -zoom 1.3 -anchorY 0.05
     $g = [System.Drawing.Graphics]::FromImage($bmp); Set-Quality $g
     $s = [int]($w * 0.7); $x = [int](($w - $s) / 2); $y = [int]($h * 0.13)
     $cam = Render-Icon $s 'ready'

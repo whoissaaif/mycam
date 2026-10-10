@@ -27,8 +27,8 @@ function Store-Icon([int]$s) {
 
 # --- 1024 x 500 feature graphic --------------------------------------------------------------------
 function Feature-Graphic([int]$w, [int]$h) {
-    # Clouds kept clear of the title block on the right.
-    $bmp = Paint-Hills $w $h -horizon 0.66 -CloudLayout @(@(0.05, 0.22, 0.13), @(0.33, 0.13, 0.11), @(0.95, 0.12, 0.10), @(0.93, 0.6, 0.08), @(0.17, 0.60, 0.07))
+    # The hills photograph, cropped to the banner shape.
+    $bmp = Photo-Scene $w $h -anchorY 0.40
     $g = [System.Drawing.Graphics]::FromImage($bmp); Set-Quality $g
 
     # Camera on the left third.
