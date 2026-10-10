@@ -134,7 +134,7 @@ class MainActivity : ComponentActivity() {
                 }
                 when {
                     dimmed -> DimScreen(state)
-                    firstRun && !state.connected && state.pendingPc == null -> FirstRunScreen(onDone = {
+                    firstRun && !state.connected && state.pendingPc == null && state.pairingTimedOut == null -> FirstRunScreen(onDone = {
                         FirstRun.done(prefs)
                         firstRun = false
                     })
