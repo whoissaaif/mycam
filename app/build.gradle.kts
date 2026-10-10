@@ -22,8 +22,8 @@ android {
         applicationId = "io.github.whoissaaif.mycam"
         minSdk = 24
         targetSdk = 37
-        versionCode = 9
-        versionName = "1.4.0-beta3"
+        versionCode = 10
+        versionName = "1.4.0-beta4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
