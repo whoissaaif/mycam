@@ -2,6 +2,7 @@ package io.github.whoissaaif.mycam
 
 import android.content.SharedPreferences
 import android.util.Base64
+import androidx.core.content.edit
 import java.io.ByteArrayOutputStream
 import java.io.DataInputStream
 import java.io.DataOutputStream
@@ -161,6 +162,9 @@ class WifiHandshake(
     }
 }
 
+/** A paired PC as the UI shows it: [id] is the hex PC id (the storage key), [name] its name. */
+data class PairedPc(val id: String, val name: String)
+
 /** PCs this phone has paired with: their id, pairing key and name (app-private preferences). */
 class PairedPcs(private val prefs: SharedPreferences) {
     fun key(pcId: ByteArray): ByteArray? =
@@ -170,7 +174,17 @@ class PairedPcs(private val prefs: SharedPreferences) {
         prefs.edit().putString(PREFIX + hex(pcId), Base64.encodeToString(key, Base64.NO_WRAP) + "|" + name).apply()
     }
 
-    fun names(): List<String> = prefs.all.filterKeys { it.startsWith(PREFIX) }.values.map { (it as String).substringAfter('|') }
+    fun names(): List<String> = list().map { it.name }
+
+    /** Every paired PC, sorted by name. */
+    fun list(): List<PairedPc> = prefs.all.filterKeys { it.startsWith(PREFIX) }
+        .map { (k, v) -> PairedPc(k.removePrefix(PREFIX), (v as String).substringAfter('|')) }
+        .sortedBy { it.name.lowercase() }
+
+    /** Forgets one PC (by [PairedPc.id]): it has to pair again, with a code, next time. */
+    fun forget(id: String) {
+        prefs.edit { remove(PREFIX + id) }
+    }
 
     fun forgetAll() {
         prefs.edit().apply { prefs.all.keys.filter { it.startsWith(PREFIX) }.forEach { remove(it) } }.apply()

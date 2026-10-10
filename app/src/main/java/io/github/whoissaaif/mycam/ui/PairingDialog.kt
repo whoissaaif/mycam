@@ -1,0 +1,248 @@
+package io.github.whoissaaif.mycam.ui
+
+import android.os.SystemClock
+import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.paneTitle
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import io.github.whoissaaif.mycam.R
+import io.github.whoissaaif.mycam.WebcamService
+import io.github.whoissaaif.mycam.ui.theme.PairingCodeStyle
+import io.github.whoissaaif.mycam.ui.theme.Xp
+import io.github.whoissaaif.mycam.ui.xp.XpButton
+import io.github.whoissaaif.mycam.ui.xp.XpDialogFrame
+import io.github.whoissaaif.mycam.ui.xp.XpProgressBar
+import io.github.whoissaaif.mycam.ui.xp.motionMs
+import kotlinx.coroutines.delay
+import java.util.Locale
+
+/**
+ * A modal layer: a 40 % dim over the (blurred, see WebcamScreen) screen and a dialog that fades in and rises
+ * 16 dp (redesign.md 6.2 / 6.3). Touches never reach the screen behind.
+ */
+@Composable
+fun ModalLayer(visible: Boolean, content: @Composable () -> Unit) {
+    val rise = with(LocalDensity.current) { 16.dp.roundToPx() }
+    AnimatedVisibility(
+        visible = visible,
+        enter = fadeIn(tween(motionMs(220))),
+        exit = fadeOut(tween(motionMs(150))),
+    ) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.4f))
+                .clickable(remember { MutableInteractionSource() }, indication = null, onClick = {})
+                .windowInsetsPadding(WindowInsets.safeDrawing)
+                .padding(16.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(Modifier.animateEnterExit(enter = slideInVertically(tween(motionMs(220))) { rise })) { content() }
+        }
+    }
+}
+
+/**
+ * Pairing a new PC over Wi-Fi (A3, redesign.md 5.5): the code in big digits, a green bar counting down the
+ * handshake timeout, Don't allow and Allow (the default button). When the time runs out it says so.
+ */
+@Composable
+fun PairingDialog(
+    pcName: String?,
+    code: String?,
+    deadline: Long,
+    timedOut: Boolean,
+    onAnswer: (Boolean) -> Unit,
+    onDismissTimedOut: () -> Unit,
+) {
+    // Keep the last values while the dialog fades out.
+    var lastName by remember { mutableStateOf("") }
+    var lastCode by remember { mutableStateOf("") }
+    if (pcName != null) lastName = pcName
+    if (code != null) lastCode = code
+    val visible = pcName != null
+
+    BackHandler(enabled = visible) { if (timedOut) onDismissTimedOut() else onAnswer(false) }
+
+    ModalLayer(visible) {
+        val title = stringResource(R.string.pair_dialog_title)
+        XpDialogFrame(
+            title = title,
+            onClose = { if (timedOut) onDismissTimedOut() else onAnswer(false) },
+            modifier = Modifier.semantics { paneTitle = title },
+        ) {
+            if (timedOut) {
+                Text(
+                    stringResource(R.string.pair_timed_out), style = MaterialTheme.typography.titleLarge, color = Xp.Text,
+                    modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(stringResource(R.string.pair_timed_out_detail, lastName), style = MaterialTheme.typography.bodyMedium, color = Xp.Subtle)
+                Spacer(Modifier.height(16.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    XpButton(stringResource(R.string.close), onClick = onDismissTimedOut, isDefault = true)
+                }
+            } else {
+                PairingBody(lastName, lastCode, deadline, onAnswer)
+            }
+        }
+    }
+}
+
+@Composable
+private fun PairingBody(pcName: String, code: String, deadline: Long, onAnswer: (Boolean) -> Unit) {
+    var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
+    LaunchedEffect(deadline) {
+        while (true) {
+            now = SystemClock.elapsedRealtime()
+            delay(250)
+        }
+    }
+    val total = WebcamService.PAIRING_TIMEOUT_MS
+    val remaining = if (deadline == 0L) total else (deadline - now).coerceIn(0L, total)
+    val seconds = ((remaining + 999) / 1000).toInt()
+
+    Row(verticalAlignment = Alignment.Top) {
+        Shield(Modifier.size(40.dp))
+        Spacer(Modifier.width(12.dp))
+        Text(stringResource(R.string.pair_question, pcName), style = MaterialTheme.typography.titleLarge, color = Xp.Text)
+    }
+    Spacer(Modifier.height(12.dp))
+    Text(stringResource(R.string.pair_check), style = MaterialTheme.typography.bodyMedium, color = Xp.Text)
+    val shown = WebcamService.formatCode(code)
+    Text(
+        shown, style = PairingCodeStyle, color = Xp.Text, textAlign = TextAlign.Center,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+            // TalkBack reads the code digit by digit.
+            .clearAndSetSemantics { contentDescription = code.toCharArray().joinToString(" ") },
+    )
+    Text(stringResource(R.string.pair_differ), style = MaterialTheme.typography.bodyMedium, color = Xp.Subtle)
+    Spacer(Modifier.height(12.dp))
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        XpProgressBar(remaining.toFloat() / total, Modifier.weight(1f))
+        Spacer(Modifier.width(10.dp))
+        Text(
+            stringResource(R.string.pair_waiting, String.format(Locale.US, "%d:%02d", seconds / 60, seconds % 60)),
+            style = MaterialTheme.typography.bodyMedium, color = Xp.Subtle,
+        )
+    }
+    Spacer(Modifier.height(16.dp))
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End)) {
+        XpButton(stringResource(R.string.wireless_deny), onClick = { onAnswer(false) })
+        XpButton(stringResource(R.string.wireless_allow), onClick = { onAnswer(true) }, isDefault = true)
+    }
+}
+
+/** A generic security shield (blue, with a white check). Drawn here; not Windows artwork. */
+@Composable
+private fun Shield(modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val w = size.width
+        val h = size.height
+        val p = Path().apply {
+            moveTo(w * 0.5f, h * 0.04f)
+            cubicTo(w * 0.68f, h * 0.14f, w * 0.84f, h * 0.16f, w * 0.94f, h * 0.16f)
+            cubicTo(w * 0.94f, h * 0.6f, w * 0.78f, h * 0.84f, w * 0.5f, h * 0.97f)
+            cubicTo(w * 0.22f, h * 0.84f, w * 0.06f, h * 0.6f, w * 0.06f, h * 0.16f)
+            cubicTo(w * 0.16f, h * 0.16f, w * 0.32f, h * 0.14f, w * 0.5f, h * 0.04f)
+            close()
+        }
+        drawPath(p, Brush.verticalGradient(listOf(Color(0xFF5A9BF5), Color(0xFF1B4FB8))))
+        drawPath(p, Color(0xFF0E3A8C), style = Stroke(1.5.dp.toPx()))
+        val check = Path().apply {
+            moveTo(w * 0.3f, h * 0.5f)
+            lineTo(w * 0.45f, h * 0.65f)
+            lineTo(w * 0.72f, h * 0.36f)
+        }
+        drawPath(check, Color.White, style = Stroke(w * 0.1f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        drawCircle(Color.White.copy(alpha = 0.25f), w * 0.22f, Offset(w * 0.38f, h * 0.3f))
+    }
+}
+
+/** The licence text of the shipped fonts (About > Licences). */
+@Composable
+fun LicenceDialog(visible: Boolean, onClose: () -> Unit) {
+    val context = LocalContext.current
+    val text = remember(visible) {
+        if (!visible) "" else try {
+            context.assets.open("licenses/DejaVu-LICENSE.txt").bufferedReader().use { it.readText() }
+        } catch (_: Exception) {
+            ""
+        }
+    }
+    BackHandler(enabled = visible, onBack = onClose)
+    ModalLayer(visible) {
+        XpDialogFrame(stringResource(R.string.about_licences_title), onClose = onClose) {
+            Text(stringResource(R.string.about_font), style = MaterialTheme.typography.titleMedium, color = Xp.Text)
+            Spacer(Modifier.height(8.dp))
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 360.dp)
+                    .background(Xp.Card)
+                    .verticalScroll(rememberScrollState())
+                    .padding(8.dp),
+            ) {
+                Text(text, style = MaterialTheme.typography.bodyMedium, color = Xp.Text)
+            }
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                XpButton(stringResource(R.string.close), onClick = onClose, isDefault = true)
+            }
+        }
+    }
+}

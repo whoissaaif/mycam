@@ -2,56 +2,106 @@ package io.github.whoissaaif.mycam.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Windows 7 "Aero" design tokens (IMPROVEMENTS.md section 7.2). Shared with the PC settings window
-// (pc/companion/settings_window.cpp), so both apps look like one product.
-object Aero {
-    // Glass frame / header.
-    val GlassTop = Color(0xFFC9DDF3)
-    val GlassMid = Color(0xFFA9C6EA)
-    val GlassBottom = Color(0xFF8FB2DD)
-    val GlassEdge = Color(0xFF3E5F8A)
+// Windows XP "Luna Blue" design tokens (redesign.md section 3.2), tuned for contrast. Shared in spirit with
+// the PC window (pc/companion/settings_window.cpp), so both apps look like one product.
+// Inspiration only: everything is drawn from scratch, no Microsoft artwork.
+object Xp {
+    // Title bar (app header): gloss highlight line, then the blue caption gradient, dark edge.
+    val TitleBarTop = Color(0xFF3D8AF7)
+    val TitleBarGloss = Color(0xFF0A5DEB)
+    val TitleBarMid = Color(0xFF0053E1)
+    val TitleBarBottom = Color(0xFF0047D0)
+    val TitleBarHighlight = Color(0xFF7FB6FF)
+    val TitleBarEdge = Color(0xFF0831D9)
+    val TitleText = Color(0xFFFFFFFF)
+    val TitleShadow = Color(0xFF0A1E78)
 
-    // Content.
-    val Body = Color(0xFFFFFFFF)
-    val CommandArea = Color(0xFFF0F0F0)
-    val CommandLine = Color(0xFFDFDFDF)
-    val Rule = Color(0xFFE2E2E2)
-    val MainInstruction = Color(0xFF003399)
-    val Heading = Color(0xFF1E3287)
+    // Surfaces.
+    val Surface = Color(0xFFECE9D8)
+    val Card = Color(0xFFFFFFFF)
+    val TaskPaneTop = Color(0xFF7BA2E7)
+    val TaskPaneBottom = Color(0xFF6375D6)
+    val Bevel = Color(0xFFACA899)
+
+    // Task groups.
+    val GroupHeaderStart = Color(0xFFFFFFFF)
+    val GroupHeaderEnd = Color(0xFFC6D3F7)
+    val GroupTitle = Color(0xFF215DC6)
+    val GroupHeroStart = Color(0xFF0055E5)
+    val GroupHeroEnd = Color(0xFF2463D6)
+    // Paused hero header. Darker than the spec's #E08A00 so white text keeps 4.5 : 1 (4.7 on the light stop).
+    val GroupPausedStart = Color(0xFFB05F00)
+    val GroupPausedEnd = Color(0xFF8F4C00)
+    val GroupBody = Color(0xFFD6DFF7)
+    val GroupBorder = Color(0xFFFFFFFF)
+
+    // Text.
+    val Selection = Color(0xFF316AC5)
+    val Link = Color(0xFF215DC6)
     val Text = Color(0xFF000000)
-    val Subtle = Color(0xFF5A5A5A)
-    val Link = Color(0xFF0066CC)
+    val Subtle = Color(0xFF4D4D4D)
+    val DisabledText = Color(0xFF8A877A)
+    val WarningText = Color(0xFF8F5200)
 
-    // Buttons: two-tone gloss (top half light, bottom half darker), per state.
-    val ButtonNormal = listOf(Color(0xFFF2F2F2), Color(0xFFEBEBEB), Color(0xFFDDDDDD), Color(0xFFCFCFCF))
-    val ButtonNormalBorder = Color(0xFF707070)
-    val ButtonPressed = listOf(Color(0xFFE5F4FC), Color(0xFFC4E5F6), Color(0xFF98D1EF), Color(0xFF68B3DB))
-    val ButtonPressedBorder = Color(0xFF2C628B)
-    val ButtonDisabled = Color(0xFFF4F4F4)
-    val ButtonDisabledBorder = Color(0xFFADB2B5)
-    val ButtonDisabledText = Color(0xFF838383)
+    // "Go" green (XP Start button). The spec's #3FAA3F top stop is only 2.9 : 1 with white text, so the
+    // light colour is kept to a thin gloss band and the text sits on #2B842B or darker (4.8 : 1 and up).
+    val GoGloss = Color(0xFF5DBE5D)
+    val GoTop = Color(0xFF2B842B)
+    val GoBottom = Color(0xFF226B22)
+    val GoBorder = Color(0xFF1D5E1D)
 
-    // Command link hover/press box (Win7 command links).
-    val CommandLinkFill = Color(0xFFF2F8FD)
-    val CommandLinkBorder = Color(0xFFC6DCF0)
+    // The green progress bar (section 6.1).
+    val ChunkTop = Color(0xFFE2F8E2)
+    val ChunkLight = Color(0xFF6FD86F)
+    val ChunkMid = Color(0xFF2DB52D)
+    val ChunkBottom = Color(0xFF5ACD5A)
+    val ProgressTrack = Color(0xFFFFFFFF)
+    val ProgressBorder = Color(0xFFACA899)
 
-    // "Live" green (Win7 progress bar) and status badges.
-    val LiveTop = Color(0xFF8BE07A)
-    val LiveMid = Color(0xFF37C12B)
-    val LiveLow = Color(0xFF06B025)
-    val LiveBottom = Color(0xFF3CCB47)
-    val LiveBorder = Color(0xFF0A7A1A)
-    val PausedLight = Color(0xFFFFE482)
-    val PausedDark = Color(0xFFD68000)
-    val ResumeLight = Color(0xFF96F078)
-    val ResumeDark = Color(0xFF108C1E)
-    val DimBadgeLight = Color(0xFF7FB6EA)
-    val DimBadgeDark = Color(0xFF123E7A)
+    // Badges (graphics only).
+    val AmberLight = Color(0xFFFFD86A)
+    val AmberDark = Color(0xFFE08A00)
+    val ErrorLight = Color(0xFFFF7B6B)
+    val ErrorDark = Color(0xFFC81E0F)
+    val GoLight = Color(0xFF7BD87B)
+    val GoDark = Color(0xFF21A121)
+    val NightBadgeLight = Color(0xFF7FB6EA)
+    val NightBadgeDark = Color(0xFF123E7A)
 
-    // Dimmed streaming screen: the aurora at night. Mostly black (cool and private on OLED), low-contrast text.
-    val DimTop = Color(0xFF071A33)
-    val DimBottom = Color(0xFF000000)
-    val DimGlow = Color(0xFF0E3A6E)
+    // Push buttons.
+    val ButtonTop = Color(0xFFFFFFFF)
+    val ButtonMid = Color(0xFFECEBE6)
+    val ButtonBottom = Color(0xFFD6D0C5)
+    val ButtonBorder = Color(0xFF003C74)
+    val ButtonHotLight = Color(0xFFFFCF6B)
+    val ButtonHotDark = Color(0xFFE5A01A)
+    val ButtonDefaultLight = Color(0xFFCEE7FF)
+    val ButtonDefaultDark = Color(0xFF6982EE)
+    val ButtonDisabledFill = Color(0xFFF5F4EA)
+    val ButtonDisabledBorder = Color(0xFFC9C7BA)
+
+    // Checkbox and radio.
+    val CheckBorder = Color(0xFF1C5180)
+    val CheckFillTop = Color(0xFFDCDCD7)
+    val CheckMark = Color(0xFF21A121)
+
+    // Property-sheet tabs.
+    val TabBorder = Color(0xFF919B9C)
+    val TabHotLine = Color(0xFFE68B2C)
+    val TabHotLight = Color(0xFFFFC73C)
+    val TabPage = Color(0xFFFCFCFE)
+
+    // Hills (first run) and the hills at night (dim screen).
+    val SkyTop = Color(0xFF3F86E8)
+    val SkyHorizon = Color(0xFFBFE0FF)
+    val HillBack = Color(0xFF8ACB6E)
+    val HillMid = Color(0xFF5DB443)
+    val HillFront = Color(0xFF3E9B2F)
+    val HillFrontLight = Color(0xFF6CC24F)
+    val NightTop = Color(0xFF06142B)
+    val NightBottom = Color(0xFF000000)
+    val NightHill = Color(0xFF0B2414)
+    val NightStar = Color(0xFF9FB4D8)
     val DimText = Color(0xFF8FA6C4)
     val DimSubtle = Color(0xFF51677F)
     val HeatWarm = Color(0xFFFFC94D)

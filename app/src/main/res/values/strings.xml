@@ -11,9 +11,22 @@
     <string name="action_resume">Resume</string>
     <string name="error_open_accessory">Could not open the USB connection. Unplug and plug in again.</string>
 
+    <!-- Tabs and shared bits -->
+    <string name="tab_now">Now</string>
+    <string name="tab_settings">Settings</string>
+    <string name="live">LIVE</string>
+    <string name="live_description">Live: apps on the PC see this camera</string>
+    <string name="working">Working…</string>
+    <string name="close">Close</string>
+    <string name="group_expand">Expand</string>
+    <string name="group_collapse">Collapse</string>
+    <string name="group_expanded">Expanded</string>
+    <string name="group_collapsed">Collapsed</string>
+
     <!-- Status -->
     <string name="status_disconnected">Not connected</string>
-    <string name="status_disconnected_detail">Plug this phone into a PC running MyCam.</string>
+    <string name="status_disconnected_detail">Plug this phone into your PC. Need MyCam for Windows? See Get it.</string>
+    <string name="get_it">Get it</string>
     <string name="status_idle">Ready</string>
     <string name="status_idle_detail">The camera turns on when an app on the PC uses MyCam.</string>
     <string name="status_streaming">Streaming</string>
@@ -21,37 +34,43 @@
     <string name="status_paused_detail">The camera is off. Apps on the PC see a “Camera paused” picture.</string>
     <string name="status_error">Camera problem</string>
 
-    <!-- Actions -->
+    <!-- Hero actions -->
     <string name="action_pause_title">Pause the camera</string>
-    <string name="action_pause_detail">Turns the camera off until you resume, here or on the PC.</string>
+    <string name="action_pause_detail">Apps see “Camera paused” until you resume, here or on the PC.</string>
     <string name="action_resume_title">Resume the camera</string>
     <string name="action_resume_detail">Video comes back as soon as an app on the PC is using MyCam.</string>
 
-    <!-- Camera -->
+    <!-- Camera group -->
     <string name="section_camera">Camera</string>
     <string name="camera_back">Back camera</string>
     <string name="camera_front">Front camera</string>
-    <string name="camera_hint">The camera turns on only while an app on the PC is using it.</string>
-
-    <!-- Video and camera controls -->
-    <string name="section_video">Video</string>
-    <string name="video_fps_hint">60 and 120 fps are smoother but need good light. Rates this camera can’t do are greyed out.</string>
-    <string name="video_fps_unsupported">This camera does 30 fps at this quality.</string>
-    <string name="video_fps_unknown">60 and 120 fps become available once the camera has started, if this phone supports them.</string>
-    <string name="controls_auto">Auto (reset zoom, brightness, focus and torch)</string>
-    <string name="video_actual">Now: %1$s at %2$d fps</string>
-    <string name="section_controls">Camera controls</string>
-    <string name="controls_unknown">Zoom, exposure, focus and torch appear once the camera has started.</string>
-    <string name="control_zoom">Zoom: %1$s</string>
-    <string name="control_exposure">Brightness</string>
+    <string name="controls_unknown">Zoom, brightness, focus and torch appear when an app uses the camera.</string>
+    <string name="control_zoom_value">Zoom: %1$s</string>
+    <string name="zoom_out">Zoom out</string>
+    <string name="zoom_in">Zoom in</string>
+    <string name="control_brightness">Brightness</string>
+    <string name="brightness_down">Darker</string>
+    <string name="brightness_up">Brighter</string>
     <string name="control_focus">Focus</string>
     <string name="focus_auto">Auto</string>
     <string name="focus_lock">Lock</string>
-    <string name="control_torch">Torch (light)</string>
+    <string name="control_torch">Torch (phone light)</string>
+    <string name="controls_reset">Reset</string>
+    <string name="controls_reset_description">Reset zoom, brightness, focus and torch</string>
 
-    <!-- Dimmed streaming screen (IMPROVEMENTS.md 4.1) -->
-    <string name="action_dim_title">Dim the screen</string>
-    <string name="action_dim_detail">Keeps the phone cooler and the screen private. Tap anywhere to wake it.</string>
+    <!-- Video group -->
+    <string name="section_video">Video</string>
+    <string name="video_quality">Quality</string>
+    <string name="video_fps">Frame rate</string>
+    <string name="video_fps_unknown">60 and 120 fps become available once the camera has started, if this phone supports them.</string>
+    <string name="video_fps_only_30">This camera does 30 fps.</string>
+    <string name="video_fps_needs_or_lower">%1$d fps needs %2$s or lower on this camera.</string>
+    <string name="video_fps_needs">%1$d fps needs %2$s on this camera.</string>
+    <string name="video_fps_up_to">Up to %1$d fps at this quality. Faster rates are smoother but need good light.</string>
+    <string name="video_actual">Now: %1$s at %2$d fps</string>
+
+    <!-- Dim screen (IMPROVEMENTS.md 4.1) -->
+    <string name="action_dim">Dim screen</string>
     <string name="dim_title">Streaming to your PC</string>
     <string name="dim_hint">Tap anywhere to wake the screen</string>
     <string name="heat_warm">Your phone is getting warm. A lower quality or taking it out of its case helps.</string>
@@ -61,24 +80,61 @@
     <string name="section_wireless">Wireless (beta)</string>
     <string name="wireless_toggle">Use over Wi-Fi</string>
     <string name="wireless_hint_off">Connect without a cable: the phone and the PC must be on the same Wi-Fi. The cable is faster and charges the phone.</string>
-    <string name="wireless_hint_on">This phone is %1$s. On the PC, turn on “Find phones on Wi-Fi” in MyCam settings.</string>
+    <string name="wireless_hint_on">This phone is %1$s. On the PC, turn on “Find phones on Wi-Fi” in MyCam.</string>
     <string name="wireless_hint_no_wifi">Connect this phone to Wi-Fi (or turn on its hotspot for the PC).</string>
     <string name="wireless_connected">Connected over Wi-Fi to %1$s</string>
-    <string name="wireless_pair_title">Pair with %1$s?</string>
-    <string name="wireless_pair_text">Code %1$s. Check that MyCam on the PC shows the same code, then allow. Paired PCs connect without asking.</string>
-    <string name="wireless_code_label">Code on the PC must be</string>
-    <string name="wireless_paired">Paired: %1$s</string>
-    <string name="wireless_forget">Forget paired PCs</string>
-    <string name="wireless_allow">Allow</string>
-    <string name="wireless_deny">Don’t allow</string>
+    <string name="wifi_status_off">Wi-Fi: off</string>
+    <string name="wifi_status_on">Wi-Fi: on</string>
+    <string name="wifi_status_connected">Wi-Fi: connected</string>
     <string name="channel_wireless">Wireless connection requests</string>
     <string name="notification_title_wireless">MyCam over Wi-Fi is on</string>
     <string name="notification_text_wireless">Waiting for a PC on this Wi-Fi</string>
     <string name="status_wireless_waiting">Waiting for your PC</string>
     <string name="status_wireless_waiting_detail">Over Wi-Fi. The camera turns on when an app on the PC uses MyCam.</string>
-    <string name="footer_wireless">Connected to your PC over Wi-Fi</string>
 
-    <!-- Footer -->
-    <string name="footer_connected">Connected to your PC over USB</string>
-    <string name="footer_disconnected">Not connected</string>
+    <!-- Pairing (dialog and notification) -->
+    <string name="wireless_pair_title">Pair with %1$s?</string>
+    <string name="wireless_pair_text">Code %1$s. Check that MyCam on the PC shows the same code, then allow. Paired PCs connect without asking.</string>
+    <string name="pair_dialog_title">Pair with a PC</string>
+    <string name="pair_question">Allow %1$s to use this camera?</string>
+    <string name="pair_check">Check that the PC shows:</string>
+    <string name="pair_differ">If the codes differ, don’t allow.</string>
+    <string name="pair_waiting">Waiting %1$s</string>
+    <string name="pair_timed_out">Pairing timed out</string>
+    <string name="pair_timed_out_detail">%1$s wasn’t allowed in time. Start again from MyCam on the PC.</string>
+    <string name="wireless_allow">Allow</string>
+    <string name="wireless_deny">Don’t allow</string>
+
+    <!-- Paired PCs -->
+    <string name="section_paired">Paired PCs</string>
+    <string name="paired_none">No PCs yet. A PC asks once, with a code, the first time it connects over Wi-Fi.</string>
+    <string name="paired_forget">Forget</string>
+    <string name="paired_forget_description">Forget %1$s</string>
+    <string name="paired_forget_all">Forget all</string>
+    <string name="paired_hint">A forgotten PC has to pair again, with a code.</string>
+
+    <!-- Phone -->
+    <string name="section_phone">Phone</string>
+    <string name="auto_dim_toggle">Dim the screen automatically while streaming</string>
+    <string name="auto_dim_hint">After 30 seconds without a touch. Tap anywhere to wake it.</string>
+
+    <!-- About -->
+    <string name="section_about">About</string>
+    <string name="about_get_windows">Get MyCam for Windows</string>
+    <string name="about_version">Version %1$s</string>
+    <string name="about_licences">Licences</string>
+    <string name="about_licences_title">Licences</string>
+    <string name="about_font">DejaVu Sans fonts</string>
+
+    <!-- First run (redesign.md 5.7) -->
+    <string name="first_skip">Skip</string>
+    <string name="first_next">Next</string>
+    <string name="first_done">Got it</string>
+    <string name="first_step">Step %1$d of %2$d</string>
+    <string name="first_1_title">Install MyCam on your Windows PC</string>
+    <string name="first_1_text">MyCam for Windows makes this phone a camera that any app can use.</string>
+    <string name="first_2_title">Plug in this phone</string>
+    <string name="first_2_text">Use a USB cable. Tap OK when Android asks, and tick Always.</string>
+    <string name="first_3_title">Pick “MyCam” as the camera in any app</string>
+    <string name="first_3_text">Video calls, streaming or recording: choose MyCam in the app’s camera settings. This phone does the rest.</string>
 </resources>
