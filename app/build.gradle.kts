@@ -54,6 +54,8 @@ android {
     buildFeatures {
         compose = true
     }
+    // Robolectric (the opt-in phone UI snapshots) needs the merged resources.
+    testOptions.unitTests.isIncludeAndroidResources = true
 }
 
 dependencies {
@@ -66,6 +68,9 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     testImplementation(libs.junit)
+    testImplementation(platform(libs.androidx.compose.bom))
+    testImplementation(libs.androidx.compose.ui.test.junit4)
+    testImplementation(libs.robolectric)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)
@@ -77,4 +82,19 @@ dependencies {
 val protocolGolden = rootProject.file("protocol/golden.txt")
 tasks.withType<Test>().configureEach {
     inputs.file(protocolGolden).withPathSensitivity(PathSensitivity.RELATIVE)
+}
+
+// Phone UI snapshots (src/test/.../snapshots) render the screen states to PNGs with Robolectric's native
+// graphics. They're opt-in and record-only (nothing is compared), so a normal test run skips them:
+//   gradlew testDebugUnitTest -Psnapshots --tests "*PhoneSnapshots*"
+// The PNGs land in app/build/snapshots.
+val snapshots = providers.gradleProperty("snapshots").isPresent
+val snapshotDir = layout.buildDirectory.dir("snapshots").get().asFile.absolutePath
+tasks.withType<Test>().configureEach {
+    if (snapshots) {
+        systemProperty("mycam.snapshots", snapshotDir)
+        outputs.upToDateWhen { false }
+    } else {
+        exclude("**/snapshots/**")
+    }
 }

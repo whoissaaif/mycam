@@ -65,13 +65,13 @@ fun DimScreen(state: WebcamService.UiState, modifier: Modifier = Modifier) {
                 painterResource(R.drawable.status_streaming), contentDescription = null,
                 modifier = Modifier.size(64.dp).alpha(0.45f),
             )
-            Spacer(Modifier.height(18.dp))
+            Spacer(Modifier.height(16.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.dim_title), style = MaterialTheme.typography.titleMedium, color = Xp.DimText)
-                Spacer(Modifier.width(10.dp))
+                Spacer(Modifier.width(12.dp))
                 LivePill(Modifier.alpha(0.6f))
             }
-            Spacer(Modifier.height(6.dp))
+            Spacer(Modifier.height(8.dp))
             Text(
                 stringResource(if (state.facing == Protocol.FACING_FRONT) R.string.camera_front else R.string.camera_back) +
                     " · " + state.resolution,

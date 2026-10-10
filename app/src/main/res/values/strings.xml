@@ -25,8 +25,8 @@
 
     <!-- Status -->
     <string name="status_disconnected">Not connected</string>
-    <string name="status_disconnected_detail">Plug this phone into your PC. Need MyCam for Windows? See Get it.</string>
-    <string name="get_it">Get it</string>
+    <string name="status_disconnected_detail">Plug this phone into your PC.</string>
+    <string name="get_it">Need MyCam for Windows? Get it</string>
     <string name="status_idle">Ready</string>
     <string name="status_idle_detail">The camera turns on when an app on the PC uses MyCam.</string>
     <string name="status_streaming">Streaming</string>
@@ -45,7 +45,7 @@
     <string name="camera_back">Back camera</string>
     <string name="camera_front">Front camera</string>
     <string name="controls_unknown">Zoom, brightness, focus and torch appear when an app uses the camera.</string>
-    <string name="control_zoom_value">Zoom: %1$s</string>
+    <string name="control_zoom">Zoom</string>
     <string name="zoom_out">Zoom out</string>
     <string name="zoom_in">Zoom in</string>
     <string name="control_brightness">Brightness</string>

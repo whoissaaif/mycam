@@ -52,6 +52,7 @@ import io.github.whoissaaif.mycam.ui.theme.MycamTheme
 import io.github.whoissaaif.mycam.ui.theme.Xp
 import io.github.whoissaaif.mycam.ui.xp.GoButton
 import io.github.whoissaaif.mycam.ui.xp.HillsScene
+import io.github.whoissaaif.mycam.ui.xp.SkyTextShadow
 import io.github.whoissaaif.mycam.ui.xp.XpLink
 import io.github.whoissaaif.mycam.ui.xp.XpProgressBar
 import io.github.whoissaaif.mycam.ui.xp.motionMs
@@ -80,7 +81,7 @@ fun FirstRunScreen(onDone: () -> Unit, modifier: Modifier = Modifier) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Image(painterResource(R.drawable.status_ready), contentDescription = null, modifier = Modifier.size(40.dp))
                 Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge, color = Color.White, modifier = Modifier.weight(1f))
+                Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge.copy(shadow = SkyTextShadow), color = Color.White, modifier = Modifier.weight(1f))
                 XpLink(stringResource(R.string.first_skip), onClick = onDone, color = Color.White)
             }
             Spacer(Modifier.height(32.dp))
@@ -95,7 +96,8 @@ fun FirstRunScreen(onDone: () -> Unit, modifier: Modifier = Modifier) {
                     .padding(20.dp),
             ) {
                 // Step indicator: three XP progress chunks, filled as you go.
-                XpProgressBar((step + 1f) / STEPS, Modifier.width(36.dp)) // Exactly three chunks wide.
+                XpProgressBar((step + 1f) / STEPS, Modifier.width(120.dp), segments = STEPS)
+                Spacer(Modifier.height(4.dp))
                 Text(stringResource(R.string.first_step, step + 1, STEPS), style = MaterialTheme.typography.bodyMedium, color = Xp.Subtle)
                 Spacer(Modifier.height(12.dp))
                 val fade = motionMs(150)
