@@ -29,10 +29,13 @@
     <string name="connect_usb_detail">Connect via USB cable</string>
     <string name="connect_usb_help">Plug this phone into the PC with a USB cable and tap OK when Android asks (tick “Always” so it doesn’t ask again). The cable is faster than Wi-Fi and charges the phone.</string>
     <string name="scan_title">Scanning for devices…</string>
+    <string name="scan_title_idle">Find devices</string>
     <string name="scan_title_done">Devices found</string>
+    <string name="scan_title_none">No devices found</string>
     <string name="scan_hint">Make sure your PC app is open and both devices are on the same Wi-Fi network.</string>
     <string name="scan_radar_description">Radar: looking for PCs on this Wi-Fi</string>
     <string name="scan_again">Scan again</string>
+    <string name="scan_tap_hint">Tap a PC to connect to it. A new PC shows a code on both screens.</string>
     <string name="back">Back</string>
 
     <!-- Live preview on the phone (redesign-v2.md 6.1) -->
@@ -145,6 +148,7 @@
     <string name="scan_status_connected">Connected</string>
     <string name="scan_status_paired">Paired</string>
     <string name="scan_status_new">Not paired yet: it will ask for a code when it connects</string>
+    <string name="scan_status_connecting">Asking it to connect…</string>
     <string name="scan_row_description">%1$s, %2$s, %3$s</string>
 
     <!-- Pairing (dialog and notification) -->

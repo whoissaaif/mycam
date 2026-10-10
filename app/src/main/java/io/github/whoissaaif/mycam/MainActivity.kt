@@ -116,7 +116,7 @@ class MainActivity : ComponentActivity() {
         val actions = ScreenActions(
             onFacing = ::setFacing, onPause = ::setPaused, onCommand = ::sendCommand, onDim = { dimmed = true },
             onWireless = ::setWireless, onAnswerPc = ::answerPc, onForgetPc = ::forgetPc, onForgetAllPcs = ::forgetPcs,
-            onScan = ::scanForPcs, onPreview = ::changePreview,
+            onScan = ::scanForPcs, onConnectPc = ::connectToPc, onPreview = ::changePreview,
             onAutoDim = ::changeAutoDim, onDismissTimedOut = WebcamService::dismissPairingTimedOut,
         )
         setContent {
@@ -313,6 +313,15 @@ class MainActivity : ComponentActivity() {
         val intent = Intent(this, WebcamService::class.java).setAction(WebcamService.ACTION_SCAN)
         if (WebcamService.state.value.wirelessOn) startService(intent)
         else ContextCompat.startForegroundService(this, intent)
+    }
+
+    /** The user picked a PC in "Find Devices": ask it to connect here, so the pairing starts from the phone. */
+    private fun connectToPc(ip: String) {
+        startService(
+            Intent(this, WebcamService::class.java)
+                .setAction(WebcamService.ACTION_CONNECT_PC)
+                .putExtra(WebcamService.EXTRA_PC_IP, ip)
+        )
     }
 
     private fun forgetPcs() {

@@ -79,6 +79,8 @@ class WebcamService : Service() {
         val wirelessPcIp: String? = null,
         /** PCs looking for phones on this Wi-Fi right now (probes in the last 6 s), by name. */
         val nearbyPcs: List<NearbyPc> = emptyList(),
+        /** IP of a nearby PC this phone has asked to connect ("connect to me"), until it does or gives up. */
+        val invitingPc: String? = null,
         /** "Scan for PCs" is running (6 s: three of the PC's probe intervals). */
         val scanning: Boolean = false,
         /** A scan has finished since wireless mode was turned on (the UI can say "No PC found"). */
@@ -119,6 +121,29 @@ class WebcamService : Service() {
         }
     }
     private val endScan = Runnable { _state.update { it.copy(scanning = false, scanned = true) } }
+
+    /**
+     * "Connect to me" asked of one nearby PC: its IP, the probes left to send and the resend timer. One
+     * datagram may be lost, so it goes out every 2 s for INVITE_TRIES tries, and stops as soon as that PC
+     * connects (or wireless mode goes off).
+     */
+    private var invitingIp: String? = null
+    private var invitesLeft = 0
+    private val resendInvite = object : Runnable {
+        override fun run() {
+            val ip = invitingIp ?: return
+            if (!wirelessOn || linked || handshaking) { stopInviting(); return }
+            val pc = nearby.find(ip, SystemClock.elapsedRealtime())
+            if (pc == null || pc.port == 0 || invitesLeft <= 0) {
+                Log.i(TAG, "no answer from $ip to \"connect to me\"")
+                stopInviting()
+                return
+            }
+            --invitesLeft
+            wireless?.askToConnect(pc.ip, pc.port)
+            main.postDelayed(this, INVITE_EVERY_MS)
+        }
+    }
 
     // Owned by the camera thread.
     private var wantStreaming = false
@@ -224,6 +249,10 @@ class WebcamService : Service() {
                 if (wirelessOn) startScan()
                 return START_NOT_STICKY
             }
+            ACTION_CONNECT_PC -> {
+                intent.getStringExtra(EXTRA_PC_IP)?.let { askPcToConnect(it) }
+                return START_NOT_STICKY
+            }
             ACTION_FORGET_PCS -> {
                 val id = intent.getStringExtra(EXTRA_PC_ID)
                 if (id != null) forgetPc(id) else forgetPcs()
@@ -256,7 +285,7 @@ class WebcamService : Service() {
             wirelessOn = true
             wireless = WirelessServer(
                 this,
-                onProbe = { ip, name -> main.post { onProbe(ip, name) } },
+                onProbe = { ip, port, name -> main.post { onProbe(ip, port, name) } },
                 onClient = { sock, name -> main.post { offerPc(sock, name) } },
             ).also { it.start() }
             _state.update {
@@ -269,6 +298,7 @@ class WebcamService : Service() {
             answerPc(false)
             main.removeCallbacks(endScan)
             main.removeCallbacks(expireNearby)
+            stopInviting()
             nearby.clear()
             _state.update { it.copy(wirelessOn = false, wirelessAddress = null, nearbyPcs = emptyList(), scanning = false, scanned = false) }
             if (socket != null) {
@@ -293,11 +323,39 @@ class WebcamService : Service() {
         main.postDelayed(endScan, NearbyPcs.MAX_AGE_MS)
     }
 
+    /**
+     * Main thread. The user picked a PC from the nearby list: ask it to connect to this phone (PROTOCOL.md
+     * "The phone asks for a session"), so a pairing can start from either screen. The PC does the rest -
+     * it opens the TCP session and runs the handshake, and the 6-digit code appears on both.
+     */
+    private fun askPcToConnect(ip: String) {
+        if (!wirelessOn || linked || handshaking) return
+        val pc = nearby.find(ip, SystemClock.elapsedRealtime())
+        if (pc == null || pc.port == 0) {
+            Log.w(TAG, "can't ask $ip to connect: it isn't in the nearby list any more")
+            return
+        }
+        main.removeCallbacks(resendInvite)
+        invitingIp = ip
+        invitesLeft = INVITE_TRIES
+        _state.update { it.copy(invitingPc = ip) }
+        Log.i(TAG, "asking ${pc.name} ($ip:${pc.port}) to connect")
+        resendInvite.run()
+    }
+
+    /** Main thread. Stops asking a PC to connect (it did, it never answered, or wireless mode went off). */
+    private fun stopInviting() {
+        main.removeCallbacks(resendInvite)
+        invitingIp = null
+        invitesLeft = 0
+        if (_state.value.invitingPc != null) _state.update { it.copy(invitingPc = null) }
+    }
+
     /** Main thread. A PC's discovery probe arrived. */
-    private fun onProbe(ip: String, name: String) {
+    private fun onProbe(ip: String, port: Int, name: String) {
         if (!wirelessOn) return
         val wasEmpty = nearby.isEmpty()
-        if (nearby.seen(ip, name, SystemClock.elapsedRealtime())) publishNearby()
+        if (nearby.seen(ip, name, SystemClock.elapsedRealtime(), port)) publishNearby()
         if (wasEmpty) {
             main.removeCallbacks(expireNearby)
             main.postDelayed(expireNearby, 1_000)
@@ -322,6 +380,7 @@ class WebcamService : Service() {
             return
         }
         handshaking = true
+        stopInviting() // A PC turned up: whether or not it is the one we asked, the asking is over.
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         Thread({
             val result = WifiHandshake(sock, pairedPcs, PairedPcs.phoneId(prefs), WirelessServer.deviceName(this), ::askUser).run()
@@ -848,6 +907,7 @@ class WebcamService : Service() {
         wireless = null
         main.removeCallbacks(endScan)
         main.removeCallbacks(expireNearby)
+        main.removeCallbacks(resendInvite)
         pendingAnswer?.invoke(false) // Unblocks a pairing that is waiting for the user.
         pendingAnswer = null
         closeLink()
@@ -880,6 +940,10 @@ class WebcamService : Service() {
         const val EXTRA_ALLOW = "allow"
         /** "Scan for PCs": turns wireless mode on if needed, then shows progress for 6 s while PCs are heard. */
         const val ACTION_SCAN = "io.github.whoissaaif.mycam.SCAN"
+        /** Asks the nearby PC at EXTRA_PC_IP to connect to this phone, so a pairing can start here. */
+        const val ACTION_CONNECT_PC = "io.github.whoissaaif.mycam.CONNECT_PC"
+        /** With ACTION_CONNECT_PC: the IP address of the PC to ask, as the nearby list shows it. */
+        const val EXTRA_PC_IP = "pc_ip"
         const val ACTION_FORGET_PCS ="io.github.whoissaaif.mycam.FORGET_PCS"
         /** With ACTION_FORGET_PCS: forget only this PC (PairedPc.id); without it, forget them all. */
         const val EXTRA_PC_ID = "pc_id"
@@ -895,6 +959,10 @@ class WebcamService : Service() {
         private const val APPROVAL_CHANNEL_ID = "wireless"
         private const val APPROVAL_NOTIFICATION_ID = 2
         private const val APPROVAL_TIMEOUT_MS = 60_000L
+
+        /** "Connect to me" is resent every 2 s, five times, because a single datagram may be lost. */
+        private const val INVITE_EVERY_MS = 2_000L
+        private const val INVITE_TRIES = 5
 
         fun loadCameraSettings(prefs: android.content.SharedPreferences) = CameraStreamer.Settings(
             quality = prefs.getInt("quality", Protocol.QUALITY_1080P),

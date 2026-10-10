@@ -1,7 +1,11 @@
 package io.github.whoissaaif.mycam
 
-/** A MyCam PC whose discovery probe ("MYCAM?1 <pc name>") reached this phone recently. */
-data class NearbyPc(val name: String, val ip: String)
+/**
+ * A MyCam PC whose discovery probe ("MYCAM?1 <pc name>") reached this phone recently. [port] is the UDP
+ * port the probe came from, which is where "connect to me" goes (PROTOCOL.md "The phone asks for a
+ * session"); 0 means the probe's port wasn't recorded, so this PC can't be asked.
+ */
+data class NearbyPc(val name: String, val ip: String, val port: Int = 0)
 
 /** How a nearby PC relates to this phone, in the order the list shows them. */
 enum class NearbyStatus { Connected, Paired, NotPaired }
@@ -13,22 +17,26 @@ enum class NearbyStatus { Connected, Paired, NotPaired }
  * Thread-safe (the discovery thread may feed it while the main thread reads it).
  */
 class NearbyPcs(private val maxAgeMs: Long = MAX_AGE_MS) {
-    private class Entry(var name: String, var lastSeen: Long)
+    private class Entry(var name: String, var lastSeen: Long, var port: Int)
 
     private val byIp = HashMap<String, Entry>()
 
-    /** A probe from [ip] arrived at [now]. Returns true if the list changed (a new PC, or a new name). */
+    /**
+     * A probe from [ip] arrived at [now], from UDP port [port]. Returns true if the list changed (a new PC,
+     * a new name, or a new port: a PC that reopened its socket must be asked at the new one).
+     */
     @Synchronized
-    fun seen(ip: String, name: String, now: Long): Boolean {
+    fun seen(ip: String, name: String, now: Long, port: Int = 0): Boolean {
         val shown = name.trim().ifEmpty { ip }
         val e = byIp[ip]
         if (e == null || now - e.lastSeen > maxAgeMs) {
-            byIp[ip] = Entry(shown, now)
+            byIp[ip] = Entry(shown, now, port)
             return true
         }
         e.lastSeen = now
-        if (e.name == shown) return false
+        if (e.name == shown && e.port == port) return false
         e.name = shown
+        e.port = port
         return true
     }
 
@@ -36,9 +44,13 @@ class NearbyPcs(private val maxAgeMs: Long = MAX_AGE_MS) {
     @Synchronized
     fun list(now: Long): List<NearbyPc> {
         byIp.entries.removeAll { now - it.value.lastSeen > maxAgeMs }
-        return byIp.map { (ip, e) -> NearbyPc(e.name, ip) }
+        return byIp.map { (ip, e) -> NearbyPc(e.name, ip, e.port) }
             .sortedWith(compareBy<NearbyPc> { it.name.lowercase() }.thenBy { ipSortKey(it.ip) })
     }
+
+    /** The PC at [ip] if it is still in the list at [now], else null. */
+    @Synchronized
+    fun find(ip: String, now: Long): NearbyPc? = list(now).firstOrNull { it.ip == ip }
 
     @Synchronized
     fun isEmpty(): Boolean = byIp.isEmpty()

@@ -178,6 +178,7 @@ private:
     std::atomic<uint32_t> connectRequest_{0};
     bool manualSession_ = false;  // The current Wi-Fi session was asked for with Connect (search may be off).
     uint64_t scanUntil_ = 0;      // End of the running scan window (0: none).
+    uint64_t scanEndedAt_ = 0;    // When the last scan window closed: the discovery socket lingers after it.
     uint32_t scansDone_ = 0;
     uint32_t sessionIp_ = 0;      // Peer of the current Wi-Fi session (0: none).
     bool nearbyDirty_ = false;    // nearby_ changed since the last Publish().

@@ -704,6 +704,14 @@ void TestDiscovery() {
     CHECK(!ParseDiscoveryReply("MYCAM!1 x", &port, &name));
     CHECK(ParseDiscoveryReply("MYCAM!1 65535 " + std::string(100, 'n'), &port, &name) && port == 65535 && name.size() == 64);
 
+    // "Connect to me": the same body under its own tag, and never confused with an answer.
+    CHECK(ParseDiscoveryConnectRequest("MYCAM+1 47800 Pixel 8", &port, &name) && port == 47800 && name == "Pixel 8");
+    CHECK(ParseDiscoveryConnectRequest("MYCAM+1 47800", &port, &name) && port == 47800 && name.empty());
+    CHECK(!ParseDiscoveryConnectRequest("MYCAM!1 47800 x", &port, &name));
+    CHECK(!ParseDiscoveryConnectRequest("MYCAM+2 47800 x", &port, &name));
+    CHECK(!ParseDiscoveryConnectRequest("MYCAM+1 0 x", &port, &name));
+    CHECK(!ParseDiscoveryReply("MYCAM+1 47800 x", &port, &name));
+
     // The list: one entry per address, in first-answer order, refreshed by later answers.
     NearbyList list;
     CHECK(list.Seen(1, "10.0.0.1", 47800, "Pixel", 1000));

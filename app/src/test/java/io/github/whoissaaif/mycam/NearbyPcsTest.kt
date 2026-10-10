@@ -43,6 +43,17 @@ class NearbyPcsTest {
         assertTrue(n.seen("192.168.1.5", "A", 10_000))
     }
 
+    @Test fun theProbesPortIsKeptSoThePcCanBeAsked() {
+        val n = NearbyPcs()
+        n.seen("192.168.1.5", "DESKTOP-ABC", 0, 51234)
+        assertEquals(51234, n.find("192.168.1.5", 0)?.port)
+        // A PC that reopened its socket probes from a new port: the list changes, so the invite follows it.
+        assertTrue(n.seen("192.168.1.5", "DESKTOP-ABC", 1_000, 51999))
+        assertEquals(51999, n.find("192.168.1.5", 1_000)?.port)
+        assertEquals(null, n.find("192.168.1.6", 1_000))
+        assertEquals(null, n.find("192.168.1.5", 8_000)) // Expired.
+    }
+
     @Test fun blankNameShowsTheAddress() {
         val n = NearbyPcs()
         n.seen("10.0.0.2", "  ", 0)

@@ -1,5 +1,6 @@
 package io.github.whoissaaif.mycam.ui
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,10 +20,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -51,6 +54,7 @@ import io.github.whoissaaif.mycam.ui.xp.XpProgressBar
 fun ScanPage(
     state: WebcamService.UiState,
     onScan: () -> Unit,
+    onConnectPc: (String) -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -67,8 +71,17 @@ fun ScanPage(
             animate = state.scanning && !reduced,
         )
         Spacer(Modifier.height(20.dp))
+        // The heading follows what the scan actually found: a finished scan with nothing on this Wi-Fi must
+        // not say "Devices found". Idle covers the scan never starting (wireless off, or camera permission
+        // still to be granted), where "Scanning…" would be a lie.
+        val title = when {
+            state.scanning -> R.string.scan_title
+            pcs.isNotEmpty() -> R.string.scan_title_done
+            state.scanned -> R.string.scan_title_none
+            else -> R.string.scan_title_idle
+        }
         Text(
-            stringResource(if (state.scanning || !state.scanned) R.string.scan_title else R.string.scan_title_done),
+            stringResource(title),
             style = MaterialTheme.typography.titleLarge, color = V2.Text, textAlign = TextAlign.Center,
             modifier = Modifier.semantics { heading() },
         )
@@ -104,11 +117,25 @@ fun ScanPage(
         }
         if (state.wirelessOn && pcs.isNotEmpty()) {
             Spacer(Modifier.height(16.dp))
+            // Tapping a PC asks it to connect here (PROTOCOL.md "The phone asks for a session"), so the
+            // pairing code can be brought up from the phone and not only from the PC's own list.
+            Text(
+                stringResource(R.string.scan_tap_hint), style = MaterialTheme.typography.bodyMedium,
+                color = V2.Subtle, textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(8.dp))
             FlatCard(padding = 8.dp) {
                 NearbyPcs.ordered(pcs, state.pairedPcs, state.wirelessPcIp, state.wirelessPc)
                     .forEachIndexed { i, (pc, st) ->
                         if (i > 0) CardDivider()
-                        DeviceRow(pc.name, pc.ip, st)
+                        DeviceRow(
+                            pc.name, pc.ip, st,
+                            asking = state.invitingPc == pc.ip,
+                            // A connected PC has nowhere to go, and one whose probe port wasn't recorded
+                            // can't be asked at all.
+                            onClick = if (st == NearbyStatus.Connected || pc.port == 0) null
+                                      else ({ onConnectPc(pc.ip) }),
+                        )
                     }
             }
         }
@@ -121,14 +148,18 @@ fun ScanPage(
     }
 }
 
-/** One device found: a monitor glyph, the name in bold, its address, and what pairing state it is in. */
+/**
+ * One device found: a monitor glyph, the name in bold, its address, and what pairing state it is in.
+ * [onClick] (null: not actionable) asks that PC to connect; [asking] is while it is being asked.
+ */
 @Composable
-private fun DeviceRow(name: String, ip: String, status: NearbyStatus) {
+private fun DeviceRow(name: String, ip: String, status: NearbyStatus, asking: Boolean, onClick: (() -> Unit)?) {
     val statusText = stringResource(
-        when (status) {
-            NearbyStatus.Connected -> R.string.scan_status_connected
-            NearbyStatus.Paired -> R.string.scan_status_paired
-            NearbyStatus.NotPaired -> R.string.scan_status_new
+        when {
+            asking -> R.string.scan_status_connecting
+            status == NearbyStatus.Connected -> R.string.scan_status_connected
+            status == NearbyStatus.Paired -> R.string.scan_status_paired
+            else -> R.string.scan_status_new
         }
     )
     val description = stringResource(R.string.scan_row_description, name, ip, statusText)
@@ -136,8 +167,12 @@ private fun DeviceRow(name: String, ip: String, status: NearbyStatus) {
         Modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
+            .then(if (onClick != null && !asking) Modifier.clickable(onClick = onClick) else Modifier)
             .padding(vertical = 8.dp)
-            .clearAndSetSemantics { contentDescription = description },
+            .clearAndSetSemantics {
+                contentDescription = description
+                if (onClick != null && !asking) role = Role.Button
+            },
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(Modifier.size(36.dp), contentAlignment = Alignment.Center) {

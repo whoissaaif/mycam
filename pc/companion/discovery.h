@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -21,12 +22,13 @@ struct NearbyPhone {
     uint64_t lastSeen = 0;    // GetTickCount64() of its last answer.
 };
 
-// "MYCAM!1 <tcp port> <phone name>" -> port and name (name may be empty). False if it isn't an answer.
-inline bool ParseDiscoveryReply(const std::string& text, uint16_t* port, std::string* name) {
-    static const char kHere[] = "MYCAM!1";
-    if (text.compare(0, sizeof(kHere) - 1, kHere) != 0) return false;
-    if (text.size() < sizeof(kHere) || text[sizeof(kHere) - 1] != ' ') return false; // "MYCAM!10 ..." isn't ours.
-    const size_t portStart = sizeof(kHere);
+// "<tag> <tcp port> <phone name>" -> port and name (name may be empty). False if it isn't that message.
+// `tag` is "MYCAM!1" (an answer to a probe) or "MYCAM+1" (the phone asking the PC to connect).
+inline bool ParseDiscoveryMessage(const std::string& text, const char* tag, uint16_t* port, std::string* name) {
+    const size_t tagLen = std::strlen(tag);
+    if (text.compare(0, tagLen, tag) != 0) return false;
+    if (text.size() < tagLen + 1 || text[tagLen] != ' ') return false; // "MYCAM!10 ..." isn't ours.
+    const size_t portStart = tagLen + 1;
     size_t portEnd = portStart;
     while (portEnd < text.size() && text[portEnd] >= '0' && text[portEnd] <= '9') ++portEnd;
     if (portEnd == portStart || portEnd - portStart > 5) return false;
@@ -39,6 +41,17 @@ inline bool ParseDiscoveryReply(const std::string& text, uint16_t* port, std::st
     if (n.size() > 64) n.resize(64);
     *name = n;
     return true;
+}
+
+// A phone's answer to a probe: "MYCAM!1 <tcp port> <phone name>".
+inline bool ParseDiscoveryReply(const std::string& text, uint16_t* port, std::string* name) {
+    return ParseDiscoveryMessage(text, "MYCAM!1", port, name);
+}
+
+// A phone asking this PC to connect to it: "MYCAM+1 <tcp port> <phone name>" (PROTOCOL.md "The phone asks
+// for a session"). Same body as an answer, so a pairing can be started from the phone's own list.
+inline bool ParseDiscoveryConnectRequest(const std::string& text, uint16_t* port, std::string* name) {
+    return ParseDiscoveryMessage(text, "MYCAM+1", port, name);
 }
 
 // The phones found on the network, in the order they first answered, one per IP address, at most kMax.

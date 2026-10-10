@@ -20,6 +20,8 @@ object Protocol {
     const val WIRELESS_TCP_PORT = 47800
     const val WIRELESS_ASK = "MYCAM?1"   // PC -> broadcast: "MYCAM?1 <pc name>"
     const val WIRELESS_HERE = "MYCAM!1"  // phone -> PC: "MYCAM!1 <tcp port> <phone name>"
+    // phone -> PC, unicast to the probe's source port: "connect to me now" (either side may start a pairing).
+    const val WIRELESS_CONNECT = "MYCAM+1"
 
     const val PACKET_MAGIC = 0x4D43414D // 'MCAM'
     const val HEADER_SIZE = 20
