@@ -40,3 +40,6 @@ local.properties
 
 # Agent worktrees
 /.claude/worktrees/
+
+pc/tools/webtest/cert/
+pc/tools/webtest/results/
