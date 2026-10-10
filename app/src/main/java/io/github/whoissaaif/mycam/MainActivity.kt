@@ -25,7 +25,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
+import androidx.core.content.edit
 import io.github.whoissaaif.mycam.ui.DimScreen
+import io.github.whoissaaif.mycam.ui.FirstRunScreen
+import io.github.whoissaaif.mycam.ui.ScreenActions
 import io.github.whoissaaif.mycam.ui.WebcamScreen
 import io.github.whoissaaif.mycam.ui.theme.MycamTheme
 import kotlinx.coroutines.delay
@@ -42,6 +45,12 @@ class MainActivity : ComponentActivity() {
     private var dimmed by mutableStateOf(false)
     private var lastTouch = SystemClock.elapsedRealtime()
     private var swallowGesture = false
+
+    /** Settings > Phone: dim automatically while streaming (persisted). */
+    private var autoDim by mutableStateOf(true)
+
+    /** First-run cards (redesign.md 5.7): until the first connection, or Skip for this launch. */
+    private var firstRun by mutableStateOf(false)
 
     private val requestPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -73,16 +82,27 @@ class MainActivity : ComponentActivity() {
         WebcamService.showIdleFacing(prefs.getInt(WebcamService.PREF_FACING, Protocol.FACING_BACK))
         WebcamService.showIdlePaused(prefs.getBoolean(WebcamService.PREF_PAUSED, false))
         WebcamService.showIdleCamera(WebcamService.loadCameraSettings(prefs))
+        WebcamService.showPairedPcs(PairedPcs(prefs).list())
+        autoDim = prefs.getBoolean(WebcamService.PREF_AUTO_DIM, true)
+        // First run until the first connection. Phones that already paired a PC have connected before.
+        firstRun = !prefs.getBoolean(WebcamService.PREF_FIRST_RUN_DONE, false) && PairedPcs(prefs).list().isEmpty()
         ContextCompat.registerReceiver(
             this, usbPermissionReceiver, IntentFilter(ACTION_USB_PERMISSION), ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        val actions = ScreenActions(
+            onFacing = ::setFacing, onPause = ::setPaused, onCommand = ::sendCommand, onDim = { dimmed = true },
+            onWireless = ::setWireless, onAnswerPc = ::answerPc, onForgetPc = ::forgetPc, onForgetAllPcs = ::forgetPcs,
+            onAutoDim = ::changeAutoDim, onDismissTimedOut = WebcamService::dismissPairingTimedOut,
         )
         setContent {
             MycamTheme {
                 val state by WebcamService.state.collectAsState()
                 val live = state.streaming && !state.paused
-                // Dim once the phone has been left alone for a while during a stream; any touch wakes it.
-                LaunchedEffect(live) {
+                // Dim once the phone has been left alone for a while during a stream (if the user wants that);
+                // any touch wakes it. "Dim screen" in the bottom bar works either way.
+                LaunchedEffect(live, autoDim) {
                     if (!live) { dimmed = false; return@LaunchedEffect }
+                    if (!autoDim) return@LaunchedEffect
                     while (true) {
                         if (SystemClock.elapsedRealtime() - lastTouch >= DIM_AFTER_MS) dimmed = true
                         delay(1000)
@@ -93,13 +113,17 @@ class MainActivity : ComponentActivity() {
                         screenBrightness = if (dimmed) DIM_BRIGHTNESS else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
                     }
                 }
-                if (dimmed) {
-                    DimScreen(state)
-                } else {
-                    WebcamScreen(
-                        state = state, onFacing = ::setFacing, onPause = ::setPaused, onCommand = ::sendCommand,
-                        onDim = { dimmed = true }, onWireless = ::setWireless, onAnswerPc = ::answerPc, onForgetPcs = ::forgetPcs,
-                    )
+                // The first successful connection ends the first-run cards for good.
+                LaunchedEffect(state.connected) {
+                    if (state.connected && !prefs.getBoolean(WebcamService.PREF_FIRST_RUN_DONE, false)) {
+                        prefs.edit { putBoolean(WebcamService.PREF_FIRST_RUN_DONE, true) }
+                        firstRun = false
+                    }
+                }
+                when {
+                    dimmed -> DimScreen(state)
+                    firstRun && !state.connected && state.pendingPc == null -> FirstRunScreen(onDone = { firstRun = false })
+                    else -> WebcamScreen(state = state, actions = actions, autoDim = autoDim)
                 }
             }
         }
@@ -230,6 +254,19 @@ class MainActivity : ComponentActivity() {
 
     private fun forgetPcs() {
         startService(Intent(this, WebcamService::class.java).setAction(WebcamService.ACTION_FORGET_PCS))
+    }
+
+    /** Forgets one paired PC (A11). */
+    private fun forgetPc(id: String) {
+        startService(
+            Intent(this, WebcamService::class.java).setAction(WebcamService.ACTION_FORGET_PCS)
+                .putExtra(WebcamService.EXTRA_PC_ID, id)
+        )
+    }
+
+    private fun changeAutoDim(on: Boolean) {
+        autoDim = on
+        getSharedPreferences(WebcamService.PREFS, MODE_PRIVATE).edit { putBoolean(WebcamService.PREF_AUTO_DIM, on) }
     }
 
     private fun answerPc(allow: Boolean) {

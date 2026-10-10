@@ -67,8 +67,12 @@ class WebcamService : Service() {
         /** A PC that is pairing over Wi-Fi and waiting for the user to allow it, and the code both screens show. */
         val pendingPc: String? = null,
         val pendingCode: String? = null,
-        /** Names of the PCs this phone is paired with (they connect without asking). */
-        val pairedPcs: List<String> = emptyList(),
+        /** SystemClock.elapsedRealtime() at which the pending pairing times out (the dialog counts down to it). */
+        val pendingDeadline: Long = 0L,
+        /** Name of a PC whose pairing request timed out unanswered; the dialog says so until dismissed. */
+        val pairingTimedOut: String? = null,
+        /** The PCs this phone is paired with (they connect without asking). */
+        val pairedPcs: List<PairedPc> = emptyList(),
         /** Name of the PC connected over Wi-Fi. */
         val wirelessPc: String? = null,
     )
@@ -139,7 +143,7 @@ class WebcamService : Service() {
         facing = prefs.getInt(PREF_FACING, Protocol.FACING_BACK)
         paused = prefs.getBoolean(PREF_PAUSED, false)
         camSettings = loadCameraSettings(prefs)
-        _state.update { UiState(facing = facing, paused = paused, camera = camSettings) }
+        _state.update { UiState(facing = facing, paused = paused, camera = camSettings, pairedPcs = pairedPcs.list()) }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val listener = PowerManager.OnThermalStatusChangedListener { status ->
                 _state.update { it.copy(thermal = status) }
@@ -192,7 +196,8 @@ class WebcamService : Service() {
                 return START_NOT_STICKY
             }
             ACTION_FORGET_PCS -> {
-                forgetPcs()
+                val id = intent.getStringExtra(EXTRA_PC_ID)
+                if (id != null) forgetPc(id) else forgetPcs()
                 return START_NOT_STICKY
             }
             ACTION_WIRELESS_ANSWER -> {
@@ -222,7 +227,7 @@ class WebcamService : Service() {
             wirelessOn = true
             wireless = WirelessServer(this) { sock, name -> main.post { offerPc(sock, name) } }.also { it.start() }
             _state.update {
-                it.copy(wirelessOn = true, wirelessAddress = WirelessServer.localAddress(this), pairedPcs = pairedPcs.names())
+                it.copy(wirelessOn = true, wirelessAddress = WirelessServer.localAddress(this), pairedPcs = pairedPcs.list())
             }
         } else {
             wirelessOn = false
@@ -270,11 +275,18 @@ class WebcamService : Service() {
         val answer = java.util.concurrent.atomic.AtomicBoolean(false)
         main.post {
             pendingAnswer = { allow -> answer.set(allow); latch.countDown() }
-            _state.update { it.copy(pendingPc = pcName, pendingCode = code) }
+            val deadline = android.os.SystemClock.elapsedRealtime() + APPROVAL_TIMEOUT_MS
+            _state.update { it.copy(pendingPc = pcName, pendingCode = code, pendingDeadline = deadline, pairingTimedOut = null) }
             showApprovalNotification(pcName, code)
         }
         val answered = latch.await(APPROVAL_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
-        main.post { if (!answered) answerPc(false) }
+        main.post {
+            // Unanswered: refuse, and let the dialog say "Pairing timed out" instead of vanishing.
+            if (!answered && pendingAnswer != null) {
+                answerPc(false)
+                _state.update { it.copy(pairingTimedOut = pcName) }
+            }
+        }
         return answered && answer.get()
     }
 
@@ -282,7 +294,7 @@ class WebcamService : Service() {
     private fun answerPc(allow: Boolean) {
         val reply = pendingAnswer ?: return
         pendingAnswer = null
-        _state.update { it.copy(pendingPc = null, pendingCode = null) }
+        _state.update { it.copy(pendingPc = null, pendingCode = null, pendingDeadline = 0L) }
         getSystemService(NotificationManager::class.java).cancel(APPROVAL_NOTIFICATION_ID)
         reply(allow && wirelessOn && !linked)
     }
@@ -292,6 +304,13 @@ class WebcamService : Service() {
         pairedPcs.forgetAll()
         _state.update { it.copy(pairedPcs = emptyList()) }
         if (!linked && !wirelessOn) stopSelf() // Started just for this.
+    }
+
+    /** Main thread. Forgets one paired PC (A11). A PC connected right now stays connected until it leaves. */
+    private fun forgetPc(id: String) {
+        pairedPcs.forget(id)
+        _state.update { it.copy(pairedPcs = pairedPcs.list()) }
+        if (!linked && !wirelessOn) stopSelf()
     }
 
     private fun showApprovalNotification(name: String, code: String) {
@@ -335,7 +354,7 @@ class WebcamService : Service() {
         } catch (_: IOException) {}
         socket = sock
         startLink(secure.output, secure.input, wirelessPc = secure.pcName)
-        if (secure.newlyPaired) _state.update { it.copy(pairedPcs = pairedPcs.names()) }
+        if (secure.newlyPaired) _state.update { it.copy(pairedPcs = pairedPcs.list()) }
         wifiLock = getSystemService(WifiManager::class.java)?.createWifiLock(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) WifiManager.WIFI_MODE_FULL_LOW_LATENCY
             else @Suppress("DEPRECATION") WifiManager.WIFI_MODE_FULL_HIGH_PERF,
@@ -750,7 +769,7 @@ class WebcamService : Service() {
         closeLink()
         wakeLock?.release()
         wakeLock = null
-        _state.update { UiState(facing = facing, paused = paused, camera = camSettings) }
+        _state.update { UiState(facing = facing, paused = paused, camera = camSettings, pairedPcs = pairedPcs.list()) }
         super.onDestroy()
     }
 
@@ -776,6 +795,12 @@ class WebcamService : Service() {
         const val ACTION_WIRELESS_ANSWER = "io.github.whoissaaif.mycam.WIRELESS_ANSWER"
         const val EXTRA_ALLOW = "allow"
         const val ACTION_FORGET_PCS = "io.github.whoissaaif.mycam.FORGET_PCS"
+        /** With ACTION_FORGET_PCS: forget only this PC (PairedPc.id); without it, forget them all. */
+        const val EXTRA_PC_ID = "pc_id"
+        /** Dim the screen automatically while streaming (Settings > Phone). */
+        const val PREF_AUTO_DIM = "auto_dim"
+        /** Set after the first successful connection: the first-run cards stop showing. */
+        const val PREF_FIRST_RUN_DONE = "first_run_done"
 
         /** "554294" -> "554 294", easier to compare between screens. */
         fun formatCode(code: String) = if (code.length == 6) code.substring(0, 3) + " " + code.substring(3) else code
@@ -814,5 +839,18 @@ class WebcamService : Service() {
         fun showIdlePaused(paused: Boolean) {
             _state.update { if (it.connected) it else it.copy(paused = paused) }
         }
+
+        /** Shows the paired PCs before the service runs (Settings > Paired PCs). */
+        fun showPairedPcs(pcs: List<PairedPc>) {
+            _state.update { it.copy(pairedPcs = pcs) }
+        }
+
+        /** The user closed the "Pairing timed out" dialog. */
+        fun dismissPairingTimedOut() {
+            _state.update { it.copy(pairingTimedOut = null) }
+        }
+
+        /** How long a pairing request waits for Allow / Don't allow; the dialog counts this down. */
+        const val PAIRING_TIMEOUT_MS = APPROVAL_TIMEOUT_MS
     }
 }
