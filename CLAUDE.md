@@ -126,7 +126,10 @@ and components are in [design/STYLE.md](design/STYLE.md).
   and are never shipped.
 - **Art:** `design/tools/*.ps1` (shared library `luna_draw.ps1`). Regenerate with them rather than hand-editing
   PNGs.
-  - The hills scene is original and procedural. The reference photo in `inspo/` is never copied or shipped.
+  - The hills scene is original and procedural, composited from `design/assets/source/hills-photo.png`.
+    Both source images there are the owner's own (see that folder's README), so they may be shipped;
+    nothing from `inspo/` is ever read by a script. Since 2026-10-11 the **paused** camera picture is the
+    exception to "procedural": it is `camera-paused-reference.png` itself, cropped to 16:9 (owner decision).
   - The track of the waiting picture's marquee is at `design/tools/frame_layout.txt` and must match
     `pc/companion/marquee.h`.
 
