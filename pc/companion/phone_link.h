@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "decoder.h"
+#include "discovery.h"
 #include "packet_parser.h"
 #include "frame_writer.h"
 #include "protocol.h"
@@ -50,6 +51,10 @@ struct LinkStatus {
     bool wirelessSearch = false;  // "Find phones on Wi-Fi" is on.
     std::wstring phoneName;       // Wi-Fi phones: the name the phone announced.
     std::wstring pairingCode;     // Pairing a Wi-Fi phone: the 6-digit code both screens must show.
+    // "Scan for phones": a one-shot look for phones on the Wi-Fi, and what answered.
+    bool scanning = false;                 // A scan window is running.
+    uint32_t scansDone = 0;                // Scans finished since the companion started (0: never scanned).
+    std::vector<NearbyPhone> nearbyPhones; // At most NearbyList::kMax, in the order they answered.
 };
 
 // Owns all USB traffic. Run() blocks on the calling (worker) thread until Quit() is called.
@@ -76,6 +81,13 @@ public:
     void RequestReconnect() { reconnect_ = true; }
     // Wireless mode (beta): also look for phones on the local network and connect over Wi-Fi.
     void SetWireless(bool on) { wireless_ = on; }
+    // "Scan for phones": broadcast a probe now and list every phone that answers for kScanWindowMs, even
+    // while "Find phones on Wi-Fi" is off (the setting doesn't change, and nothing connects by itself then).
+    void ScanForPhones() { scanRequest_ = true; }
+    // Runs one Wi-Fi session to a phone from the scan list (pairing with a code if it's new), even while
+    // "Find phones on Wi-Fi" is off. A plugged-in phone still wins. ipv4 in network order.
+    void ConnectTo(uint32_t ipv4) { connectRequest_ = ipv4; }
+    static constexpr uint64_t kScanWindowMs = 6000;
     // Abandons a Wi-Fi pairing that is waiting for the phone's answer: the PC closes the socket (no
     // protocol message), and that phone isn't asked again for a while. No effect when not pairing.
     void CancelPairing() { cancelPairing_ = true; }
@@ -108,6 +120,13 @@ private:
     void NetScanOnce();
     bool EnsureUdp();
     void BroadcastProbe();
+    // Discovery without connecting: starts a requested scan, probes while one runs, reads the answers and
+    // ends the scan window. Safe inside a session (the SessionLoop calls it).
+    void PollDiscovery(uint64_t now);
+    void ReadAnswers(uint64_t now);
+    void RefreshNearby();            // Paired / connected marks, then Publish() if the list changed.
+    bool WifiAllowed() const { return wireless_ || manualSession_; } // A Wi-Fi session may go on.
+    void RunManualConnect(uint32_t ip);
     // How a Wi-Fi session ended, for when to try that phone again.
     enum class WifiEnd { Ran, Refused, NeedsPairing, Failed };
     WifiEnd RunTcpSession(uintptr_t socket, const std::string& phoneName, bool forcePair);
@@ -155,6 +174,14 @@ private:
     std::shared_ptr<wifi::RecordKey> wifiTx_, wifiRx_;
     std::vector<uint8_t> wifiRxBuf_;
     std::map<uint32_t, NetPhone> netPhones_; // By IPv4 address (network order), from discovery answers.
+    std::atomic<bool> scanRequest_{false};
+    std::atomic<uint32_t> connectRequest_{0};
+    bool manualSession_ = false;  // The current Wi-Fi session was asked for with Connect (search may be off).
+    uint64_t scanUntil_ = 0;      // End of the running scan window (0: none).
+    uint32_t scansDone_ = 0;
+    uint32_t sessionIp_ = 0;      // Peer of the current Wi-Fi session (0: none).
+    bool nearbyDirty_ = false;    // nearby_ changed since the last Publish().
+    NearbyList nearby_;           // What the window lists.
 
     libusb_context* ctx_ = nullptr;       // UsbDk backend: switches phones into accessory mode.
     libusb_context* winusbCtx_ = nullptr; // WinUSB backend: streams from accessory-mode phones (WinUSB-bound).

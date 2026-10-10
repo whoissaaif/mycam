@@ -15,6 +15,7 @@
 #include "../companion/protocol.h"
 #include "../companion/wifi_crypto.h"
 #include "../companion/capabilities.h"
+#include "../companion/discovery.h"
 #include "../companion/preview_convert.h"
 #include "../companion/status_text.h"
 #include "../companion/ui_layout.h"
@@ -686,6 +687,59 @@ void TestUiModel() {
     CHECK(!off.Offscreen());
 }
 
+void TestDiscovery() {
+    // Parsing the phone's answer: "MYCAM!1 <tcp port> <phone name>".
+    uint16_t port = 0;
+    std::string name = "x";
+    CHECK(ParseDiscoveryReply("MYCAM!1 47800 Pixel 8", &port, &name) && port == 47800 && name == "Pixel 8");
+    CHECK(ParseDiscoveryReply("MYCAM!1 47800", &port, &name) && port == 47800 && name.empty());
+    CHECK(ParseDiscoveryReply("MYCAM!1 1 a  b \r\n", &port, &name) && port == 1 && name == "a  b");
+    CHECK(!ParseDiscoveryReply("MYCAM?1 DESKTOP", &port, &name));   // Another PC's probe.
+    CHECK(!ParseDiscoveryReply("MYCAM!2 47800 x", &port, &name));   // Another version.
+    CHECK(!ParseDiscoveryReply("MYCAM!10 47800 x", &port, &name));
+    CHECK(!ParseDiscoveryReply("MYCAM!1", &port, &name));
+    CHECK(!ParseDiscoveryReply("MYCAM!1 0 x", &port, &name));
+    CHECK(!ParseDiscoveryReply("MYCAM!1 65536 x", &port, &name));
+    CHECK(!ParseDiscoveryReply("MYCAM!1 47a00 x", &port, &name));
+    CHECK(!ParseDiscoveryReply("MYCAM!1 x", &port, &name));
+    CHECK(ParseDiscoveryReply("MYCAM!1 65535 " + std::string(100, 'n'), &port, &name) && port == 65535 && name.size() == 64);
+
+    // The list: one entry per address, in first-answer order, refreshed by later answers.
+    NearbyList list;
+    CHECK(list.Seen(1, "10.0.0.1", 47800, "Pixel", 1000));
+    CHECK(list.Seen(2, "10.0.0.2", 47800, "", 1100));                   // No name: the address stands in.
+    CHECK(!list.Seen(1, "10.0.0.1", 47800, "Pixel", 3000));             // Same answer again: no change.
+    CHECK(list.Phones().size() == 2 && list.Phones()[0].lastSeen == 3000 && list.Phones()[1].name == "10.0.0.2");
+    CHECK(list.Seen(1, "10.0.0.1", 47801, "Pixel", 3100));              // A new port is a change.
+    CHECK(list.Find(1)->port == 47801 && !list.Find(3));
+    // Expiry drops the phones that stopped answering, except the connected one.
+    CHECK(list.SetConnected(2) && !list.SetConnected(2));
+    CHECK(!list.Expire(7000, 6000));
+    CHECK(list.Expire(9200, 6000) && list.Phones().size() == 1 && list.Phones()[0].ip == 2);
+    CHECK(list.SetConnected(0) && !list.Phones()[0].connected);
+    // Paired marks come from a name check.
+    list.Seen(5, "10.0.0.5", 47800, "Moto", 9300);
+    CHECK(list.UpdatePaired([](const std::string& n) { return n == "Moto"; }) && list.Find(5)->paired && !list.Find(2)->paired);
+    CHECK(!list.UpdatePaired([](const std::string& n) { return n == "Moto"; }));
+    // A new scan keeps only the connected phone.
+    list.SetConnected(5);
+    list.ClearForScan();
+    CHECK(list.Phones().size() == 1 && list.Phones()[0].ip == 5);
+    // Bounded: a 17th phone replaces the one heard from longest ago (never the connected one).
+    list.Clear();
+    for (uint32_t i = 0; i < NearbyList::kMax; ++i) list.Seen(100 + i, "ip", 1, "p", 10000 + i);
+    list.SetConnected(100);
+    CHECK(list.Seen(200, "ip", 1, "new", 20000) && list.Phones().size() == NearbyList::kMax);
+    CHECK(list.Find(100) && !list.Find(101) && list.Find(200));
+    CHECK(ScanResultSentence(0).rfind(L"No phone found.", 0) == 0);
+    CHECK(ScanResultSentence(1) == L"Found 1 phone." && ScanResultSentence(2) == L"Found 2 phones.");
+    // Scan rows have stable ids in their own block.
+    int part = -1;
+    CHECK(ui::ScanRowIndex(ui::ScanRowId(3, 1), &part) == 3 && part == 1);
+    CHECK(ui::ScanRowIndex(ui::ScanRowId(15, 0), &part) == 15 && part == 0);
+    CHECK(ui::ScanRowIndex(ui::kScanList, &part) == -1 && ui::ScanRowIndex(ui::ScanRowId(16, 0), &part) == -1);
+}
+
 void TestPreviewConvert() {
     // 4x2 NV12 -> 2x1 BGRA: each output pixel averages a 2x2 luma block.
     const uint8_t nv12[] = {16, 16, 235, 235, 16, 16, 235, 235, 128, 128, 128, 128};
@@ -761,6 +815,7 @@ int main() {
     printf("ui motion\n");                 TestUiMotion();
     printf("ui capabilities\n");           TestCapabilities();
     printf("ui element model\n");          TestUiModel();
+    printf("wi-fi discovery list\n");      TestDiscovery();
     printf("preview convert\n");           TestPreviewConvert();
     printf("status text\n");               TestStatusText();
 

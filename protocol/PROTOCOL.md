@@ -114,6 +114,10 @@ The phone answers (unicast, to the sender's address and port) only while "Use ov
 remembers the PC name per IP address to show it when that PC connects. A phone that hasn't answered for 6 s
 is forgotten.
 
+"Scan for phones" on the PC sends the same probe (no new messages): one right away, then every 2 s for 6 s,
+also while "Find phones on Wi-Fi" is off. It only lists the answers; with the search off, the PC connects
+only when the user picks a phone.
+
 **Session (TCP, port 47800).** The PC connects and runs the handshake below. After it, both directions
 carry the usual packets and commands (the same bytes as over USB) inside encrypted records, and the session
 continues exactly as over USB (`HELLO` every 2 s until answered, and so on).

@@ -30,6 +30,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
   - [ ] Test on the phone over USB and Wi-Fi (pairing dialog, countdown, per-PC forget, first run, dim screen)
   - [ ] Test the PC window with a real phone; check high contrast and reduced motion by eye
   - [ ] Narrator pass on the PC window (UI Automation)
+  - [~] "Scan for phones" on the PC (redesign.md §8.6): one-shot 6 s Wi-Fi scan, results with Connect, tray item; checked with demos, `uia_dump` and a real phone; Narrator pass to do
   - [ ] Release APK test (R8) before publishing
 
 ## Backlog

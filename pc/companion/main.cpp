@@ -51,6 +51,7 @@ enum MenuId : UINT {
     kMenuQ720,
     kMenuQ1080,
     kMenuQ4K,
+    kMenuScan,
 };
 
 HWND g_hwnd = nullptr;
@@ -69,6 +70,10 @@ bool g_vcamOk = false;
 bool g_sessionLocked = false; // Windows session locked (WTS notifications)
 bool g_suspended = false;     // PC going to sleep
 int g_trayIcon = 0;
+
+// --demo modes: a made-up scan (see DemoScan).
+constexpr UINT_PTR kDemoScanTimer = 7;
+void DemoScanDone();
 
 LinkStatus CurrentStatus() {
     std::lock_guard<std::mutex> lock(g_statusLock);
@@ -186,6 +191,7 @@ void ShowMenu(HWND hwnd) {
     AppendMenuW(menu, MF_STRING | (g_fill ? MF_CHECKED : 0), kMenuFill, L"Fill the frame");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kMenuReconnect, L"Reconnect phone");
+    AppendMenuW(menu, MF_STRING, kMenuScan, L"&Scan for phones"); // Opens the window and scans the Wi-Fi.
     AppendMenuW(menu, MF_STRING | (AutostartEnabled() ? MF_CHECKED : 0), kMenuAutostart, L"Start with Windows");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kMenuExit, L"Exit");
@@ -250,6 +256,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_NEED_DRIVER:
         RunDriverBinder();
         return 0;
+    case WM_TIMER:
+        if (wp == kDemoScanTimer) DemoScanDone();
+        return 0;
     case WM_STATUS:
         UpdateTray();
         return 0;
@@ -265,6 +274,7 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
             g_link->RequestCommand(proto::kCmdSetQuality, uint8_t(LOWORD(wp) - kMenuQ720));
             break;
         case kMenuReconnect: g_link->RequestReconnect(); break;
+        case kMenuScan: if (g_settings) g_settings->StartScan(); break;
         case kMenuAutostart: SetAutostart(!AutostartEnabled()); break;
         case kMenuExit: DestroyWindow(hwnd); break;
         }
@@ -308,9 +318,27 @@ void RunTestPattern(std::atomic<bool>& quit, uint32_t rotation) {
     }
 }
 
+// Made-up phones for the scan demos (addresses in network order). `firstConnected`: the first one is the
+// phone of the current Wi-Fi session.
+std::vector<NearbyPhone> DemoPhones(bool firstConnected) {
+    auto phone = [](uint8_t last, const char* name, bool paired) {
+        NearbyPhone p;
+        p.ip = 192u | 168u << 8 | 1u << 16 | uint32_t(last) << 24;
+        p.ipText = "192.168.1." + std::to_string(last);
+        p.port = 47800;
+        p.name = name;
+        p.paired = paired;
+        return p;
+    };
+    std::vector<NearbyPhone> out = {phone(23, "Pixel 8", true), phone(41, "Galaxy S23 Ultra (the big one in the kitchen)", false),
+                                    phone(57, "moto g54", false)};
+    out[0].connected = firstConnected;
+    return out;
+}
+
 // --demo=<state> (developer use, with or without --test-pattern): shows the window in a made-up link state
-// (ready, streaming, paused, pairing, waiting, error) without a phone, for checking the UI. The phone link
-// doesn't run.
+// (ready, streaming, paused, pairing, waiting, error, scanning, scan-results, scan-none, scan-wifi) without
+// a phone, for checking the UI. The phone link doesn't run.
 bool DemoStatus(LinkStatus* s) {
     const wchar_t* arg = wcsstr(GetCommandLineW(), L"--demo=");
     if (!arg) return false;
@@ -339,11 +367,51 @@ bool DemoStatus(LinkStatus* s) {
         s->wireless = s->wirelessSearch = true;
         s->phoneName = L"Pixel 8 Pro (Saif's phone with a rather long name)";
         s->pairingCode = L"554 294";
+    } else if (state == L"scan-wifi") { // Connected over Wi-Fi: the scan shows in the Wi-Fi group.
+        s->state = LinkState::Idle;
+        c.width = 0;
+        s->wireless = s->wirelessSearch = true;
+        s->phoneName = L"Pixel 8";
+        s->scansDone = 1;
+        s->nearbyPhones = DemoPhones(true);
     } else {
         s->state = LinkState::Searching;
         c = {};
+        if (state == L"scanning") { // A scan running, one phone answered so far.
+            s->scanning = true;
+            s->nearbyPhones = DemoPhones(false);
+            s->nearbyPhones.resize(1);
+        } else if (state == L"scan-results") {
+            s->scansDone = 1;
+            s->nearbyPhones = DemoPhones(false);
+        } else if (state == L"scan-none") {
+            s->scansDone = 1;
+        }
     }
     return true;
+}
+
+// Demo mode: "Scan for phones" runs a made-up 6 s scan that finds the demo phones.
+void DemoScan() {
+    {
+        std::lock_guard<std::mutex> lock(g_statusLock);
+        g_status.scanning = true;
+        g_status.nearbyPhones.clear();
+    }
+    PostMessageW(g_hwnd, WM_STATUS, 0, 0);
+    SetTimer(g_hwnd, kDemoScanTimer, UINT(PhoneLink::kScanWindowMs), nullptr);
+}
+
+void DemoScanDone() {
+    KillTimer(g_hwnd, kDemoScanTimer);
+    {
+        std::lock_guard<std::mutex> lock(g_statusLock);
+        g_status.scanning = false;
+        ++g_status.scansDone;
+        g_status.nearbyPhones = DemoPhones(g_status.wireless);
+        if (wcsstr(GetCommandLineW(), L"--demo=scan-none")) g_status.nearbyPhones.clear();
+    }
+    PostMessageW(g_hwnd, WM_STATUS, 0, 0);
 }
 
 int QuitRunningInstance() {
@@ -457,6 +525,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     model.setWireless = SetWireless;
     model.forgetPhones = ForgetPairedPhones; // They pair again (with a code) next time.
     model.showPairing = [] { if (g_pairing && g_settings) g_pairing->Show(g_settings->Hwnd()); };
+    model.scanForPhones = [] { g_link->ScanForPhones(); };
+    model.connectTo = [](uint32_t ip) { g_link->ConnectTo(ip); };
     model.testPattern = testPattern;
     LinkStatus demo;
     const bool demoMode = DemoStatus(&demo);
@@ -471,6 +541,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
             }
             PostMessageW(g_hwnd, WM_STATUS, 0, 0);
         };
+        model.scanForPhones = DemoScan;
+        model.connectTo = [](uint32_t) { Log("demo: Connect pressed (no phone link in demo mode)"); };
     }
     SettingsWindow settings(std::move(model));
     g_settings = &settings;

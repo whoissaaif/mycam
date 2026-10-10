@@ -864,6 +864,7 @@ std::wstring UiaAutomationId(int id) {
     case kLivePill: return L"LivePill";
     case kStatusProgress: return L"StatusProgress";
     case kShowPairing: return L"ShowPairing";
+    case kScanNow: return L"ScanNow";
     case kBack: return L"CameraBack";
     case kFront: return L"CameraFront";
     case kCameraNote: return L"CameraNote";
@@ -878,6 +879,10 @@ std::wstring UiaAutomationId(int id) {
     case kAutostart: return L"Autostart";
     case kWireless: return L"Wireless";
     case kForgetPhones: return L"ForgetPhones";
+    case kScan: return L"Scan";
+    case kScanProgress: return L"ScanProgress";
+    case kScanResult: return L"ScanResult";
+    case kScanList: return L"ScanList";
     case kReconnect: return L"Reconnect";
     case kOpenLog: return L"OpenLog";
     case kPreview: return L"Preview";
@@ -901,6 +906,9 @@ std::wstring UiaAutomationId(int id) {
     case kPairProgress: return L"PairProgress";
     case kPairCancel: return L"PairCancel";
     }
+    int part = 0;
+    const int row = ScanRowIndex(id, &part);
+    if (row >= 0) return std::wstring(part == 1 ? L"ScanConnect" : L"ScanRow") + std::to_wstring(row);
     return L"Element" + std::to_wstring(id);
 }
 

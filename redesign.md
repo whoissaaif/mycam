@@ -543,6 +543,25 @@ An XP-styled modal window (custom-drawn like the main window, with UIA, see §8.
 - Show the new status icons (§4.3).
 - Put a check mark on the active camera (W12), and add a "Quality ▸" submenu greyed by capability.
 - Keep the native menu: it's accessible, and Windows 11 renders it consistently.
+- **Scan for phones** (§8.6) opens the window and starts a scan.
+
+### 8.6 Scan for phones
+
+An XP button **Scan for phones** (Alt+S) sits in the Wi-Fi and startup group, and also in Now while no
+phone is connected. It runs a one-shot scan: the PC broadcasts the usual discovery probe right away and
+lists every phone that answers within **6 s**, even while "Find phones on Wi-Fi" is off (the setting doesn't
+change). While it runs, the green **marquee** shows with "Looking for phones on this Wi-Fi…" (reduced motion:
+the sentence alone). Then each phone gets a row: its name, its address in subtle text, and "Connected",
+"Paired" or "New: it will ask for a code", with a **Connect** link while no phone is connected. With search
+off, nothing connects by itself: Connect runs one Wi-Fi session to that phone (pairing with the dialog as
+usual). With search on, auto-connect works as before and the scan only refreshes the list sooner. A plugged-in
+phone still wins. If nothing answers: "No phone found. On the phone, open MyCam and turn on “Use over
+Wi-Fi”. Both must be on the same Wi-Fi." The results show in Now while no phone is connected, else in the
+Wi-Fi group. Everything goes through `ui_model.h` (ids 206, 603–606, rows from 1000), so the UIA provider
+exposes it: the buttons and Connect links as Invoke, the list as a Group of Text rows, and the result
+sentence as a live region ("Found 2 phones", "No phone found"). "Paired" is matched by name against
+`HKCU\Software\MyCam\PairedPhones` (the discovery answer carries no phone id), so it's best effort. Demos:
+`--demo=scanning`, `scan-results`, `scan-none`, `scan-wifi`.
 
 ---
 

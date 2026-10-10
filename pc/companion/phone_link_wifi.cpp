@@ -10,6 +10,7 @@
 #include <iphlpapi.h>
 #include <wincrypt.h>
 
+#include <algorithm>
 #include <functional>
 #include <string>
 #include <vector>
@@ -95,6 +96,29 @@ void ForgetPairKey(const Bytes& phoneId) {
     RegDeleteTreeW(HKEY_CURRENT_USER, (std::wstring(kPairedKey) + L"\\" + HexId(phoneId)).c_str());
 }
 
+// Names of the phones this PC holds a pairing key for. Discovery answers carry only a name (no phone id),
+// so "Paired" in the scan list is matched by name: best effort.
+std::vector<std::string> PairedNames() {
+    std::vector<std::string> names;
+    HKEY root;
+    if (RegOpenKeyExW(HKEY_CURRENT_USER, kPairedKey, 0, KEY_READ, &root) != ERROR_SUCCESS) return names;
+    wchar_t sub[128];
+    for (DWORD i = 0;; ++i) {
+        DWORD len = DWORD(std::size(sub));
+        if (RegEnumKeyExW(root, i, sub, &len, nullptr, nullptr, nullptr, nullptr) != ERROR_SUCCESS) break;
+        wchar_t name[256] = {};
+        DWORD size = sizeof(name);
+        if (RegGetValueW(root, sub, L"Name", RRF_RT_REG_SZ, nullptr, name, &size) == ERROR_SUCCESS) {
+            std::string utf8(WideCharToMultiByte(CP_UTF8, 0, name, -1, nullptr, 0, nullptr, nullptr), '\0');
+            WideCharToMultiByte(CP_UTF8, 0, name, -1, utf8.data(), int(utf8.size()), nullptr, nullptr);
+            if (!utf8.empty() && utf8.back() == '\0') utf8.pop_back();
+            names.push_back(utf8);
+        }
+    }
+    RegCloseKey(root);
+    return names;
+}
+
 // --- Socket helpers (the socket is non-blocking) --------------------------------------------------
 
 bool SendAll(SOCKET s, const uint8_t* data, size_t size, uint64_t timeoutMs = 1000) {
@@ -146,7 +170,6 @@ Bytes NameField(const std::string& name) {
 
 constexpr uint16_t kDiscoveryPort = 47801;
 constexpr char kAsk[] = "MYCAM?1";
-constexpr char kHere[] = "MYCAM!1";
 constexpr uint64_t kProbeEveryMs = 2000;
 constexpr uint64_t kForgetAfterMs = 6000;      // A phone that stopped answering is gone.
 constexpr uint64_t kRetryRefusedMs = 120000;   // The phone said no (or nobody answered): don't nag it.
@@ -254,9 +277,105 @@ void PhoneLink::BroadcastProbe() {
     }
 }
 
+// Answers: "MYCAM!1 <tcp port> <phone name>". Fills the scan list, and the auto-connect table while
+// "Find phones on Wi-Fi" is on.
+void PhoneLink::ReadAnswers(uint64_t now) {
+    if (udp_ == INVALID_SOCKET) return;
+    char buf[512];
+    for (int i = 0; i < 64; ++i) {
+        sockaddr_in from = {};
+        int fromLen = sizeof(from);
+        int n = recvfrom(SOCKET(udp_), buf, sizeof(buf) - 1, 0, reinterpret_cast<sockaddr*>(&from), &fromLen);
+        if (n <= 0) break;
+        uint16_t port = 0;
+        std::string name;
+        if (!ParseDiscoveryReply(std::string(buf, size_t(n)), &port, &name)) continue;
+        const uint32_t ip = from.sin_addr.s_addr;
+        const std::string ipText = IpText(ip);
+        if (nearby_.Seen(ip, ipText, port, name, now)) nearbyDirty_ = true;
+        if (!wireless_) continue;
+        NetPhone& phone = netPhones_[ip];
+        if (phone.lastSeen == 0) {
+            phone.name = name.empty() ? ipText : name;
+            Log("wifi: found %s at %s:%u", phone.name.c_str(), ipText.c_str(), unsigned(port));
+        }
+        phone.port = port;
+        phone.lastSeen = now;
+    }
+}
+
+void PhoneLink::RefreshNearby() {
+    if (nearby_.SetConnected(status_.wireless ? sessionIp_ : 0)) nearbyDirty_ = true;
+    if (!nearbyDirty_) return;
+    const std::vector<std::string> paired = PairedNames();
+    nearby_.UpdatePaired([&](const std::string& name) { return std::find(paired.begin(), paired.end(), name) != paired.end(); });
+    Publish();
+}
+
+void PhoneLink::PollDiscovery(uint64_t now) {
+    if (scanRequest_.exchange(false)) {
+        if (EnsureUdp()) {
+            if (!scanUntil_) Log("wifi: scanning for phones (Find phones on Wi-Fi is %s)", wireless_ ? "on" : "off");
+            nearby_.ClearForScan();
+            scanUntil_ = now + kScanWindowMs;
+            lastProbe_ = 0; // Probe right away.
+            nearbyDirty_ = true;
+        } else {
+            Log("wifi: can't scan: no UDP socket (%d)", WSAGetLastError());
+            ++scansDone_;
+            nearbyDirty_ = true;
+        }
+    }
+    if (scanUntil_) {
+        if (now - lastProbe_ >= kProbeEveryMs) {
+            lastProbe_ = now;
+            BroadcastProbe();
+        }
+        ReadAnswers(now);
+        if (now >= scanUntil_) {
+            scanUntil_ = 0;
+            ++scansDone_;
+            nearbyDirty_ = true;
+            Log("wifi: scan finished, %u phone(s) answered", unsigned(nearby_.Phones().size()));
+        }
+    }
+    RefreshNearby();
+}
+
+// Connect, from the scan list: one Wi-Fi session to that phone, whatever "Find phones on Wi-Fi" says.
+void PhoneLink::RunManualConnect(uint32_t ip) {
+    const NearbyPhone* found = nearby_.Find(ip);
+    if (!found) {
+        Log("wifi: connect: %s isn't in the scan list any more", IpText(ip).c_str());
+        return;
+    }
+    const std::string name = found->name;
+    const uint16_t port = found->port;
+    Log("wifi: connecting to %s (%s:%u), asked for on the PC", name.c_str(), IpText(ip).c_str(), unsigned(port));
+    manualSession_ = true;
+    WifiEnd end = WifiEnd::Failed;
+    for (int attempt = 0; attempt < 2 && !quit_; ++attempt) {
+        SOCKET s = ConnectTcp(ip, port, 3000);
+        if (s == INVALID_SOCKET) {
+            Log("wifi: can't connect to %s (%s:%u)", name.c_str(), IpText(ip).c_str(), unsigned(port));
+            break;
+        }
+        end = RunTcpSession(uintptr_t(s), name, attempt > 0);
+        if (end != WifiEnd::NeedsPairing) break; // Else: this PC forgot the phone; pair again with a code.
+    }
+    manualSession_ = false;
+    // Auto-connect (search on) mustn't ask a phone again right after its user said no here.
+    if (wireless_ && end == WifiEnd::Refused) netPhones_[ip].retryAfter = GetTickCount64() + kRetryRefusedMs;
+    lastProbe_ = 0;
+}
+
 void PhoneLink::NetScanOnce() {
+    if (const uint32_t ip = connectRequest_.exchange(0)) {
+        RunManualConnect(ip);
+        return;
+    }
     if (!wireless_) {
-        if (udp_ != INVALID_SOCKET) {
+        if (udp_ != INVALID_SOCKET && !scanUntil_) {
             closesocket(SOCKET(udp_));
             udp_ = INVALID_SOCKET;
             netPhones_.clear();
@@ -269,29 +388,10 @@ void PhoneLink::NetScanOnce() {
         lastProbe_ = now;
         BroadcastProbe();
     }
-
-    // Answers: "MYCAM!1 <tcp port> <phone name>".
-    char buf[512];
-    for (;;) {
-        sockaddr_in from = {};
-        int fromLen = sizeof(from);
-        int n = recvfrom(SOCKET(udp_), buf, sizeof(buf) - 1, 0, reinterpret_cast<sockaddr*>(&from), &fromLen);
-        if (n <= 0) break;
-        buf[n] = 0;
-        std::string text(buf, n);
-        if (text.rfind(kHere, 0) != 0) continue;
-        size_t portStart = text.find(' ');
-        size_t nameStart = portStart == std::string::npos ? std::string::npos : text.find(' ', portStart + 1);
-        int port = portStart == std::string::npos ? 0 : atoi(text.c_str() + portStart + 1);
-        if (port <= 0 || port > 65535) continue;
-        NetPhone& phone = netPhones_[from.sin_addr.s_addr];
-        if (phone.lastSeen == 0) {
-            phone.name = nameStart == std::string::npos ? IpText(from.sin_addr.s_addr) : text.substr(nameStart + 1);
-            Log("wifi: found %s at %s:%d", phone.name.c_str(), IpText(from.sin_addr.s_addr).c_str(), port);
-        }
-        phone.port = uint16_t(port);
-        phone.lastSeen = now;
-    }
+    ReadAnswers(now);
+    // While searching, the list follows what answers (between scans too, as probes go out every 2 s).
+    if (nearby_.Expire(now, kForgetAfterMs)) nearbyDirty_ = true;
+    RefreshNearby();
 
     // Connect to a phone that answered recently and isn't in back-off.
     for (auto& [ip, phone] : netPhones_) {
@@ -330,7 +430,8 @@ PhoneLink::WifiEnd PhoneLink::Handshake(uintptr_t socket, bool forcePair) {
         SyncLockPaused();
         WriteStatusFrame(now);
         if (cancelPairing_.exchange(false) && !status_.pairingCode.empty()) cancelled = true;
-        return !quit_ && wireless_ && !cancelled;
+        PollDiscovery(now);
+        return !quit_ && WifiAllowed() && !cancelled;
     };
     Bytes transcript;
     auto sendMsg = [&](uint8_t type, const Bytes& body, bool record) {
@@ -434,6 +535,7 @@ PhoneLink::WifiEnd PhoneLink::Handshake(uintptr_t socket, bool forcePair) {
         const std::string phoneName = Utf8(status_.phoneName);
         SavePairKey(phoneId, pairKey, phoneName);
         Log("wifi: paired");
+        nearbyDirty_ = true; // "Paired" in the scan list.
     }
     wifiTx_ = std::make_shared<wifi::RecordKey>();
     wifiRx_ = std::make_shared<wifi::RecordKey>();
@@ -447,6 +549,13 @@ PhoneLink::WifiEnd PhoneLink::RunTcpSession(uintptr_t socket, const std::string&
     const SOCKET s = SOCKET(socket);
     BeginSession(true, phoneName);
     Log("session: Wi-Fi connection to %s%s", phoneName.c_str(), forcePair ? " (pairing again)" : "");
+    sockaddr_in peer = {};
+    int peerLen = sizeof(peer);
+    if (getpeername(s, reinterpret_cast<sockaddr*>(&peer), &peerLen) == 0) {
+        sessionIp_ = peer.sin_addr.s_addr;
+        nearby_.Seen(sessionIp_, IpText(sessionIp_), ntohs(peer.sin_port), phoneName, GetTickCount64());
+        RefreshNearby(); // Shows it as "Connected" in the scan list.
+    }
     WifiEnd end = Handshake(socket, forcePair);
     if (end == WifiEnd::Ran) {
         Log("session: Wi-Fi link to %s is encrypted", phoneName.c_str());
@@ -459,7 +568,7 @@ PhoneLink::WifiEnd PhoneLink::RunTcpSession(uintptr_t socket, const std::string&
             timeval tv = {0, long(StatusWaitMs()) * 1000};
             if (select(0, &rd, nullptr, nullptr, &tv) > 0 && !ReceiveRecords(socket)) sessionError_ = true;
             const uint64_t now = GetTickCount64();
-            if (!wireless_) {
+            if (!WifiAllowed()) {
                 Log("wifi: turned off on the PC");
                 sessionError_ = true;
             } else if (now - lastUsbCheck > 2000) {
@@ -478,7 +587,9 @@ PhoneLink::WifiEnd PhoneLink::RunTcpSession(uintptr_t socket, const std::string&
     wifiTx_.reset();
     wifiRx_.reset();
     wifiRxBuf_.clear();
+    sessionIp_ = 0;
     ResetAfterSession();
+    RefreshNearby();
     return end;
 }
 
