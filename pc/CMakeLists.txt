@@ -53,11 +53,15 @@ add_executable(MyCamCompanion WIN32
     companion/marquee.cpp
     vcam/frame_transform.cpp
     companion/settings_window.cpp
+    companion/pairing_dialog.cpp
+    companion/xp_draw.cpp
+    companion/preview_source.cpp
+    companion/preview_convert.cpp
     companion/companion.rc
     companion/companion.manifest
 )
 target_link_libraries(MyCamCompanion PRIVATE usb mfplat mfuuid mfsensorgroup ole32 shell32 advapi32 setupapi newdev cfgmgr32
-    comctl32 d2d1 dwrite windowscodecs dwmapi wtsapi32 taskschd ws2_32 iphlpapi bcrypt crypt32)
+    comctl32 d2d1 dwrite windowscodecs dwmapi wtsapi32 taskschd ws2_32 iphlpapi bcrypt crypt32 d3d11 dxgi dcomp dxguid)
 
 # --- Developer tools (not shipped; install.ps1 copies only the two binaries above) -------------------
 option(MYCAM_BUILD_TOOLS "Build developer tools (capture_test, usb_probe)" OFF)
@@ -72,7 +76,8 @@ endif()
 option(MYCAM_BUILD_TESTS "Build unit tests" ON)
 if(MYCAM_BUILD_TESTS)
     enable_testing()
-    add_executable(mycam_tests tests/tests.cpp companion/packet_parser.cpp companion/wifi_crypto.cpp companion/marquee.cpp vcam/frame_transform.cpp)
+    add_executable(mycam_tests tests/tests.cpp companion/packet_parser.cpp companion/wifi_crypto.cpp companion/marquee.cpp
+        companion/preview_convert.cpp companion/status_text.cpp vcam/frame_transform.cpp)
     target_link_libraries(mycam_tests PRIVATE bcrypt)
     target_compile_definitions(mycam_tests PRIVATE MYCAM_GOLDEN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../protocol/golden.txt")
     add_test(NAME mycam_tests COMMAND mycam_tests)

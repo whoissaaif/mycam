@@ -31,7 +31,7 @@ constexpr uint8_t kModePaired = 0, kModePairing = 1;
 constexpr uint8_t kFlagForcePair = 0x01;
 constexpr uint8_t kRejectRefused = 1;
 constexpr uint64_t kStepTimeoutMs = 10000;
-constexpr uint64_t kUserTimeoutMs = 75000; // The phone gives its user 60 s.
+constexpr uint64_t kUserTimeoutMs = kPairingAnswerMs + 15000; // The phone gives its user 60 s.
 
 // --- Paired phones: HKCU\Software\MyCam\PairedPhones\<phone id> = Key (DPAPI-protected), Name ----------
 constexpr wchar_t kMyCamKey[] = L"Software\\MyCam";
@@ -323,11 +323,14 @@ void PhoneLink::NetScanOnce() {
 // a fresh ECDH, so earlier sessions stay safe if a key ever leaks.
 PhoneLink::WifiEnd PhoneLink::Handshake(uintptr_t socket, bool forcePair) {
     const SOCKET s = SOCKET(socket);
-    auto keepWaiting = [this] {
+    bool cancelled = false; // The user pressed "Cancel pairing" on the PC.
+    cancelPairing_ = false;
+    auto keepWaiting = [this, &cancelled] {
         const uint64_t now = GetTickCount64();
         SyncLockPaused();
         WriteStatusFrame(now);
-        return !quit_ && wireless_;
+        if (cancelPairing_.exchange(false) && !status_.pairingCode.empty()) cancelled = true;
+        return !quit_ && wireless_ && !cancelled;
     };
     Bytes transcript;
     auto sendMsg = [&](uint8_t type, const Bytes& body, bool record) {
@@ -414,6 +417,10 @@ PhoneLink::WifiEnd PhoneLink::Handshake(uintptr_t socket, bool forcePair) {
     const bool ok = readMsg(kMsgPhoneFinished, &phoneFinished, mode == kModePairing ? kUserTimeoutMs : kStepTimeoutMs, false, &rejected);
     status_.pairingCode.clear();
     Publish();
+    if (cancelled) {
+        Log("wifi: pairing cancelled on the PC");
+        return WifiEnd::Refused; // The caller closes the socket; don't ask that phone again right away.
+    }
     if (!ok) {
         // A paired phone that rejects our proof has a different key for us (it re-paired, or forgot us).
         if (rejected && mode == kModePaired) { ForgetPairKey(phoneId); return WifiEnd::NeedsPairing; }
