@@ -53,7 +53,7 @@ import androidx.compose.ui.unit.dp
 import io.github.whoissaaif.mycam.R
 import io.github.whoissaaif.mycam.WebcamService
 import io.github.whoissaaif.mycam.ui.theme.PairingCodeStyle
-import io.github.whoissaaif.mycam.ui.theme.Xp
+import io.github.whoissaaif.mycam.ui.theme.V2
 import io.github.whoissaaif.mycam.ui.v2.MonitorIllustration
 import io.github.whoissaaif.mycam.ui.v2.PrimaryButton
 import io.github.whoissaaif.mycam.ui.v2.SecondaryButton
@@ -121,11 +121,11 @@ fun PairingDialog(
         ) {
             if (timedOut) {
                 Text(
-                    stringResource(R.string.pair_timed_out), style = MaterialTheme.typography.titleLarge, color = Xp.Text,
+                    stringResource(R.string.pair_timed_out), style = MaterialTheme.typography.titleLarge, color = V2.Text,
                     modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
                 )
                 Spacer(Modifier.height(8.dp))
-                Text(stringResource(R.string.pair_timed_out_detail, lastName), style = MaterialTheme.typography.bodyMedium, color = Xp.Subtle)
+                Text(stringResource(R.string.pair_timed_out_detail, lastName), style = MaterialTheme.typography.bodyMedium, color = V2.Subtle)
                 Spacer(Modifier.height(16.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     XpButton(stringResource(R.string.close), onClick = onDismissTimedOut, isDefault = true)
@@ -156,27 +156,27 @@ private fun PairingBody(pcName: String, code: String, deadline: Long, onAnswer: 
     Spacer(Modifier.height(12.dp))
     Text(
         stringResource(R.string.pair_question, pcName), style = MaterialTheme.typography.titleLarge,
-        color = Xp.Text, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
+        color = V2.Text, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
     )
     Spacer(Modifier.height(12.dp))
-    Text(stringResource(R.string.pair_check), style = MaterialTheme.typography.bodyMedium, color = Xp.Text)
+    Text(stringResource(R.string.pair_check), style = MaterialTheme.typography.bodyMedium, color = V2.Text)
     val shown = WebcamService.formatCode(code)
     Text(
-        shown, style = PairingCodeStyle, color = Xp.Text, textAlign = TextAlign.Center,
+        shown, style = PairingCodeStyle, color = V2.Text, textAlign = TextAlign.Center,
         modifier = Modifier
             .fillMaxWidth()
             .padding(vertical = 8.dp)
             // TalkBack reads the code digit by digit.
             .clearAndSetSemantics { contentDescription = code.toCharArray().joinToString(" ") },
     )
-    Text(stringResource(R.string.pair_differ), style = MaterialTheme.typography.bodyMedium, color = Xp.Subtle)
+    Text(stringResource(R.string.pair_differ), style = MaterialTheme.typography.bodyMedium, color = V2.Subtle)
     Spacer(Modifier.height(12.dp))
     Row(verticalAlignment = Alignment.CenterVertically) {
         XpProgressBar(remaining.toFloat() / total, Modifier.weight(1f))
         Spacer(Modifier.width(12.dp))
         Text(
             stringResource(R.string.pair_waiting, String.format(Locale.US, "%d:%02d", seconds / 60, seconds % 60)),
-            style = MaterialTheme.typography.bodyMedium, color = Xp.Subtle,
+            style = MaterialTheme.typography.bodyMedium, color = V2.Subtle,
         )
     }
     Spacer(Modifier.height(16.dp))
@@ -200,17 +200,17 @@ fun LicenceDialog(visible: Boolean, onClose: () -> Unit) {
     BackHandler(enabled = visible, onBack = onClose)
     ModalLayer(visible) {
         XpDialogFrame(stringResource(R.string.about_licences_title), onClose = onClose) {
-            Text(stringResource(R.string.about_font), style = MaterialTheme.typography.titleMedium, color = Xp.Text)
+            Text(stringResource(R.string.about_font), style = MaterialTheme.typography.titleMedium, color = V2.Text)
             Spacer(Modifier.height(8.dp))
             Column(
                 Modifier
                     .fillMaxWidth()
                     .heightIn(max = 360.dp)
-                    .background(Xp.Card)
+                    .background(V2.Page)
                     .verticalScroll(rememberScrollState())
                     .padding(8.dp),
             ) {
-                Text(text, style = MaterialTheme.typography.bodyMedium, color = Xp.Text)
+                Text(text, style = MaterialTheme.typography.bodyMedium, color = V2.Text)
             }
             Spacer(Modifier.height(12.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {

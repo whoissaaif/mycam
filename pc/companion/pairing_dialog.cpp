@@ -47,7 +47,7 @@ struct PairingDialog::Impl {
     std::vector<Element> elements;
     std::unique_ptr<UiaHost> uia; // Screen readers (uia_provider.h); disconnected on destroy.
 
-    static uint64_t Now() { return GetTickCount64(); }
+    static uint64_t Now() { return xp::NowMs(); }
 
     void Layout() {
         elements.clear();
@@ -123,21 +123,22 @@ struct PairingDialog::Impl {
         xp::WindowChrome(paint, kW, height, L"Pair with a phone", active, icon16.Get());
         const xp::Palette& pal = paint.Colors();
         const Box body = {xp::kBorder, xp::kTitleBarH, kW - xp::kBorder, height - xp::kBorder};
-        paint.Fill(body, pal.surface);
+        // The v2 flat palette, the same as the window's own pairing page: page grey, ink text and the code
+        // in a pale bordered box. The old XP beige body, navy type and steel borders are gone (§4).
+        paint.Fill(body, pal.highContrast ? pal.surface : pal.pageBg);
         if (icon32) dc->DrawBitmap(icon32.Get(), D2D1::RectF(kPad, xp::kTitleBarH + 14, kPad + 32, xp::kTitleBarH + 46));
 
         const Element* title = Find(kPairTitle);
         // The phone name is what gets the ellipsis; the code never does.
-        paint.Text(Font::Instruction, title->name, title->rect, pal.highContrast ? pal.text : Rgb(0x1D3F8A), Align::Leading, -1, true);
+        paint.Text(Font::Instruction, title->name, title->rect, pal.text, Align::Leading, -1, true);
         const Element* card = Find(kPairCode);
         paint.Text(Font::Body, L"Check that the phone shows:", MakeBox(card->rect.l, card->rect.t - paint.LineHeight(Font::Body) - 6,
-                                                                      card->rect.W(), paint.LineHeight(Font::Body)), pal.text);
-        const D2D1_ROUNDED_RECT rr = {D2D1::RectF(card->rect.l + 0.5f, card->rect.t + 0.5f, card->rect.r - 0.5f, card->rect.b - 0.5f), 4, 4};
-        dc->FillRoundedRectangle(rr, paint.Brush(pal.card));
-        dc->DrawRoundedRectangle(rr, paint.Brush(pal.highContrast ? pal.text : Rgb(0x7F9DB9)));
-        paint.Text(Font::Code, code, card->rect, pal.highContrast ? pal.text : Rgb(0x1D3F8A), Align::Center, -1, false, true);
+                                                                      card->rect.W(), paint.LineHeight(Font::Body)), pal.subtle);
+        paint.RoundRect(card->rect, 8, paint.HighContrast() ? pal.card : Rgb(0xF7F9FC));
+        paint.RoundFrame(card->rect, 8, paint.HighContrast() ? pal.text : pal.ctlBorder);
+        paint.Text(Font::Code, code, card->rect, pal.text, Align::Center, -1, false, true);
         const Element* hint = Find(kPairHint);
-        paint.Text(Font::Body, hint->name, hint->rect, pal.text);
+        paint.Text(Font::Body, hint->name, hint->rect, pal.subtle);
 
         const Element* bar = Find(kPairProgress);
         paint.ProgressChunks(bar->rect, DeterminateChunks(bar->value, bar->rect.W() - 6, xp::Painter::kChunk, xp::Painter::kChunkGap));
@@ -146,11 +147,11 @@ struct PairingDialog::Impl {
         paint.Text(Font::Body, bar->value > 0 ? left : L"0:00", Box{bar->rect.r + 8, bar->rect.t - 3, kW - kPad, bar->rect.b + 3},
                    pal.subtle, Align::Leading, -1, false, true);
 
-        // Separator above the button row, then the buttons.
+        // A single hairline above the button row (the XP etched groove was beige over white), then the
+        // buttons, drawn with the v2 flat kit rather than the old 3-D push button.
         const Element* cancel = Find(kPairCancel);
         if (!pal.highContrast) {
-            paint.Line(body.l + kPad, cancel->rect.t - 9.5f, body.r - kPad, cancel->rect.t - 9.5f, Rgb(0xACA899));
-            paint.Line(body.l + kPad, cancel->rect.t - 8.5f, body.r - kPad, cancel->rect.t - 8.5f, Rgb(0xFFFFFF));
+            paint.Line(body.l + kPad, cancel->rect.t - 9.5f, body.r - kPad, cancel->rect.t - 9.5f, pal.cardBorder);
         }
         for (const auto& e : elements) {
             xp::ButtonState st;
@@ -158,9 +159,8 @@ struct PairingDialog::Impl {
             st.pressed = pressed == e.id && hot == e.id;
             if (e.kind == Kind::CaptionButton) paint.CaptionButton(e.rect, true, st);
             if (e.kind == Kind::Button) {
-                st.isDefault = true; // The one default button (Enter).
-                paint.PushButton(e.rect, e.name, -1, st, xp::ButtonStyle::Normal, Font::Body);
-                if (keyboardCues && GetFocus() == hwnd) paint.FocusRect(e.rect.Inset(4, 4));
+                paint.FlatButton(e.rect, e.name, -1, st, xp::FlatStyle::Secondary, Font::Body);
+                if (keyboardCues && GetFocus() == hwnd) paint.FocusRing(e.rect.Inset(-2, -2), 8.f);
             }
         }
         if (opening) dc->PopLayer();

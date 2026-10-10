@@ -104,6 +104,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import io.github.whoissaaif.mycam.R
 import io.github.whoissaaif.mycam.ui.theme.LocalReducedMotion
+import io.github.whoissaaif.mycam.ui.theme.V2
 import io.github.whoissaaif.mycam.ui.theme.Xp
 
 // Windows XP "Luna" building blocks for Compose (redesign.md sections 3 and 6). Drawn from scratch: XP is the
@@ -900,7 +901,9 @@ fun XpDialogFrame(
             .widthIn(max = 480.dp)
             .fillMaxWidth()
             .clip(shape)
-            .background(Xp.Surface)
+            // v2 flat kit: a white sheet, not the XP beige face. The Luna title bar stays, because the
+            // app's own header uses the same one (redesign-v2.md §4).
+            .background(V2.Card)
             .drawWithContent {
                 drawContent()
                 // The window frame on top of the content, following the shape (rounded top, square-ish bottom).
