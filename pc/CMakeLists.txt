@@ -50,6 +50,7 @@ add_executable(MyCamCompanion WIN32
     companion/app_settings.cpp
     companion/status_text.cpp
     companion/status_images.cpp
+    companion/marquee.cpp
     vcam/frame_transform.cpp
     companion/settings_window.cpp
     companion/companion.rc
@@ -71,7 +72,7 @@ endif()
 option(MYCAM_BUILD_TESTS "Build unit tests" ON)
 if(MYCAM_BUILD_TESTS)
     enable_testing()
-    add_executable(mycam_tests tests/tests.cpp companion/packet_parser.cpp companion/wifi_crypto.cpp vcam/frame_transform.cpp)
+    add_executable(mycam_tests tests/tests.cpp companion/packet_parser.cpp companion/wifi_crypto.cpp companion/marquee.cpp vcam/frame_transform.cpp)
     target_link_libraries(mycam_tests PRIVATE bcrypt)
     target_compile_definitions(mycam_tests PRIVATE MYCAM_GOLDEN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../protocol/golden.txt")
     add_test(NAME mycam_tests COMMAND mycam_tests)

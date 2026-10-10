@@ -7,6 +7,7 @@
 
 #include "../common/shared_frame.h"
 #include "log.h"
+#include "marquee.h"
 #include "protocol.h"
 #include "winusb_bind.h"
 
@@ -65,17 +66,17 @@ void PhoneLink::Run() {
     Publish();
 
     while (!quit_) {
-        if (usbReady_) ScanOnce();          // Runs a whole USB session when a phone is plugged in.
+        if (usbReady_) ScanOnce();         // Runs a whole USB session when a phone is plugged in.
         if (!quit_) NetScanOnce();          // Runs a whole Wi-Fi session when a phone answers (if enabled).
         if (!usbReady_ && status_.state == LinkState::Searching && !wireless_) {
             status_.state = LinkState::NoDriver;
             Publish();
         }
         if (status_.wirelessSearch != wireless_) Publish(); // Status text mentions Wi-Fi when it's on.
-        for (int i = 0; i < 10 && !quit_; ++i) {
+        for (uint64_t start = GetTickCount64(); !quit_ && GetTickCount64() - start < 1000;) {
             SyncLockPaused();
             WriteStatusFrame(GetTickCount64()); // "Waiting for the phone" while none is connected.
-            Sleep(100);
+            Sleep(StatusWaitMs());
         }
     }
     WSACleanup();
@@ -312,7 +313,7 @@ void PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx) {
     }
 
     const bool reconnect = SessionLoop([this] {
-        timeval tv = {0, 100000};
+        timeval tv = {0, long(StatusWaitMs()) * 1000};
         libusb_handle_events_timeout_completed(sessionCtx_, &tv, nullptr);
     });
     // Forces the phone out of accessory mode; it re-enumerates and we switch it back.
@@ -356,7 +357,7 @@ void PhoneLink::BeginSession(bool wireless, const std::string& phoneName) {
 }
 
 // The protocol for one connected phone, the same over USB and Wi-Fi: HELLO until it answers, then START /
-// STOP as apps use the camera, plus queued commands. `pump` waits up to 100 ms for data from the phone and
+// STOP as apps use the camera, plus queued commands. `pump` waits up to StatusWaitMs() for data from the phone and
 // feeds it in (or sets sessionError_). Everything runs on this thread, so sends never race with reads.
 bool PhoneLink::SessionLoop(const std::function<void()>& pump) {
     SendCommand(proto::kCmdHello);
@@ -627,14 +628,23 @@ void PhoneLink::SyncLockPaused() {
 }
 
 // While there is no live video, keep the MyCam camera showing a picture instead of black (the camera
-// treats frames older than 1.5 s as stale, so refresh a few times a second).
+// treats frames older than 1.5 s as stale, so refresh a few times a second). The waiting picture carries
+// the green marquee bar, redrawn at ~15 fps while an app is watching; the paused picture stays still.
 void PhoneLink::WriteStatusFrame(uint64_t now) {
-    if (now - lastStatusFrame_ < 400) return;
     const bool live = phoneStreaming_ && !phonePaused_ && !lockPaused_ && lastFrameTick_ && now - lastFrameTick_ < 1000;
+    const bool paused = phonePaused_ || lockPaused_;
+    marqueeActive_ = !live && !paused && !waitingImage_.empty() && writer_.ConsumerActive(kConsumerWindowMs);
+    // 55 ms rather than 66: GetTickCount64 moves in ~16 ms steps and the loops wake every 66 ms meanwhile.
+    if (now - lastStatusFrame_ < (marqueeActive_ ? 55u : 400u)) return;
     if (live) return;
-    const Nv12Image& image = (phonePaused_ || lockPaused_) ? pausedImage_ : waitingImage_;
+    const Nv12Image& image = paused ? pausedImage_ : waitingImage_;
     if (image.empty()) return;
     lastStatusFrame_ = now;
+    if (!paused) {
+        DrawMarquee(waitingFrame_, waitingImage_, double(now % 86400000ull) / 1000.0);
+        writer_.Write(waitingFrame_.data.data(), waitingFrame_.width, waitingFrame_.height, 0, false);
+        return;
+    }
     writer_.Write(image.data.data(), image.width, image.height, 0, false);
 }
 

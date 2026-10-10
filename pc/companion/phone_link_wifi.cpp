@@ -449,7 +449,7 @@ PhoneLink::WifiEnd PhoneLink::RunTcpSession(uintptr_t socket, const std::string&
             fd_set rd;
             FD_ZERO(&rd);
             FD_SET(s, &rd);
-            timeval tv = {0, 100000};
+            timeval tv = {0, long(StatusWaitMs()) * 1000};
             if (select(0, &rd, nullptr, nullptr, &tv) > 0 && !ReceiveRecords(socket)) sessionError_ = true;
             const uint64_t now = GetTickCount64();
             if (!wireless_) {
