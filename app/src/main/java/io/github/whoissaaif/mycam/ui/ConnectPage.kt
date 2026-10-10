@@ -162,6 +162,12 @@ private fun StatusCard(
         }
         Spacer(Modifier.height(12.dp))
         // Pause is never buried (section 10.1). Resume is the primary action, pausing the quieter one.
+        // The explanation comes first, so the button is the last thing in the card and reads as the action.
+        Text(
+            stringResource(if (state.paused) R.string.action_resume_detail else R.string.action_pause_detail),
+            style = MaterialTheme.typography.bodyMedium, color = V2.Subtle,
+        )
+        Spacer(Modifier.height(8.dp))
         if (state.paused) {
             PrimaryButton(
                 stringResource(R.string.action_resume_title), onClick = { actions.onPause(false) },
@@ -173,11 +179,6 @@ private fun StatusCard(
                 modifier = Modifier.fillMaxWidth(),
             )
         }
-        Spacer(Modifier.height(4.dp))
-        Text(
-            stringResource(if (state.paused) R.string.action_resume_detail else R.string.action_pause_detail),
-            style = MaterialTheme.typography.bodyMedium, color = V2.Subtle,
-        )
     }
 }
 

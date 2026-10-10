@@ -73,9 +73,11 @@ fun DrawScope.drawLineIcon(icon: LineIcon, color: Color, strokeDp: Float = 1.5f)
             }
         }
         LineIcon.Plug -> {
-            // A cable running into a socket: the "connect" mark.
-            line(4f, 12f, 9f, 12f); box(9f, 8f, 6f, 8f, 2f); line(15f, 12f, 20f, 12f)
-            line(6.5f, 9.5f, 6.5f, 14.5f)
+            // Two chain links meeting in the middle: the "connect" mark. Each is a "C" whose gap faces
+            // the other, with a short diagonal joining them.
+            arc(9.5f, 14.5f, 4.5f, 315f, 270f) // Lower-left link, open towards the upper right.
+            arc(14.5f, 9.5f, 4.5f, 135f, 270f) // Upper-right link, open towards the lower left.
+            line(10.8f, 13.2f, 13.2f, 10.8f)
         }
         LineIcon.Chevron -> {
             line(9.5f, 7f, 15f, 12f); line(15f, 12f, 9.5f, 17f)
