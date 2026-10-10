@@ -209,13 +209,15 @@ void Painter::SetTextScale(float textScale) {
 }
 
 void Painter::CreateFormats() {
-    // Tahoma and Trebuchet MS ship with Windows (never with MyCam); Segoe UI if they're missing (§9).
+    // Segoe UI for the body, Trebuchet MS Bold for the window caption only (redesign-v2.md §4). Both ship
+    // with Windows and are never shipped with MyCam; Tahoma stands in if Segoe UI is missing.
     static const FontSpec specs[int(Font::Count)] = {
-        {L"Tahoma", L"Segoe UI", DWRITE_FONT_WEIGHT_NORMAL, 8.f},
-        {L"Tahoma", L"Segoe UI", DWRITE_FONT_WEIGHT_BOLD, 8.f},
+        {L"Segoe UI", L"Tahoma", DWRITE_FONT_WEIGHT_NORMAL, 9.f},
+        {L"Segoe UI", L"Tahoma", DWRITE_FONT_WEIGHT_SEMI_BOLD, 9.f},
         {L"Trebuchet MS", L"Segoe UI", DWRITE_FONT_WEIGHT_BOLD, 10.f},
-        {L"Trebuchet MS", L"Segoe UI", DWRITE_FONT_WEIGHT_BOLD, 13.f},
-        {L"Trebuchet MS", L"Segoe UI", DWRITE_FONT_WEIGHT_BOLD, 24.f},
+        {L"Segoe UI", L"Tahoma", DWRITE_FONT_WEIGHT_SEMI_BOLD, 13.f},
+        {L"Segoe UI", L"Tahoma", DWRITE_FONT_WEIGHT_SEMI_BOLD, 24.f},
+        {L"Segoe UI", L"Tahoma", DWRITE_FONT_WEIGHT_NORMAL, 8.f},
     };
     ComPtr<IDWriteFontCollection> fonts;
     dwrite_->GetSystemFontCollection(&fonts);
@@ -363,6 +365,19 @@ void Painter::SetPalette(bool hc) {
         pal_.frame = SysColor(COLOR_ACTIVEBORDER);
         pal_.focus = SysColor(COLOR_WINDOWTEXT);
         pal_.card = SysColor(COLOR_WINDOW);
+        // High contrast: flat system colours, no gloss and no tints (redesign-v2.md §12).
+        pal_.accent = SysColor(COLOR_HIGHLIGHT);
+        pal_.accentHot = SysColor(COLOR_HIGHLIGHT);
+        pal_.accentDown = SysColor(COLOR_HIGHLIGHT);
+        pal_.accentText = SysColor(COLOR_HIGHLIGHTTEXT);
+        pal_.pageBg = SysColor(COLOR_WINDOW);
+        pal_.navBg = SysColor(COLOR_WINDOW);
+        pal_.cardBorder = SysColor(COLOR_WINDOWTEXT);
+        pal_.ctlFill = SysColor(COLOR_WINDOW);
+        pal_.ctlBorder = SysColor(COLOR_WINDOWTEXT);
+        pal_.ctlHotBorder = SysColor(COLOR_HIGHLIGHT);
+        pal_.trackOff = SysColor(COLOR_WINDOW);
+        pal_.trackOffBorder = SysColor(COLOR_WINDOWTEXT);
         return;
     }
     // redesign.md §3.2 (Luna Blue).
@@ -383,6 +398,25 @@ void Painter::SetPalette(bool hc) {
     pal_.frame = Rgb(0x0831D9);
     pal_.focus = Rgb(0x000000);
     pal_.card = Rgb(0xFFFFFF);
+    // redesign-v2.md §4: one blue accent, white cards, near-white page. White on #1E6FE8 is 4.6 : 1.
+    pal_.accent = Rgb(0x1E6FE8);
+    pal_.accentHot = Rgb(0x3281F0);
+    pal_.accentDown = Rgb(0x1760D0);
+    pal_.accentText = Rgb(0xFFFFFF);
+    pal_.pageBg = Rgb(0xF5F7FA);
+    pal_.navBg = Rgb(0xFFFFFF);
+    pal_.cardBorder = Rgb(0xE3E8EF);
+    pal_.ctlFill = Rgb(0xFFFFFF);
+    pal_.ctlBorder = Rgb(0xD0D7E2);
+    pal_.ctlHotBorder = Rgb(0xA8B7CC);
+    pal_.trackOff = Rgb(0xD7DEE8);
+    pal_.trackOffBorder = Rgb(0xB4C0D0);
+    // The body is white now, not beige: text and secondary text get a touch more contrast.
+    pal_.text = Rgb(0x1B2330);
+    pal_.subtle = Rgb(0x5C6675);
+    pal_.disabledText = Rgb(0xA3ACBA);
+    pal_.link = Rgb(0x1760D0);
+    pal_.linkHot = Rgb(0x3281F0);
 }
 
 // --- Painter: XP widgets ---------------------------------------------------------------------------
@@ -752,6 +786,277 @@ void WindowChrome(Painter& p, float w, float h, const std::wstring& caption, boo
 void Painter::SunkenFrame(const Box& b) {
     // XP's list/preview border (#7F9DB9), with a hairline shadow inside.
     Frame(b, pal_.highContrast ? SysColor(COLOR_WINDOWTEXT) : Rgb(0x7F9DB9));
+}
+
+// --- v2 flat components (redesign-v2.md §4) -------------------------------------------------------
+
+namespace {
+float Clamp01f(float t) { return t < 0 ? 0.f : t > 1 ? 1.f : t; }
+float Mix1(float a, float b, float t) { return a + (b - a) * t; }
+D2D1_COLOR_F Mix(const D2D1_COLOR_F& a, const D2D1_COLOR_F& b, float t) {
+    t = Clamp01f(t);
+    return D2D1::ColorF(Mix1(a.r, b.r, t), Mix1(a.g, b.g, t), Mix1(a.b, b.b, t), Mix1(a.a, b.a, t));
+}
+} // namespace
+
+void Painter::RoundRect(const Box& b, float r, D2D1_COLOR_F fill) {
+    dc_->FillRoundedRectangle({D2D1::RectF(b.l, b.t, b.r, b.b), r, r}, Brush(fill));
+}
+
+void Painter::RoundFrame(const Box& b, float r, D2D1_COLOR_F c, float w) {
+    const float h = w / 2;
+    dc_->DrawRoundedRectangle({D2D1::RectF(b.l + h, b.t + h, b.r - h, b.b - h), r, r}, Brush(c), w);
+}
+
+void Painter::Card(const Box& b, float radius, float shadow) {
+    if (!pal_.highContrast && shadow > 0) {
+        // Soft shadow: a few stacked translucent rounded rectangles, slightly below the card.
+        for (int i = 4; i >= 1; --i) {
+            const float sp = float(i);
+            RoundRect({b.l + sp * 0.4f, b.t + sp * 0.7f, b.r - sp * 0.4f, b.b + sp * 0.5f}, radius + sp,
+                      Rgb(0x0A1A33, 0.030f * shadow));
+        }
+    }
+    RoundRect(b, radius, pal_.card);
+    RoundFrame(b, radius, pal_.cardBorder);
+}
+
+void Painter::FlatButton(const Box& b, const std::wstring& label, int underline, const ButtonState& s, FlatStyle style,
+                         Font font) {
+    constexpr float r = 6;
+    const float p = s.pressed ? 1.f : Clamp01f(s.press);
+    D2D1_COLOR_F ink;
+    if (pal_.highContrast) {
+        RoundRect(b, r, SysColor(s.hot && !s.disabled ? COLOR_HIGHLIGHT : COLOR_BTNFACE));
+        RoundFrame(b, r, SysColor(s.disabled ? COLOR_GRAYTEXT : COLOR_BTNTEXT), s.isDefault ? 2.f : 1.f);
+        ink = SysColor(s.disabled ? COLOR_GRAYTEXT : s.hot ? COLOR_HIGHLIGHTTEXT : COLOR_BTNTEXT);
+    } else if (style == FlatStyle::Primary) {
+        const D2D1_COLOR_F rest = s.hot ? pal_.accentHot : pal_.accent;
+        RoundRect(b, r, s.disabled ? Rgb(0xBED3F3) : Mix(rest, pal_.accentDown, p));
+        ink = s.disabled ? Rgb(0xF2F6FD) : pal_.accentText;
+    } else {
+        const bool ghost = style == FlatStyle::Ghost;
+        const D2D1_COLOR_F rest = ghost ? Rgb(0xFFFFFF, 0.f) : pal_.ctlFill;
+        RoundRect(b, r, Mix(s.hot && !s.disabled ? Rgb(0xF2F6FC) : rest, Rgb(0xE7EDF6), p));
+        if (!ghost) RoundFrame(b, r, s.disabled ? pal_.cardBorder : s.hot ? pal_.ctlHotBorder : pal_.ctlBorder);
+        ink = s.disabled ? pal_.disabledText : pal_.text;
+    }
+    Text(font, label, b, ink, Align::Center, underline, true, true);
+}
+
+void Painter::NavPill(const Box& b, float opacity) {
+    const D2D1_COLOR_F c = pal_.highContrast ? SysColor(COLOR_HIGHLIGHT) : pal_.accent;
+    RoundRect(b, 7, D2D1::ColorF(c.r, c.g, c.b, c.a * Clamp01f(opacity)));
+}
+
+void Painter::Combo(const Box& b, const std::wstring& text, const ButtonState& s, bool open) {
+    constexpr float r = 6;
+    RoundRect(b, r, s.disabled && !pal_.highContrast ? Rgb(0xF5F7FA) : pal_.ctlFill);
+    RoundFrame(b, r,
+               s.disabled ? pal_.cardBorder : open ? pal_.accent : s.hot ? pal_.ctlHotBorder : pal_.ctlBorder,
+               open ? 1.6f : 1.f);
+    const D2D1_COLOR_F ink = s.disabled ? pal_.disabledText : pal_.text;
+    Text(Font::Body, text, {b.l + 10, b.t, b.r - 26, b.b}, ink, Align::Leading, -1, true, true);
+    // Chevron: down when closed, up when open.
+    const float cx = b.r - 15, cy = (b.t + b.b) / 2, d = 3.6f, dir = open ? -1.f : 1.f;
+    const D2D1_COLOR_F chev = s.disabled ? pal_.disabledText : pal_.subtle;
+    Line(cx - d, cy - d * 0.55f * dir, cx, cy + d * 0.55f * dir, chev, 1.6f);
+    Line(cx + d, cy - d * 0.55f * dir, cx, cy + d * 0.55f * dir, chev, 1.6f);
+}
+
+void Painter::DropPanel(const Box& b) {
+    if (!pal_.highContrast) {
+        for (int i = 5; i >= 1; --i) {
+            const float sp = float(i);
+            RoundRect({b.l + sp * 0.3f, b.t + sp * 0.6f, b.r - sp * 0.3f, b.b + sp * 0.8f}, 7 + sp, Rgb(0x0A1A33, 0.045f));
+        }
+    }
+    RoundRect(b, 7, pal_.ctlFill);
+    RoundFrame(b, 7, pal_.highContrast ? pal_.ctlBorder : Rgb(0xCFD8E5));
+}
+
+void Painter::DropRow(const Box& b, bool selected, bool hot) {
+    if (pal_.highContrast) {
+        if (hot) RoundRect(b, 4, SysColor(COLOR_HIGHLIGHT));
+        else if (selected) RoundFrame(b, 4, SysColor(COLOR_WINDOWTEXT));
+        return;
+    }
+    if (hot) RoundRect(b, 4, pal_.accent);
+    else if (selected) RoundRect(b, 4, Rgb(0xEAF1FD));
+}
+
+void Painter::Switch(const Box& t, float on, const ButtonState& s) {
+    on = Clamp01f(on);
+    const float r = t.H() / 2;
+    if (pal_.highContrast) {
+        RoundRect(t, r, on > 0.5f ? SysColor(COLOR_HIGHLIGHT) : SysColor(COLOR_WINDOW));
+        RoundFrame(t, r, SysColor(s.disabled ? COLOR_GRAYTEXT : COLOR_WINDOWTEXT));
+    } else {
+        const D2D1_COLOR_F onColor = s.disabled ? Rgb(0xBED3F3) : s.hot ? pal_.accentHot : pal_.accent;
+        const D2D1_COLOR_F offColor = s.disabled ? Rgb(0xEAEEF4) : pal_.trackOff;
+        RoundRect(t, r, Mix(offColor, onColor, on));
+        // The off state needs a visible border, not just colour (§4, accessibility).
+        RoundFrame(t, r, Mix(s.disabled ? pal_.cardBorder : pal_.trackOffBorder, onColor, on));
+    }
+    const float d = t.H() - 6;
+    const float cx = Mix1(t.l + 3 + d / 2, t.r - 3 - d / 2, on), cy = (t.t + t.b) / 2;
+    if (!pal_.highContrast) {
+        dc_->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy + 0.7f), d / 2, d / 2), Brush(Rgb(0x0A1A33, 0.20f)));
+        dc_->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), d / 2, d / 2), Brush(Rgb(0xFFFFFF)));
+    } else {
+        dc_->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), d / 2, d / 2), Brush(SysColor(COLOR_BTNFACE)));
+        dc_->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), d / 2, d / 2), Brush(SysColor(COLOR_WINDOWTEXT)));
+    }
+}
+
+void Painter::SliderRail(const Box& rail, float fraction, const ButtonState& s) {
+    const float f = Clamp01f(fraction), r = rail.H() / 2;
+    const D2D1_COLOR_F fill = s.disabled ? Rgb(0xBED3F3) : s.hot || s.pressed ? pal_.accentHot : pal_.accent;
+    if (pal_.highContrast) {
+        RoundRect(rail, r, SysColor(COLOR_WINDOW));
+        RoundFrame(rail, r, SysColor(COLOR_WINDOWTEXT));
+        if (f > 0) RoundRect({rail.l, rail.t, rail.l + rail.W() * f, rail.b}, r, SysColor(COLOR_HIGHLIGHT));
+    } else {
+        RoundRect(rail, r, s.disabled ? Rgb(0xEAEEF4) : pal_.trackOff);
+        if (f > 0) RoundRect({rail.l, rail.t, rail.l + rail.W() * f, rail.b}, r, fill);
+    }
+    const float cx = rail.l + rail.W() * f, cy = (rail.t + rail.b) / 2, tr = s.pressed ? 7.5f : 7.f;
+    if (pal_.highContrast) {
+        dc_->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), tr, tr), Brush(SysColor(COLOR_BTNFACE)));
+        dc_->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), tr, tr), Brush(SysColor(COLOR_WINDOWTEXT)));
+        return;
+    }
+    dc_->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy + 0.8f), tr, tr), Brush(Rgb(0x0A1A33, 0.18f)));
+    dc_->FillEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), tr, tr), Brush(Rgb(0xFFFFFF)));
+    dc_->DrawEllipse(D2D1::Ellipse(D2D1::Point2F(cx, cy), tr - 0.9f, tr - 0.9f), Brush(fill), 1.8f);
+}
+
+void Painter::DarkPill(const Box& b, const std::wstring& text, Font font) {
+    const float r = std::min(b.H() / 2, 11.f);
+    if (pal_.highContrast) {
+        RoundRect(b, r, SysColor(COLOR_WINDOW));
+        RoundFrame(b, r, SysColor(COLOR_WINDOWTEXT));
+        Text(font, text, b, SysColor(COLOR_WINDOWTEXT), Align::Center, -1, true, true);
+        return;
+    }
+    RoundRect(b, r, Rgb(0x000000, 0.70f));
+    Text(font, text, b, Rgb(0xFFFFFF), Align::Center, -1, true, true);
+}
+
+void Painter::FocusRing(const Box& b, float radius) {
+    const D2D1_COLOR_F c = pal_.highContrast ? SysColor(COLOR_WINDOWTEXT) : pal_.accent;
+    RoundFrame(b, radius, D2D1::ColorF(c.r, c.g, c.b, pal_.highContrast ? 1.f : 0.85f), 2.f);
+}
+
+void Painter::Icon(xp::Glyph g, const Box& b, D2D1_COLOR_F ink, float w) {
+    const float cx = (b.l + b.r) / 2, cy = (b.t + b.b) / 2, u = std::min(b.W(), b.H()) / 24.f;
+    auto P = [&](float x, float y) { return D2D1::Point2F(cx + (x - 12) * u, cy + (y - 12) * u); };
+    auto line = [&](float x0, float y0, float x1, float y1) { dc_->DrawLine(P(x0, y0), P(x1, y1), Brush(ink), w); };
+    auto box = [&](float x0, float y0, float x1, float y1, float r) {
+        const D2D1_POINT_2F a = P(x0, y0), c = P(x1, y1);
+        dc_->DrawRoundedRectangle({D2D1::RectF(a.x, a.y, c.x, c.y), r * u, r * u}, Brush(ink), w);
+    };
+    auto solidBox = [&](float x0, float y0, float x1, float y1) {
+        const D2D1_POINT_2F a = P(x0, y0), c = P(x1, y1);
+        dc_->FillRectangle(D2D1::RectF(a.x, a.y, c.x, c.y), Brush(ink));
+    };
+    auto circle = [&](float x, float y, float r, bool fill) {
+        const D2D1_ELLIPSE e = D2D1::Ellipse(P(x, y), r * u, r * u);
+        if (fill) dc_->FillEllipse(e, Brush(ink));
+        else dc_->DrawEllipse(e, Brush(ink), w);
+    };
+    auto poly = [&](std::initializer_list<D2D1_POINT_2F> pts, bool fill, bool close) {
+        ComPtr<ID2D1PathGeometry> path;
+        if (!factory_) return;
+        factory_->CreatePathGeometry(&path);
+        ComPtr<ID2D1GeometrySink> sink;
+        if (!path || FAILED(path->Open(&sink))) return;
+        auto it = pts.begin();
+        sink->BeginFigure(*it++, fill ? D2D1_FIGURE_BEGIN_FILLED : D2D1_FIGURE_BEGIN_HOLLOW);
+        for (; it != pts.end(); ++it) sink->AddLine(*it);
+        sink->EndFigure(close ? D2D1_FIGURE_END_CLOSED : D2D1_FIGURE_END_OPEN);
+        sink->Close();
+        if (fill) dc_->FillGeometry(path.Get(), Brush(ink));
+        else dc_->DrawGeometry(path.Get(), Brush(ink), w);
+    };
+    auto arc = [&](float x0, float y0, float x1, float y1, float r, bool large) {
+        ComPtr<ID2D1PathGeometry> path;
+        if (!factory_) return;
+        factory_->CreatePathGeometry(&path);
+        ComPtr<ID2D1GeometrySink> sink;
+        if (!path || FAILED(path->Open(&sink))) return;
+        sink->BeginFigure(P(x0, y0), D2D1_FIGURE_BEGIN_HOLLOW);
+        const D2D1_ARC_SEGMENT seg = {P(x1, y1), D2D1::SizeF(r * u, r * u), 0.f, D2D1_SWEEP_DIRECTION_CLOCKWISE,
+                                      large ? D2D1_ARC_SIZE_LARGE : D2D1_ARC_SIZE_SMALL};
+        sink->AddArc(seg);
+        sink->EndFigure(D2D1_FIGURE_END_OPEN);
+        sink->Close();
+        dc_->DrawGeometry(path.Get(), Brush(ink), w);
+    };
+    switch (g) {
+    case xp::Glyph::Home:
+        poly({P(3, 11.5f), P(12, 4), P(21, 11.5f)}, false, false);
+        poly({P(5.8f, 10), P(5.8f, 20.2f), P(18.2f, 20.2f), P(18.2f, 10)}, false, false);
+        break;
+    case xp::Glyph::Devices:
+        box(2.5f, 6, 11.5f, 15.5f, 1.5f);  // A small monitor …
+        line(7, 15.5f, 7, 18.5f);
+        line(4.5f, 18.5f, 9.5f, 18.5f);
+        box(14, 4.5f, 21.5f, 19.5f, 2.f);  // … and a phone.
+        line(16.5f, 17.2f, 19, 17.2f);
+        break;
+    case xp::Glyph::Camera:
+        poly({P(8.5f, 7), P(10, 4.2f), P(14, 4.2f), P(15.5f, 7)}, false, false);
+        box(3, 7, 21, 19.5f, 2.5f);
+        circle(12, 13.2f, 3.6f, false);
+        break;
+    case xp::Glyph::Settings: {
+        circle(12, 12, 3.2f, false);
+        for (int i = 0; i < 8; ++i) {
+            const float a = float(i) * 3.14159265f / 4;
+            line(12 + std::cos(a) * 5.f, 12 + std::sin(a) * 5.f, 12 + std::cos(a) * 8.f, 12 + std::sin(a) * 8.f);
+        }
+        break;
+    }
+    case xp::Glyph::About:
+        circle(12, 12, 8.6f, false);
+        circle(12, 7.8f, 1.f, true);
+        line(12, 11, 12, 16.6f);
+        break;
+    case xp::Glyph::Usb: // The USB trident.
+        poly({P(12, 2.5f), P(14.6f, 6.8f), P(9.4f, 6.8f)}, true, true);
+        line(12, 6.8f, 12, 19.5f);
+        circle(12, 21, 1.7f, true);
+        line(12, 13.5f, 7.5f, 10.4f);
+        solidBox(5.6f, 7.2f, 9.2f, 10.8f);
+        line(12, 16, 16.5f, 13);
+        circle(17.4f, 11.6f, 1.7f, true);
+        break;
+    case xp::Glyph::Wifi: // Arcs over a dot.
+        circle(12, 18.6f, 1.5f, true);
+        for (float r : {4.6f, 8.4f, 12.2f}) arc(12 - r * 0.72f, 18.6f - r * 0.69f, 12 + r * 0.72f, 18.6f - r * 0.69f, r, false);
+        break;
+    case xp::Glyph::Phone:
+        box(6.5f, 2.8f, 17.5f, 21.2f, 2.5f);
+        line(10.2f, 18.6f, 13.8f, 18.6f);
+        break;
+    case xp::Glyph::Refresh:
+        arc(12, 4.6f, 4.6f, 12, 7.4f, true);
+        poly({P(11.6f, 1.6f), P(11.6f, 7.6f), P(15.8f, 4.6f)}, true, true);
+        break;
+    case xp::Glyph::Monitor:
+        box(2.5f, 4.5f, 21.5f, 17, 2.f);
+        line(12, 17, 12, 20);
+        line(8, 20.2f, 16, 20.2f);
+        break;
+    case xp::Glyph::Pause:
+        solidBox(8, 5, 10.8f, 19);
+        solidBox(13.2f, 5, 16, 19);
+        break;
+    case xp::Glyph::Play:
+        poly({P(8, 4.6f), P(19, 12), P(8, 19.4f)}, true, true);
+        break;
+    }
 }
 
 } // namespace mycam::xp
