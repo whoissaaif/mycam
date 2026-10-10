@@ -108,6 +108,12 @@ UsbmuxTransport::SocketHandle UsbmuxTransport::ConnectToDevice(uint32_t deviceId
         closesocket(ToSocket(s));
         return kInvalidSocket;
     }
+    // The 200 ms receive timeout is only for the polling Listen socket and the
+    // Result handshake. The tunnel's reader thread must block until data or close,
+    // otherwise an idle phone looks like a dropped connection.
+    int noTimeout = 0;
+    setsockopt(ToSocket(s), SOL_SOCKET, SO_RCVTIMEO,
+               reinterpret_cast<const char*>(&noTimeout), sizeof(noTimeout));
     return s;
 }
 
@@ -194,14 +200,21 @@ void UsbmuxTransport::StartTunnel(SocketHandle s, uint32_t deviceId) {
 
 void UsbmuxTransport::ReaderLoop(SocketHandle socket) {
     uint8_t buf[16384];
+    int n = 0;
     while (true) {
-        int n = recv(ToSocket(socket), reinterpret_cast<char*>(buf), sizeof(buf), 0);
+        n = recv(ToSocket(socket), reinterpret_cast<char*>(buf), sizeof(buf), 0);
         if (n > 0) {
             if (onData_) onData_(buf, size_t(n));
             continue;
         }
+        if (n < 0) {
+            int err = WSAGetLastError();
+            // A timeout is not a closed connection; keep waiting for the phone.
+            if (err == WSAETIMEDOUT || err == WSAEWOULDBLOCK) continue;
+        }
         break;
     }
+    Log("usbmux: tunnel read ended (recv=%d, wsa error %d)", n, WSAGetLastError());
     CloseTunnel(false);
 }
 
