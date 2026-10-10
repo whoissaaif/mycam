@@ -1,570 +1,1249 @@
 #include "settings_window.h"
 
-#include <d2d1.h>
+#include <d2d1effects.h>
 #include <dwmapi.h>
-#include <dwrite.h>
-#include <wincodec.h>
 #include <windowsx.h>
-#include <wrl/client.h>
 
 #include <algorithm>
+#include <cmath>
+#include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
+#include "app_settings.h"
+#include "capabilities.h"
+#include "preview_source.h"
 #include "protocol.h"
+#include "status_images.h"
 #include "status_text.h"
-
-using Microsoft::WRL::ComPtr;
+#include "uia_provider.h"
+#include "ui_layout.h"
+#include "ui_motion.h"
+#include "xp_draw.h"
 
 namespace mycam {
 
+using namespace ui;
+using xp::Align;
+using xp::ButtonState;
+using xp::FlatStyle;
+using xp::Font;
+using xp::Glyph;
+using xp::Rgb;
+using Microsoft::WRL::ComPtr;
+
 namespace {
 
-// --- Aero palette (IMPROVEMENTS.md 7.2) ----------------------------------------------------------
-constexpr UINT32 kBody = 0xFFFFFF;          // Content area
-constexpr UINT32 kCommandArea = 0xF0F0F0;   // Bottom button strip
-constexpr UINT32 kCommandLine = 0xDFDFDF;
-constexpr UINT32 kMainInstruction = 0x003399;
-constexpr UINT32 kText = 0x000000;
-constexpr UINT32 kSubtle = 0x5A5A5A;
-constexpr UINT32 kLink = 0x0066CC;
-constexpr UINT32 kLinkHot = 0x3399FF;
-constexpr UINT32 kRule = 0xE2E2E2;
+// Window geometry, DIPs: 720 x 500 still fits a 720 DIP work area (CLAUDE.md). The v2 shell is two
+// columns (redesign-v2.md §2.1): a white sidebar and a content area that shows one page.
+constexpr float kW = 720, kH = 500;
+constexpr float kNavW = 150;
+constexpr float kPad = 16;      // Content padding.
+constexpr float kCardPad = 14;  // Inside a card.
+constexpr float kNavItemH = 32;
+constexpr float kRowH = 30;     // Flat control height (button, combo).
+constexpr float kGap = 10;
 
-// Layout in DIPs.
-constexpr float kWidth = 420, kHeight = 756;
-constexpr float kTitleH = 30, kFrame = 7, kCommandH = 46;
+constexpr UINT_PTR kTimerAnim = 1, kTimerPreview = 2;
+constexpr uint64_t kApplyTimeoutMs = 4000;
+constexpr uint64_t kUsbScanMs = 2500; // How long "Scan for USB Devices" reports that it is looking.
 
-enum Id {
-    kNone = 0, kPause, kBack, kFront,
-    kQ720, kQ1080, kQ4K, kFps30, kFps60, kFps120, kZoomOut, kZoomIn, kZoomReset, kEvDown, kEvUp, kFocusAuto, kFocusLock,
-    kTorch, kAuto,
-    kMirror, kFill, kAutostart, kReconnect, kOpenLog, kClose, kTitleClose, kTitleMin };
-enum class Kind { Segment, Checkbox, Link, Button, TitleClose, TitleMin };
-
-struct Element {
-    Id id;
-    Kind kind;
-    D2D1_RECT_F rect;
-    std::wstring text;
+struct NavDef {
+    int id;
+    const wchar_t* label;
+    Glyph glyph;
+    Page page;
+};
+const NavDef kNav[] = {
+    {kNavHome, L"&Home", Glyph::Home, Page::Home},
+    {kNavDevices, L"De&vices", Glyph::Devices, Page::Devices},
+    {kNavCamera, L"&Camera", Glyph::Camera, Page::Camera},
+    {kNavSettings, L"Settin&gs", Glyph::Settings, Page::Settings},
+    {kNavAbout, L"&About", Glyph::About, Page::About},
 };
 
-D2D1_COLOR_F Rgb(UINT32 rgb, float a = 1.f) { return D2D1::ColorF(rgb, a); }
-D2D1_RECT_F Rect(float l, float t, float w, float h) { return D2D1::RectF(l, t, l + w, t + h); }
-bool Contains(const D2D1_RECT_F& r, float x, float y) { return x >= r.left && x < r.right && y >= r.top && y < r.bottom; }
+// One element as laid out and drawn.
+struct Item {
+    Element e;
+    std::wstring label;    // What is drawn (the accessible name may say more).
+    std::wstring sub;      // Second line: a card's description, a device's address.
+    float alpha = 1;
+    int drawGroup = kNone; // The card it is drawn in (usually e.parent).
+    Glyph glyph = Glyph::Home;
+    bool hasGlyph = false;
+    FlatStyle style = FlatStyle::Secondary;
+    Box extra;             // The switch track, the slider rail, the pill box, ...
+};
+
+// One row of the device list, as drawn (the row's Element carries the accessible name).
+struct DeviceRow {
+    std::wstring name, where, status;
+    uint32_t ipv4 = 0;
+    bool usb = false, connected = false;
+    int card = kNone;     // The card this row is laid out in (Connected or Available).
+    bool firstInCard = false; // No divider above the first row of a card.
+    Box glyphBox, nameBox, whereBox, transportBox;
+};
+
+// A white card (redesign-v2.md §4). Cards are Elements too (UIA Group), so this is only its geometry.
+struct CardGeo {
+    int id;
+    Box box;
+};
+
+// Static text that isn't an element of its own (control labels).
+struct Deco {
+    Box box;
+    std::wstring text;
+    Font font;
+    bool subtle;
+    bool dim;
+    int underline = -1;
+};
+
+std::wstring Wide(const std::string& utf8) {
+    std::wstring w(size_t(MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), int(utf8.size()), nullptr, 0)), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), int(utf8.size()), w.data(), int(w.size()));
+    return w;
+}
+
+xp::BadgeKind BadgeFor(int icon) {
+    switch (icon) {
+    case kIconStreaming: return xp::BadgeKind::Play;
+    case kIconPaused: return xp::BadgeKind::Pause;
+    case kIconError: return xp::BadgeKind::Error;
+    default: return xp::BadgeKind::None;
+    }
+}
+
+bool IsFlat(Kind k) {
+    return k == Kind::Button || k == Kind::Dropdown || k == Kind::Toggle || k == Kind::Slider || k == Kind::Nav;
+}
 
 } // namespace
 
 struct SettingsWindow::Impl {
-    SettingsModel* model;
+    SettingsWindow* owner = nullptr;
+    SettingsModel* model = nullptr;
     HWND hwnd = nullptr;
-    float scale = 1.f;
+    float scale = 1.f, forcedScale = 0;
+    bool active = true;
 
-    ComPtr<ID2D1Factory> d2d;
+    xp::Surface surface;
+    xp::Painter paint;
     ComPtr<IDWriteFactory> dwrite;
-    ComPtr<IWICImagingFactory> wic;
-    ComPtr<ID2D1HwndRenderTarget> rt;
-    ComPtr<IDWriteTextFormat> fontBody, fontTitle, fontHeading, fontInstruction;
-    ComPtr<ID2D1Bitmap> appIcon16, statusIcon;
-    int statusIconId = 0;
+    ComPtr<ID2D1Bitmap> appIcon16, appIcon48, statusIcon;
+    int statusIconId = 0, iconGen = -1;
+    float iconScale = 0;
 
-    std::vector<Element> elements;
-    Id hot = kNone, pressed = kNone, focus = kBack;
-    bool keyboardCues = false;
-    bool tracking = false;
+    // Layout (rebuilt by Layout()).
+    std::vector<Item> items;
+    std::vector<Deco> decos;
+    std::vector<CardGeo> cards;
+    std::vector<DeviceRow> deviceRows;
+    Box nav, content, contentView, previewBox;
+    float scroll = 0, contentH = 0;
+    size_t lastSignature = 0;
+    float lineH = 13, smallH = 12;
 
-    // --- Setup ---------------------------------------------------------------------------------------
+    // Pages (redesign-v2.md §2.1): the window is a small router.
+    Page page = Page::Home, returnPage = Page::Home;
+    Tween pageAnim;   // 0 -> 1 while the incoming page arrives.
+    Tween navPill;    // The pill's top edge, in DIPs.
+    bool navPillSet = false;
+    // The outgoing page, drawn from the last frame's layout while it fades out.
+    std::vector<Item> fadeItems;
+    std::vector<Deco> fadeDecos;
+    std::vector<CardGeo> fadeCards;
+    std::vector<DeviceRow> fadeRows;
+    Box fadePreview = {};
 
-    void CreateFactories() {
-        D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, d2d.GetAddressOf());
-        DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory),
-                            reinterpret_cast<IUnknown**>(dwrite.GetAddressOf()));
-        CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&wic));
-        auto font = [&](float size, DWRITE_FONT_WEIGHT weight, ComPtr<IDWriteTextFormat>& out) {
-            dwrite->CreateTextFormat(L"Segoe UI", nullptr, weight, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_STRETCH_NORMAL,
-                                     size, L"", &out);
-            out->SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER);
-            out->SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP);
-        };
-        font(12.f, DWRITE_FONT_WEIGHT_NORMAL, fontBody);        // Segoe UI 9pt, the Win7 UI font
-        font(12.f, DWRITE_FONT_WEIGHT_NORMAL, fontTitle);
-        font(12.f, DWRITE_FONT_WEIGHT_SEMI_BOLD, fontHeading);
-        font(16.f, DWRITE_FONT_WEIGHT_NORMAL, fontInstruction); // Segoe UI 12pt "main instruction"
-    }
+    // Screen readers (UI Automation, uia_provider.h). Created with the window, disconnected on destroy.
+    std::unique_ptr<UiaHost> uia;
 
-    void Layout() {
-        elements.clear();
-        const float x = kFrame + 20;
-        elements.push_back({kTitleClose, Kind::TitleClose, Rect(kWidth - kFrame - 45, 1, 43, 19), L""});
-        elements.push_back({kTitleMin, Kind::TitleMin, Rect(kWidth - kFrame - 45 - 27, 1, 28, 19), L""});
-        elements.push_back({kPause, Kind::Button, Rect(kWidth - kFrame - 20 - 92, kTitleH + 22, 92, 28), L"Pause"});
-        elements.push_back({kBack, Kind::Segment, Rect(x, 164, 150, 28), L"Back camera"});
-        elements.push_back({kFront, Kind::Segment, Rect(x + 149, 164, 150, 28), L"Front camera"});
-        // Video (y 222).
-        elements.push_back({kQ720, Kind::Segment, Rect(x, 246, 100, 28), L"720p"});
-        elements.push_back({kQ1080, Kind::Segment, Rect(x + 99, 246, 100, 28), L"1080p"});
-        elements.push_back({kQ4K, Kind::Segment, Rect(x + 198, 246, 100, 28), L"4K"});
-        elements.push_back({kFps30, Kind::Segment, Rect(x, 284, 100, 26), L"30 fps"});
-        elements.push_back({kFps60, Kind::Segment, Rect(x + 99, 284, 100, 26), L"60 fps"});
-        elements.push_back({kFps120, Kind::Segment, Rect(x + 198, 284, 100, 26), L"120 fps"});
-        // Camera controls (y 350). Values are drawn between the buttons in Paint().
-        const float cx = x + 120;
-        elements.push_back({kZoomOut, Kind::Button, Rect(cx, 374, 32, 26), L"−"});
-        elements.push_back({kZoomIn, Kind::Button, Rect(cx + 102, 374, 32, 26), L"+"});
-        elements.push_back({kZoomReset, Kind::Button, Rect(cx + 144, 374, 44, 26), L"1×"});
-        elements.push_back({kEvDown, Kind::Button, Rect(cx, 410, 32, 26), L"−"});
-        elements.push_back({kEvUp, Kind::Button, Rect(cx + 102, 410, 32, 26), L"+"});
-        elements.push_back({kFocusAuto, Kind::Segment, Rect(cx, 446, 70, 26), L"Auto"});
-        elements.push_back({kFocusLock, Kind::Segment, Rect(cx + 69, 446, 70, 26), L"Lock"});
-        elements.push_back({kTorch, Kind::Checkbox, Rect(x, 482, 300, 20), L"Torch (phone light)"});
-        elements.push_back({kAuto, Kind::Button, Rect(kWidth - kFrame - 20 - 56, 345, 56, 23), L"Auto"});
-        // Picture (y 530), General (y 614).
-        elements.push_back({kMirror, Kind::Checkbox, Rect(x, 554, 300, 20), L"Mirror the image"});
-        elements.push_back({kFill, Kind::Checkbox, Rect(x, 578, 330, 20), L"Fill the frame (crop instead of black bars)"});
-        elements.push_back({kAutostart, Kind::Checkbox, Rect(x, 638, 300, 20), L"Start MyCam with Windows"});
-        elements.push_back({kReconnect, Kind::Link, Rect(x, 672, 110, 20), L"Reconnect phone"});
-        elements.push_back({kOpenLog, Kind::Link, Rect(x + 130, 672, 110, 20), L"Open log folder"});
-        const float bottom = kHeight - kFrame;
-        elements.push_back({kClose, Kind::Button, Rect(kWidth - kFrame - 12 - 86, bottom - kCommandH + 11, 86, 24), L"Close"});
-    }
+    // Interaction.
+    int hot = kNone, pressed = kNone, focus = kNone;
+    bool keyboardCues = false, tracking = false, sysKeyHandled = false;
+    bool thumbDrag = false, thumbHot = false;
+    float dragStartY = 0, dragStartScroll = 0;
+    int sliderDrag = kNone;
+    int released = kNone;
+    Tween pressFade;  // The released button's pressed look eases back (§12.5).
 
-    const Element* Find(Id id) const {
-        for (const auto& e : elements) if (e.id == id) return &e;
-        return nullptr;
-    }
+    // Dropdowns.
+    int openDrop = kNone, dropHot = kNone;
+    Tween dropAnim;
 
-    // Pause needs a connected phone, and is moot while Windows is locked (already paused).
-    bool PauseEnabled() const {
-        const LinkStatus s = model->status();
-        return s.state >= LinkState::Idle && !s.lockPaused;
-    }
+    // Toggles, sliders and other per-element values that animate.
+    std::map<int, Tween> valueAnim;
 
-    static int EffectiveFps(const proto::CameraInfo& c) {
-        const uint8_t mask = c.width > 0 ? proto::FpsMask(c, c.quality) : proto::kFps30Bit;
-        if (c.fps >= 120 && (mask & proto::kFps120Bit)) return 120;
-        if (c.fps >= 60 && (mask & proto::kFps60Bit)) return 60;
-        return 30;
-    }
+    // Motion and accessibility settings.
+    bool reducedMotion = false;
+    Tween statusFade, badgePop, liveGlow;
+    StatusView view = {}, prevView = {};
+    bool viewShown = false, wasLive = false;
+    uint64_t pairingSince = 0;
+    std::wstring pairingCode;
+    uint64_t applyingSince = 0;
+    int applyKind = 0, applyValue = 0; // 1 quality, 2 fps, 3 facing
+    // "Scan for phones": pressed at (so the marquee shows before the link picks the request up).
+    uint64_t scanPressedAt = 0, usbScanAt = 0;
+    uint32_t scansAtPress = 0;
 
-    // Whether a control can be used right now (connected phone, and the phone's camera supports it).
-    bool Enabled(Id id) const {
-        const LinkStatus s = model->status();
+    // Preview.
+    PreviewSource preview;
+    std::vector<uint8_t> previewPixels;
+    bool previewPending = false, previewFresh = false, previewOpen = false;
+    Tween previewFade; // 0: status picture, 1: live frames.
+    ComPtr<ID2D1Bitmap1> liveBitmap, artBitmap;
+    UINT pw = 0, ph = 0;     // Preview size in pixels.
+    int artKind = -1;
+    UINT artW = 0, artH = 0;
+    Nv12Image pausedImage, waitingImage;
+    bool imagesLoaded = false;
+    ComPtr<ID2D1Effect> artBlur;
+    int effectGen = -1;
+
+    static uint64_t Now() { return xp::NowMs(); }
+    float Dur(float ms) const { return reducedMotion || paint.HighContrast() ? 0.f : ms; }
+
+    // --- State ---------------------------------------------------------------------------------------
+
+    LinkStatus Status() const { return model->status(); }
+    static bool Connected(const LinkStatus& s) { return s.state >= LinkState::Idle && s.camera.valid; }
+
+    bool PauseEnabled(const LinkStatus& s) const { return s.state >= LinkState::Idle && !s.lockPaused; }
+
+    bool Enabled(int id, const LinkStatus& s) const {
         const proto::CameraInfo& c = s.camera;
-        const bool connected = s.state >= LinkState::Idle && c.valid;
-        const bool known = connected && c.width > 0; // Capabilities arrive once the camera has started.
+        const bool connected = Connected(s);
+        const bool known = caps::Known(connected, c);
         switch (id) {
-        case kPause: return PauseEnabled();
-        case kQ720: case kQ1080: return connected;
-        case kQ4K: return connected && (!known || (c.flags & proto::kCamHas4K));
-        // Frame rates: only what the phone reports working at the current quality (30 until it has reported).
-        case kFps30: return connected;
-        case kFps60: return known && (proto::FpsMask(c, c.quality) & proto::kFps60Bit);
-        case kFps120: return known && (proto::FpsMask(c, c.quality) & proto::kFps120Bit);
-        case kZoomOut: return known && c.zoomX100 > c.zoomMinX100;
-        case kZoomIn: return known && c.zoomX100 < c.zoomMaxX100;
-        case kZoomReset: return known && c.zoomX100 != 100 && c.zoomMinX100 <= 100 && c.zoomMaxX100 >= 100;
-        case kEvDown: return known && c.evMax > c.evMin && c.ev > c.evMin;
-        case kEvUp: return known && c.evMax > c.evMin && c.ev < c.evMax;
-        case kFocusAuto: case kFocusLock: return known && (c.flags & proto::kCamHasAutofocus);
-        case kTorch: return known && (c.flags & proto::kCamTorchAvailable);
-        case kAuto: // Something differs from the defaults (1x, 0 EV, auto focus, torch off).
-            return known && (c.zoomX100 != std::clamp<uint16_t>(100, c.zoomMinX100, c.zoomMaxX100) || c.ev != 0 ||
-                             (c.flags & (proto::kCamTorchOn | proto::kCamFocusLocked)));
+        case kPause: return PauseEnabled(s);
+        case kBack: case kFront: return true;
+        case kDdCamera: return true;
+        case kQ720: return caps::QualityEnabled(connected, c, proto::kQuality720p);
+        case kQ1080: return caps::QualityEnabled(connected, c, proto::kQuality1080p);
+        case kQ4K: return caps::QualityEnabled(connected, c, proto::kQuality4K);
+        case kFps30: return caps::FpsEnabled(connected, c, 30);
+        case kFps60: return caps::FpsEnabled(connected, c, 60);
+        case kFps120: return caps::FpsEnabled(connected, c, 120);
+        // The lists open even with no phone, so the choices can be seen; each entry is still gated on what
+        // the connected phone reports (CLAUDE.md "Works on every phone"), and a note says so.
+        case kDdQuality: case kDdFps: return true;
+        case kZoomSlider: return known && c.zoomMaxX100 > c.zoomMinX100;
+        case kEvValue: return known && c.evMax > c.evMin;
+        case kFocusAuto: case kFocusLock: return caps::FocusEnabled(known, c);
+        case kTorch: return caps::TorchEnabled(known, c);
+        case kAuto: return caps::AutoEnabled(known, c);
         default: return true;
         }
     }
 
-    Id HitTest(float x, float y) const {
-        for (const auto& e : elements) {
-            if (!Enabled(e.id)) continue;
-            if (Contains(e.rect, x, y)) return e.id;
+    bool Applying(const LinkStatus& s, uint64_t now) {
+        if (!applyingSince) return false;
+        const bool done = now - applyingSince > kApplyTimeoutMs || !Connected(s) ||
+                          (applyKind == 1 && s.camera.quality == applyValue) ||
+                          (applyKind == 2 && s.camera.fps == applyValue) || (applyKind == 3 && s.facing == applyValue);
+        if (done) applyingSince = 0;
+        return !done;
+    }
+
+    void StartApplying(int kind, int value, const LinkStatus& s) {
+        const bool already = (kind == 1 && s.camera.quality == value) || (kind == 2 && s.camera.fps == value) ||
+                             (kind == 3 && s.facing == value);
+        if (already || !Connected(s)) return;
+        applyingSince = Now();
+        applyKind = kind;
+        applyValue = value;
+    }
+
+    // Picks up a new status: crossfade, badge pop, LIVE glow (redesign.md §6.3).
+    void UpdateStatus() {
+        const uint64_t now = Now();
+        const LinkStatus s = Status();
+        const StatusView v = DescribeStatus(s, model->cameraRegistered());
+        if (!viewShown) {
+            view = v;
+            viewShown = true;
+        } else if (v.headline != view.headline || v.icon != view.icon || v.facts != view.facts || v.hint != view.hint) {
+            prevView = view;
+            statusFade.Start(1, now, Dur(kStandardMs), 0);
+            if (v.icon != view.icon) badgePop.Start(1, now, Dur(kPageMs), 0);
+            view = v;
+        }
+        const bool live = s.state == LinkState::Streaming && !s.lockPaused;
+        if (live && !wasLive && Dur(600) > 0) liveGlow.Start(1, now, 600, 0);
+        wasLive = live;
+        if (s.pairingCode != pairingCode) {
+            const bool had = !pairingCode.empty();
+            pairingCode = s.pairingCode;
+            pairingSince = pairingCode.empty() ? 0 : now;
+            // Pairing is a page, not a modal dialog, while the window is open (§2.4).
+            if (!pairingCode.empty() && page != Page::Pairing) GoTo(Page::Pairing);
+            else if (pairingCode.empty() && had && page == Page::Pairing) GoTo(returnPage);
+        }
+        Applying(s, now);
+    }
+
+    // --- Page router ---------------------------------------------------------------------------------
+
+    void GoTo(Page next) {
+        if (next == page) return;
+        if (page != Page::Pairing) returnPage = page;
+        // The outgoing page keeps the layout it already had and fades out over it (§12).
+        fadeItems = items;
+        fadeDecos = decos;
+        fadeCards = cards;
+        fadeRows = deviceRows;
+        fadePreview = previewBox;
+        page = next;
+        scroll = 0;
+        CloseDropdown();
+        sliderDrag = kNone;
+        pressed = kNone;
+        hot = kNone;
+        pageAnim.Start(1, Now(), Dur(kPageMs), 0);
+        if (page != Page::Camera) ClosePreview();
+        Invalidate();
+    }
+
+    void CloseDropdown() {
+        if (openDrop == kNone) return;
+        openDrop = kNone;
+        dropHot = kNone;
+        dropAnim.Set(0);
+    }
+
+    bool Transitioning(uint64_t now) const { return pageAnim.Running(now); }
+
+    // --- Layout --------------------------------------------------------------------------------------
+
+    Box curClip;
+    float curAlpha = 1;
+    bool curVisible = true;
+
+    Item& Add(int id, Kind kind, const std::wstring& label, const Box& rect, int parent) {
+        Item it;
+        it.e.id = id;
+        it.e.kind = kind;
+        int key = -1;
+        it.label = StripAccessKey(label, &key);
+        it.e.name = it.label;
+        it.e.accessKeyIndex = key;
+        it.e.rect = rect;
+        it.e.clip = curClip;
+        it.e.parent = parent;
+        it.e.visible = curVisible;
+        it.e.focusable = kind == Kind::Button || kind == Kind::Checkbox || kind == Kind::Radio || kind == Kind::Link ||
+                         kind == Kind::Nav || kind == Kind::Dropdown || kind == Kind::Toggle || kind == Kind::Slider;
+        it.alpha = curAlpha;
+        it.drawGroup = parent;
+        items.push_back(std::move(it));
+        return items.back();
+    }
+
+    void Deco_(const Box& b, const std::wstring& text, Font font, bool subtle, bool dim = false, int underline = -1) {
+        decos.push_back({b, text, font, subtle, dim, underline});
+    }
+
+    Size ButtonSize(const std::wstring& label, float minW = 86.f) {
+        int k;
+        const Size t = paint.Measure(Font::BodyBold, StripAccessKey(label, &k));
+        return {std::max(minW, t.w + 30), std::max(kRowH, t.h + 12)};
+    }
+
+    Item& AddButton(int id, const std::wstring& label, FlatStyle style, const Box& box, int parent, bool enabled = true) {
+        Item& it = Add(id, Kind::Button, label, box, parent);
+        it.style = style;
+        it.e.enabled = enabled;
+        return it;
+    }
+
+    // A label with a toggle switch at the right of the row.
+    void AddToggle(int id, const std::wstring& label, bool on, int parent, float x, float* y, float w, bool enabled = true) {
+        const float h = std::max(26.f, lineH + 12);
+        Item& it = Add(id, Kind::Toggle, label, MakeBox(x, *y, w, h), parent);
+        it.e.checked = on;
+        it.e.enabled = enabled;
+        const float tw = 36, th = 20;
+        it.extra = MakeBox(x + w - tw, *y + (h - th) / 2, tw, th);
+        Animate(id, on ? 1.f : 0.f, kToggleMs);
+        *y += h;
+    }
+
+    // Label above, combo below; the entries are DropItems whose parent is the combo.
+    void AddDropdown(int id, const std::wstring& label, const std::wstring& valueText,
+                     const std::vector<std::pair<int, std::wstring>>& entries, int selected, int parent, float x, float* y,
+                     float w, bool enabled) {
+        int key = -1;
+        const std::wstring plain = StripAccessKey(label, &key);
+        Deco_(MakeBox(x, *y, w, smallH), plain, Font::Small, true, false, Cues() ? key : -1);
+        *y += smallH + 4;
+        Item& it = Add(id, Kind::Dropdown, label, MakeBox(x, *y, w, kRowH), parent);
+        it.label = valueText;
+        it.e.name = plain;
+        it.e.enabled = enabled;
+        it.e.expandable = true;
+        it.e.expanded = openDrop == id;
+        *y += kRowH;
+        // The entries: visible (so UIA and the mouse can reach them) only while the list is open.
+        const bool open = openDrop == id;
+        const float rowH = std::max(26.f, lineH + 12);
+        const float panelTop = it.e.rect.b + 4;
+        const bool wasVisible = curVisible;
+        const Box wasClip = curClip;
+        curVisible = open;
+        curClip = content;
+        float ry = panelTop + 4;
+        for (const auto& [entryId, text] : entries) {
+            Item& row = Add(entryId, Kind::DropItem, text, MakeBox(x + 4, ry, w - 8, rowH), id);
+            row.e.selected = entryId == selected;
+            row.e.enabled = Enabled(entryId, Status());
+            row.e.focusable = false;
+            ry += rowH;
+        }
+        curVisible = wasVisible;
+        curClip = wasClip;
+        dropPanel = open ? Box{x, panelTop, x + w, ry + 4} : Box{};
+    }
+    Box dropPanel = {};
+
+    void AddSlider(int id, const std::wstring& label, const std::wstring& valueText, float value, float lo, float hi,
+                   float step, int parent, float x, float* y, float w, bool enabled) {
+        int key = -1;
+        const std::wstring plain = StripAccessKey(label, &key);
+        const Size v = paint.Measure(Font::BodyBold, valueText);
+        Deco_(MakeBox(x, *y, w - v.w - 6, smallH), plain, Font::Small, true, false, Cues() ? key : -1);
+        Deco_(MakeBox(x, *y, w, smallH), valueText, Font::BodyBold, false, !enabled);
+        decos.back().box = MakeBox(x + w - v.w, *y, v.w, smallH);
+        *y += smallH + 2;
+        const float h = 22;
+        Item& it = Add(id, Kind::Slider, label, MakeBox(x, *y, w, h), parent);
+        it.e.name = plain;
+        it.label = valueText;
+        it.e.enabled = enabled;
+        it.e.value = value;
+        it.e.rangeMin = lo;
+        it.e.rangeMax = hi;
+        it.e.rangeStep = step;
+        it.extra = MakeBox(x + 8, *y + h / 2 - 2, w - 16, 4);
+        Animate(id, SliderFraction(it.e), kStandardMs);
+        *y += h;
+    }
+
+    // Keeps a tween per element id, retargeting it instead of snapping (§12). The first value is set
+    // without animating, so nothing moves on the first paint.
+    float Animate(int id, float target, float ms) {
+        const uint64_t now = Now();
+        auto it = valueAnim.find(id);
+        if (it == valueAnim.end()) {
+            Tween t;
+            t.Set(target);
+            valueAnim[id] = t;
+            return target;
+        }
+        it->second.Retarget(target, now, Dur(ms), EaseOut);
+        return it->second.Value(now, EaseOut);
+    }
+    float AnimValue(int id, float fallback) const {
+        auto it = valueAnim.find(id);
+        return it == valueAnim.end() ? fallback : it->second.Value(Now(), EaseOut);
+    }
+
+    // The "60 fps works at 720p on this camera" line (capability-driven, per quality).
+    std::wstring FpsReason(const LinkStatus& s) const {
+        const proto::CameraInfo& c = s.camera;
+        if (!caps::Known(Connected(s), c)) return L"";
+        static const wchar_t* names[3] = {L"720p", L"1080p", L"4K"};
+        auto where = [&](uint8_t bit) {
+            std::wstring out;
+            for (uint8_t q = 0; q < 3; ++q) {
+                if (q == c.quality || !(proto::FpsMask(c, q) & bit)) continue;
+                if (q == proto::kQuality4K && !(c.flags & proto::kCamHas4K)) continue;
+                out += (out.empty() ? L"" : L" and ") + std::wstring(names[q]);
+            }
+            return out;
+        };
+        const uint8_t mask = proto::FpsMask(c, c.quality);
+        if (!(mask & proto::kFps60Bit)) {
+            const std::wstring q = where(proto::kFps60Bit);
+            if (!q.empty()) return L"60 fps works at " + q + L" on this camera.";
+        }
+        if (!(mask & proto::kFps120Bit)) {
+            const std::wstring q = where(proto::kFps120Bit);
+            if (!q.empty()) return L"120 fps works at " + q + L" on this camera.";
+        }
+        if (!(mask & (proto::kFps60Bit | proto::kFps120Bit)) && where(proto::kFps60Bit | proto::kFps120Bit).empty())
+            return L"This camera does 30 fps.";
+        return L"";
+    }
+
+    void Layout() {
+        const uint64_t now = Now();
+        const LinkStatus s = Status();
+        items.clear();
+        decos.clear();
+        cards.clear();
+        deviceRows.clear();
+        dropPanel = {};
+        lineH = paint.LineHeight(Font::Body);
+        smallH = paint.LineHeight(Font::Small);
+
+        const float border = xp::kBorder, top = xp::kTitleBarH;
+        nav = {border, top, border + kNavW, kH - border};
+        content = {nav.r, top, kW - border, kH - border};
+        contentView = content;
+
+        curClip = {0, 0, kW, kH};
+        curAlpha = 1;
+        curVisible = true;
+        Add(kCaptionMin, Kind::CaptionButton, L"Minimize", xp::MinimizeButtonBox(kW), kNone);
+        Add(kCaptionClose, Kind::CaptionButton, L"Close", xp::CloseButtonBox(kW), kNone);
+
+        // --- Sidebar ------------------------------------------------------------------------------
+        curClip = nav;
+        float ny = nav.t + 12;
+        const float itemH = std::max(kNavItemH, lineH + 16);
+        for (const NavDef& d : kNav) {
+            Item& it = Add(d.id, Kind::Nav, d.label, MakeBox(nav.l + 8, ny, kNavW - 16, itemH), kNone);
+            it.e.radioSet = kSetNav;
+            it.e.selected = page == d.page;
+            it.glyph = d.glyph;
+            it.hasGlyph = true;
+            if (it.e.selected) {
+                if (!navPillSet) {
+                    navPill.Set(ny);
+                    navPillSet = true;
+                } else {
+                    navPill.Retarget(ny, now, Dur(kStandardMs), EaseOut);
+                }
+            }
+            ny += itemH + 2;
+        }
+
+        // --- Content ------------------------------------------------------------------------------
+        curClip = contentView;
+        const float x = content.l + kPad, w = content.W() - 2 * kPad;
+        float y = content.t + kPad - scroll;
+        switch (page) {
+        case Page::Home: LayoutHome(s, now, x, &y, w); break;
+        case Page::Devices: LayoutDevices(s, now, x, &y, w); break;
+        case Page::Camera: LayoutCamera(s, now, x, &y, w); break;
+        case Page::Settings: LayoutSettings(s, x, &y, w); break;
+        case Page::About: LayoutAbout(x, &y, w); break;
+        default: LayoutPairing(s, now, x, &y, w); break;
+        }
+        contentH = y + scroll - content.t + kPad;
+
+        // Default focus: the first tab stop.
+        std::vector<Element> list = Elements();
+        const Element* f = FindElement(list, focus);
+        if (!f || !CanFocus(*f)) focus = NextTabStop(list, kNone, false);
+
+        // Tell a UIA provider when anything changed.
+        size_t sig = items.size();
+        for (const auto& it : items) {
+            sig = sig * 131 + size_t(it.e.id) * 7 + (it.e.enabled ? 1 : 0) + (it.e.checked ? 2 : 0) + (it.e.selected ? 4 : 0) +
+                  (it.e.expanded ? 8 : 0) + (it.e.visible ? 16 : 0) + std::hash<std::wstring>()(it.e.name);
+        }
+        if (sig != lastSignature) {
+            lastSignature = sig;
+            if (owner->elementsChanged_) owner->elementsChanged_();
+        }
+    }
+
+    void PageHeader(const std::wstring& title, const std::wstring& subtitle, float x, float* y, float w) {
+        const Size t = paint.Measure(Font::Instruction, title, w);
+        Item& h = Add(kPageTitle, Kind::Text, L"", MakeBox(x, *y, w, t.h), kNone);
+        h.e.name = h.label = title;
+        *y += t.h + 2;
+        if (!subtitle.empty()) {
+            const Size st = paint.Measure(Font::Small, subtitle, w);
+            Item& sb = Add(kPageSubtitle, Kind::Text, L"", MakeBox(x, *y, w, st.h), kNone);
+            sb.e.name = sb.label = subtitle;
+            *y += st.h;
+        }
+        *y += kGap + 2;
+    }
+
+    Box BeginCard(int id, float x, float y, float w, float h, const std::wstring& name) {
+        const Box box = MakeBox(x, y, w, h);
+        cards.push_back({id, box});
+        Item& c = Add(id, Kind::Card, L"", box, kNone);
+        c.e.name = name;
+        return box;
+    }
+
+    // --- Home ---------------------------------------------------------------------------------------
+
+    void LayoutHome(const LinkStatus& s, uint64_t now, float x, float* y, float w) {
+        PageHeader(L"Connect a Device", L"Find and connect to your phone", x, y, w);
+        LayoutStatusStrip(s, now, x, y, w);
+        *y += kGap + 2;
+
+        // USB card.
+        LayoutConnectCard(kCardUsb, Glyph::Usb, L"USB Connection", L"Connect your phone via USB for best performance.",
+                          kScanUsb, L"Scan for &USB Devices", x, y, w);
+        if (usbScanAt && now - usbScanAt < kUsbScanMs) {
+            const std::wstring note = L"Looking for a phone on the cable…";
+            const Size t = paint.Measure(Font::Small, note, w);
+            Item& n = Add(kUsbNote, Kind::Text, L"", MakeBox(x + 2, *y + 4, w, t.h), kNone);
+            n.e.name = n.label = note;
+            n.e.liveRegion = true;
+            *y += t.h + 4;
+        }
+        *y += kGap;
+        // Wi-Fi card.
+        LayoutConnectCard(kCardWifi, Glyph::Wifi, L"Wi-Fi Connection", L"Both devices must be on the same Wi-Fi network.",
+                          kScan, L"&Scan for Devices", x, y, w);
+        if (Scanning(s, now) || s.scansDone) {
+            *y += 6;
+            const std::wstring sentence = Scanning(s, now) ? L"Looking for phones on this Wi-Fi…"
+                                                           : ScanResultSentence(s.nearbyPhones.size());
+            const Size t = paint.Measure(Font::Small, sentence, w);
+            Item& r = Add(kScanResult, Kind::Text, L"", MakeBox(x + 2, *y, w, t.h), kNone);
+            r.e.name = r.label = sentence;
+            r.e.liveRegion = true;
+            *y += t.h;
+            if (!s.nearbyPhones.empty() && !Scanning(s, now)) {
+                *y += 4;
+                const Size l = paint.Measure(Font::Body, L"See the devices that answered");
+                Add(kNavDevicesLink, Kind::Link, L"See the devices that answered", MakeBox(x + 2, *y, l.w, l.h), kNone);
+                *y += l.h;
+            }
+        }
+    }
+
+    // The status headline, its detail line, the progress bar and Pause: the mockup leaves them out and
+    // that is wrong (redesign-v2.md §10.1, §10.2), so Home keeps them.
+    void LayoutStatusStrip(const LinkStatus& s, uint64_t now, float x, float* y, float w) {
+        const float iconW = 32;
+        const Size pause = ButtonSize(model->paused() ? L"&Resume the camera" : L"&Pause the camera", 120);
+        const float tx = x + iconW + 10;
+        const float tw = std::max(80.f, w - iconW - 10 - pause.w - 12);
+        std::wstring shown = view.headline;
+        const float maxH = paint.LineHeight(Font::Instruction) * 2 + 1;
+        while (shown.size() > 4 && paint.Measure(Font::Instruction, shown, tw).h > maxH) {
+            const bool dots = shown.back() == L'…';
+            shown.erase(shown.size() - (dots ? 2 : 1));
+            while (!shown.empty() && shown.back() == L' ') shown.pop_back();
+            shown += L"…";
+        }
+        const Size head = paint.Measure(Font::Instruction, shown, tw);
+        {
+            Item& h = Add(kStatusHeadline, Kind::Text, L"", MakeBox(tx, *y, tw, head.h), kNone);
+            h.e.name = view.headline;
+            h.label = shown;
+            h.e.liveRegion = true;
+        }
+        float ty = *y + head.h + 1;
+        if (!view.facts.empty()) {
+            const Size f = paint.Measure(Font::Small, view.facts, tw);
+            Item& d = Add(kStatusDetail, Kind::Text, L"", MakeBox(tx, ty, tw, f.h), kNone);
+            d.e.name = d.label = view.facts;
+            ty += f.h;
+        }
+        if (!s.pairingCode.empty()) {
+            ty += 3;
+            const Size l = paint.Measure(Font::Body, L"Show the pairing code");
+            Add(kShowPairing, Kind::Link, L"Show the pairing code", MakeBox(tx, ty, l.w, l.h), kNone);
+            ty += l.h;
+        }
+        // Pause, right-aligned on the first line.
+        {
+            Item& p = Add(kPause, Kind::Button, model->paused() ? L"&Resume the camera" : L"&Pause the camera",
+                          MakeBox(x + w - pause.w, *y, pause.w, pause.h), kNone);
+            p.style = model->paused() ? FlatStyle::Primary : FlatStyle::Secondary;
+            p.hasGlyph = true;
+            p.glyph = model->paused() ? Glyph::Play : Glyph::Pause;
+            p.e.enabled = PauseEnabled(s);
+        }
+        *y = std::max(*y + std::max(iconW, pause.h), ty);
+        const bool applying = Applying(s, now);
+        if (view.progress != StatusProgress::None || applying) {
+            *y += 8;
+            const float barH = 13;
+            Item& bar = Add(kStatusProgress, Kind::ProgressBar, L"", MakeBox(x, *y, w, barH), kNone);
+            bar.e.value = -1;
+            bar.e.name = applying ? L"Starting the camera" : L"Working";
+            *y += barH;
+        }
+    }
+
+    void LayoutConnectCard(int cardId, Glyph glyph, const std::wstring& title, const std::wstring& body, int buttonId,
+                           const std::wstring& buttonLabel, float x, float* y, float w) {
+        const float iconW = 26, textX = x + kCardPad + iconW + 12, textW = w - kCardPad * 2 - iconW - 12;
+        const Size t = paint.Measure(Font::BodyBold, title, textW);
+        const Size b = paint.Measure(Font::Small, body, textW);
+        const Size btn = ButtonSize(buttonLabel, 150);
+        const float h = kCardPad + std::max(iconW, t.h) + 3 + b.h + 12 + btn.h + kCardPad;
+        const Box card = BeginCard(cardId, x, *y, w, h, title);
+        float cy = card.t + kCardPad;
+        Deco_(MakeBox(x + kCardPad, cy, iconW, iconW), L"", Font::Body, false); // Placeholder: the glyph.
+        decos.back().text.clear();
+        Item& icon = Add(cardId + 1000, Kind::Text, L"", MakeBox(x + kCardPad, cy, iconW, iconW), cardId);
+        icon.hasGlyph = true;
+        icon.glyph = glyph;
+        icon.e.visible = curVisible;
+        Deco_(MakeBox(textX, cy, textW, t.h), title, Font::BodyBold, false);
+        cy += t.h + 3;
+        Deco_(MakeBox(textX, cy, textW, b.h), body, Font::Small, true);
+        cy += b.h + 12;
+        AddButton(buttonId, buttonLabel, FlatStyle::Primary, MakeBox(textX, cy, btn.w, btn.h), cardId);
+        *y = card.b;
+    }
+
+    // --- Devices ------------------------------------------------------------------------------------
+
+    // The rows: the phone on the cable (when there is one) first, then every phone that answered on the
+    // Wi-Fi (§2.3: USB devices are listed in the same list).
+    std::vector<DeviceRow> BuildRows(const LinkStatus& s) {
+        std::vector<DeviceRow> rows;
+        if (s.state >= LinkState::Waiting && !s.wireless) {
+            DeviceRow r;
+            r.usb = true;
+            r.connected = s.state >= LinkState::Idle;
+            r.name = s.phoneName.empty() ? L"Phone on USB" : s.phoneName;
+            r.where = L"USB cable";
+            r.status = r.connected ? L"Connected" : L"Waiting for the MyCam app";
+            rows.push_back(std::move(r));
+        }
+        for (const NearbyPhone& p : s.nearbyPhones) {
+            if (int(rows.size()) >= kScanRowsMax) break;
+            DeviceRow r;
+            r.ipv4 = p.ip;
+            r.name = Wide(p.name);
+            r.where = Wide(p.ipText);
+            r.connected = p.connected;
+            r.status = p.connected ? L"Connected" : p.paired ? L"Paired" : L"New: it will ask for a code";
+            rows.push_back(std::move(r));
+        }
+        return rows;
+    }
+
+    // One section of the Devices page: a small heading, then a card with `which` of the rows. Advances *y
+    // past it, and does nothing when no row belongs to it.
+    void LayoutDeviceSection(int titleId, int cardId, int groupId, int noteId, const std::wstring& heading,
+                             const std::wstring& empty, bool connectedSection, float x, float* y, float w) {
+        std::vector<size_t> mine;
+        for (size_t i = 0; i < deviceRows.size(); ++i)
+            if (deviceRows[i].connected == connectedSection) mine.push_back(i);
+        if (mine.empty() && empty.empty()) return;
+
+        const Size ht = paint.Measure(Font::BodyBold, heading, w);
+        Item& h = Add(titleId, Kind::Text, L"", MakeBox(x, *y, w, ht.h), kNone);
+        h.e.name = h.label = heading;
+        *y += ht.h + 6;
+        if (mine.empty()) {
+            const Size et = paint.Measure(Font::Small, empty, w);
+            Item& n = Add(noteId, Kind::Text, L"", MakeBox(x + 2, *y, w, et.h), kNone);
+            n.e.name = n.label = empty;
+            *y += et.h + kGap;
+            return;
+        }
+
+        const float rowH = std::max(52.f, lineH + smallH + 26);
+        const Box card = BeginCard(cardId, x, *y, w, rowH * float(mine.size()) + 2, heading);
+        Add(groupId, Kind::Group, heading, card, cardId);
+        const Size connect = ButtonSize(L"Connect", 84);
+        for (size_t slot = 0; slot < mine.size(); ++slot) {
+            const size_t i = mine[slot];
+            DeviceRow& r = deviceRows[i];
+            r.card = cardId;
+            r.firstInCard = slot == 0;
+            const float ry = card.t + 1 + rowH * float(slot);
+            const bool canConnect = !r.connected && !r.usb && model->connectTo;
+            r.glyphBox = MakeBox(card.l + kCardPad, ry + (rowH - 24) / 2, 24, 24);
+            const float nameL = r.glyphBox.r + 12;
+            const float nameR = card.r - kCardPad - (canConnect ? connect.w + 12 : 0) - 26;
+            r.nameBox = {nameL, ry + (rowH - lineH - smallH - 2) / 2, nameR, ry + (rowH - lineH - smallH - 2) / 2 + lineH};
+            r.whereBox = {nameL, r.nameBox.b + 1, nameR, r.nameBox.b + 1 + smallH};
+            r.transportBox = MakeBox(nameR + 4, ry + (rowH - 18) / 2, 18, 18);
+            const Box rowBox = {card.l, ry, card.r, ry + rowH};
+            {
+                Item& row = Add(ScanRowId(int(i), 0), Kind::Text, L"", rowBox, groupId);
+                row.e.name = r.name + L", " + r.where + L", " + r.status;
+                row.drawGroup = cardId;
+            }
+            if (canConnect) {
+                Item& c = AddButton(ScanRowId(int(i), 1), L"Connect", FlatStyle::Primary,
+                                    MakeBox(card.r - kCardPad - connect.w, ry + (rowH - connect.h) / 2, connect.w, connect.h),
+                                    groupId);
+                c.e.name = L"Connect to " + r.name;
+                c.drawGroup = cardId;
+            }
+        }
+        *y = card.b + kGap;
+    }
+
+    void LayoutDevices(const LinkStatus& s, uint64_t now, float x, float* y, float w) {
+        const Size refresh = ButtonSize(L"&Refresh", 96);
+        const float titleW = w - refresh.w - 12;
+        const Size t = paint.Measure(Font::Instruction, L"Devices", titleW);
+        {
+            Item& h = Add(kPageTitle, Kind::Text, L"", MakeBox(x, *y, titleW, t.h), kNone);
+            h.e.name = h.label = L"Devices";
+        }
+        AddButton(kScan, L"&Refresh", FlatStyle::Secondary, MakeBox(x + w - refresh.w, *y - 3, refresh.w, refresh.h), kNone)
+            .glyph = Glyph::Refresh;
+        items.back().hasGlyph = true;
+        float ty = *y + t.h + 2;
+        const std::wstring sub = L"Phones on this Wi-Fi, and the one on the cable";
+        const Size st = paint.Measure(Font::Small, sub, titleW);
+        {
+            Item& sb = Add(kPageSubtitle, Kind::Text, L"", MakeBox(x, ty, titleW, st.h), kNone);
+            sb.e.name = sb.label = sub;
+        }
+        *y = std::max(ty + st.h, *y + refresh.h) + kGap;
+
+        const bool scanning = Scanning(s, now);
+        if (scanning) {
+            const float barH = 13;
+            Item& bar = Add(kScanProgress, Kind::ProgressBar, L"", MakeBox(x, *y, w, barH), kNone);
+            bar.e.value = -1;
+            bar.e.name = L"Looking for phones";
+            *y += barH + 6;
+        }
+        const std::wstring sentence = scanning ? L"Looking for phones on this Wi-Fi…"
+                                   : s.scansDone == 0 ? L"Choose Refresh to look for phones on this Wi-Fi."
+                                                      : ScanResultSentence(s.nearbyPhones.size());
+        {
+            const Size sh = paint.Measure(Font::Small, sentence, w);
+            Item& r = Add(kScanResult, Kind::Text, L"", MakeBox(x + 2, *y, w, sh.h), kNone);
+            r.e.name = r.label = sentence;
+            r.e.liveRegion = true;
+            *y += sh.h + kGap;
+        }
+
+        // The phone in use is kept apart from the ones that are only there to pick (§2.1): the connected
+        // section always shows, so "nothing is connected" is said rather than left to be inferred.
+        deviceRows = BuildRows(s);
+        LayoutDeviceSection(kConnectedTitle, kCardConnected, kConnectedList, kConnectedNote, L"Connected Device",
+                            L"No device is connected yet.", true, x, y, w);
+        LayoutDeviceSection(kAvailableTitle, kCardDevices, kScanList, kAvailableNote, L"Available Devices",
+                            scanning ? L"" : L"Nothing else has answered yet.", false, x, y, w);
+    }
+
+    // --- Camera -------------------------------------------------------------------------------------
+
+    void LayoutCamera(const LinkStatus& s, uint64_t now, float x, float* y, float w) {
+        const proto::CameraInfo& c = s.camera;
+        const bool known = caps::Known(Connected(s), c);
+        PageHeader(L"Camera", L"Live controls for the connected phone", x, y, w);
+
+        const float colGap = 14;
+        float pvW = std::floor((w - colGap) * 0.57f);
+        const float ctlW = w - colGap - pvW;
+        float pvH = std::floor(pvW * 9 / 16);
+        previewBox = MakeBox(x, *y, pvW, pvH);
+        {
+            Item& p = Add(kPreview, Kind::Image, L"", previewBox, kNone);
+            p.e.name = L"Preview: the picture apps receive";
+        }
+        float py = previewBox.b + kGap;
+        // Pause stays reachable on this page (§2.5 / §10.1): under the preview.
+        {
+            const Size pause = ButtonSize(model->paused() ? L"&Resume the camera" : L"&Pause the camera", 140);
+            Item& p = Add(kPause, Kind::Button, model->paused() ? L"&Resume the camera" : L"&Pause the camera",
+                          MakeBox(x, py, pause.w, pause.h), kNone);
+            p.style = model->paused() ? FlatStyle::Primary : FlatStyle::Secondary;
+            p.hasGlyph = true;
+            p.glyph = model->paused() ? Glyph::Play : Glyph::Pause;
+            p.e.enabled = PauseEnabled(s);
+            py += pause.h;
+        }
+        {
+            const Size hint = paint.Measure(Font::Small, view.hint, pvW);
+            Item& t = Add(kStatusSentence, Kind::Text, L"", MakeBox(x, py + 8, pvW, hint.h), kNone);
+            t.e.name = t.label = view.hint;
+            t.e.liveRegion = true;
+            py += 8 + hint.h;
+        }
+
+        // The controls column, in a card.
+        const float cx = x + pvW + colGap, cw = ctlW;
+        const float ix = cx + kCardPad, iw = cw - 2 * kCardPad;
+        float cy = *y + kCardPad;
+        const size_t cardIndex = cards.size();
+        cards.push_back({kCardControls, MakeBox(cx, *y, cw, 10)});
+        const size_t cardItem = items.size();
+        {
+            Item& card = Add(kCardControls, Kind::Card, L"", MakeBox(cx, *y, cw, 10), kNone);
+            card.e.name = L"Camera controls";
+        }
+        const int facing = s.facing == proto::kFacingFront ? kFront : kBack;
+        AddDropdown(kDdCamera, L"Ca&mera", facing == kFront ? L"Front Camera" : L"Back Camera",
+                    {{kBack, L"Back Camera"}, {kFront, L"Front Camera"}}, facing, kCardControls, ix, &cy, iw, true);
+        cy += kGap;
+        const int q = !c.valid ? kNone : c.quality == proto::kQuality720p ? kQ720 : c.quality == proto::kQuality4K ? kQ4K : kQ1080;
+        const wchar_t* qText = q == kQ720 ? L"1280 × 720" : q == kQ4K ? L"3840 × 2160" : q == kQ1080 ? L"1920 × 1080" : L"—";
+        AddDropdown(kDdQuality, L"Res&olution", qText,
+                    {{kQ720, L"1280 × 720"}, {kQ1080, L"1920 × 1080"}, {kQ4K, L"3840 × 2160 (4K)"}}, q, kCardControls, ix,
+                    &cy, iw, Enabled(kDdQuality, s));
+        cy += kGap;
+        const int fps = caps::EffectiveFps(c);
+        const int f = !c.valid ? kNone : fps == 120 ? kFps120 : fps == 60 ? kFps60 : kFps30;
+        AddDropdown(kDdFps, L"&Frame rate", f == kFps120 ? L"120 FPS" : f == kFps60 ? L"60 FPS" : f == kFps30 ? L"30 FPS" : L"—",
+                    {{kFps30, L"30 FPS"}, {kFps60, L"60 FPS"}, {kFps120, L"120 FPS"}}, f, kCardControls, ix, &cy, iw,
+                    Enabled(kDdFps, s));
+        // A dropdown hides capability, so the computed reason goes under the control (§10.3).
+        const std::wstring reason = FpsReason(s);
+        if (!reason.empty()) {
+            cy += 4;
+            const Size r = paint.Measure(Font::Small, reason, iw);
+            Item& note = Add(kFpsReason, Kind::Text, L"", MakeBox(ix, cy, iw, r.h), kCardControls);
+            note.e.name = note.label = reason;
+            cy += r.h;
+        }
+        cy += kGap;
+        // With no phone every entry above is greyed out, which on its own looks like a broken control.
+        if (!Connected(s) || !c.valid) {
+            const std::wstring note = L"Connect a phone to choose. Each phone reports which of these it can do.";
+            const Size n = paint.Measure(Font::Small, note, iw);
+            Item& it = Add(kCameraHint, Kind::Text, L"", MakeBox(ix, cy, iw, n.h), kCardControls);
+            it.e.name = it.label = note;
+            cy += n.h + kGap;
+        }
+        if (!known) {
+            const std::wstring note = L"Zoom, brightness, focus and torch appear when an app uses the camera.";
+            const Size n = paint.Measure(Font::Small, note, iw);
+            Item& it = Add(kControlsNote, Kind::Text, L"", MakeBox(ix, cy, iw, n.h), kCardControls);
+            it.e.name = it.label = note;
+            cy += n.h;
+        } else {
+            wchar_t buf[32];
+            swprintf_s(buf, L"%.1f×", c.zoomX100 / 100.0);
+            AddSlider(kZoomSlider, L"&Zoom", buf, c.zoomX100 / 100.f, c.zoomMinX100 / 100.f, c.zoomMaxX100 / 100.f, 0.1f,
+                      kCardControls, ix, &cy, iw, Enabled(kZoomSlider, s));
+            cy += kGap - 2;
+            const bool hasEv = c.evMax > c.evMin;
+            const double ev = c.ev * c.evStepX100 / 100.0;
+            if (hasEv) swprintf_s(buf, L"%s%.1f EV", ev > 0 ? L"+" : L"", ev);
+            else wcscpy_s(buf, L"—");
+            AddSlider(kEvValue, L"&Brightness", buf, float(c.ev), float(c.evMin), float(c.evMax), 1.f, kCardControls, ix, &cy,
+                      iw, hasEv);
+            cy += kGap - 4;
+            AddToggle(kFocusAuto, L"A&uto focus", !(c.flags & proto::kCamFocusLocked), kCardControls, ix, &cy, iw,
+                      Enabled(kFocusAuto, s));
+            AddToggle(kTorch, L"&Torch", (c.flags & proto::kCamTorchOn) != 0, kCardControls, ix, &cy, iw, Enabled(kTorch, s));
+            cy += 6;
+            const Size reset = ButtonSize(L"Reset all", 90);
+            AddButton(kAuto, L"Reset all", FlatStyle::Secondary, MakeBox(ix, cy, reset.w, reset.h), kCardControls,
+                      Enabled(kAuto, s))
+                .e.name = L"Reset zoom, brightness, focus and torch";
+            cy += reset.h;
+            if (c.width) {
+                swprintf_s(buf, L"Now: %u×%u at %u fps", c.width, c.height, c.actualFps);
+                cy += 8;
+                Item& n = Add(kNowMode, Kind::Text, L"", MakeBox(ix, cy, iw, smallH), kCardControls);
+                n.e.name = n.label = buf;
+                cy += smallH;
+            }
+        }
+        cy += kCardPad;
+        const Box card = MakeBox(cx, *y, cw, cy - *y);
+        cards[cardIndex].box = card;
+        items[cardItem].e.rect = card;
+        *y = std::max(py, card.b);
+    }
+
+    // --- Settings -----------------------------------------------------------------------------------
+
+    void LayoutSettings(const LinkStatus& s, float x, float* y, float w) {
+        (void)s;
+        PageHeader(L"Settings", L"How MyCam behaves on this PC", x, y, w);
+        const float ix = x + kCardPad, iw = w - 2 * kCardPad;
+        {
+            const size_t ci = cards.size(), ii = items.size();
+            cards.push_back({kCardSettings, MakeBox(x, *y, w, 10)});
+            Item& card = Add(kCardSettings, Kind::Card, L"", MakeBox(x, *y, w, 10), kNone);
+            card.e.name = L"Picture and startup";
+            float cy = *y + kCardPad - 2;
+            AddToggle(kMirror, L"&Mirror the image", model->mirror(), kCardSettings, ix, &cy, iw);
+            AddToggle(kFill, L"&Fill the frame (crop instead of black bars)", model->fill(), kCardSettings, ix, &cy, iw);
+            AddToggle(kAutostart, L"Start MyCam with Windows", model->autostart(), kCardSettings, ix, &cy, iw);
+            AddToggle(kWireless, L"Find phones on Wi-Fi (beta)", model->wireless(), kCardSettings, ix, &cy, iw);
+            cy += kCardPad - 2;
+            const Box box = MakeBox(x, *y, w, cy - *y);
+            cards[ci].box = box;
+            items[ii].e.rect = box;
+            *y = box.b + kGap;
+        }
+        {
+            const size_t ci = cards.size(), ii = items.size();
+            cards.push_back({kCardAbout, MakeBox(x, *y, w, 10)});
+            Item& card = Add(kCardAbout, Kind::Card, L"", MakeBox(x, *y, w, 10), kNone);
+            card.e.name = L"Troubleshooting";
+            float cy = *y + kCardPad;
+            Deco_(MakeBox(ix, cy, iw, lineH), L"Troubleshooting", Font::BodyBold, false);
+            cy += lineH + kGap;
+            const Size a = ButtonSize(L"&Reconnect phone", 130), b = ButtonSize(L"Forget &Wi-Fi phones", 140),
+                       c = ButtonSize(L"&Open log folder", 130);
+            AddButton(kReconnect, L"&Reconnect phone", FlatStyle::Secondary, MakeBox(ix, cy, a.w, a.h), kCardAbout);
+            AddButton(kForgetPhones, L"Forget &Wi-Fi phones", FlatStyle::Secondary, MakeBox(ix + a.w + 8, cy, b.w, b.h),
+                      kCardAbout)
+                .e.name = L"Forget Wi-Fi phones (they pair again with a code)";
+            cy += a.h + 8;
+            AddButton(kOpenLog, L"&Open log folder", FlatStyle::Secondary, MakeBox(ix, cy, c.w, c.h), kCardAbout);
+            cy += c.h + kCardPad;
+            const Box box = MakeBox(x, *y, w, cy - *y);
+            cards[ci].box = box;
+            items[ii].e.rect = box;
+            *y = box.b;
+        }
+    }
+
+    // --- About --------------------------------------------------------------------------------------
+
+    void LayoutAbout(float x, float* y, float w) {
+        PageHeader(L"About MyCam", L"Version, links and licences", x, y, w);
+        const float ix = x + kCardPad, iw = w - 2 * kCardPad;
+        const size_t ci = cards.size(), ii = items.size();
+        cards.push_back({kCardAbout, MakeBox(x, *y, w, 10)});
+        Item& card = Add(kCardAbout, Kind::Card, L"", MakeBox(x, *y, w, 10), kNone);
+        card.e.name = L"About MyCam";
+        float cy = *y + kCardPad;
+        // The mark always comes from the generated icon (§11): never a second drawing of it.
+        {
+            Item& logo = Add(kAboutLogo, Kind::Image, L"", MakeBox(ix, cy, 48, 48), kCardAbout);
+            logo.e.name = L"MyCam";
+        }
+        const float tx = ix + 48 + 14, tw = iw - 48 - 14;
+        Deco_(MakeBox(tx, cy + 2, tw, paint.LineHeight(Font::Instruction)), L"MyCam", Font::Instruction, false);
+        const std::wstring version = std::wstring(L"Version ") + kAppVersion;
+        {
+            Item& v = Add(kAboutVersion, Kind::Text, L"", MakeBox(tx, cy + paint.LineHeight(Font::Instruction) + 4, tw, lineH),
+                          kCardAbout);
+            v.e.name = v.label = version;
+        }
+        cy += 48 + kGap;
+        const std::wstring body = L"MyCam turns an Android phone into a webcam for Windows, over USB or Wi-Fi.";
+        const Size b = paint.Measure(Font::Body, body, iw);
+        {
+            Item& t = Add(kAboutText, Kind::Text, L"", MakeBox(ix, cy, iw, b.h), kCardAbout);
+            t.e.name = t.label = body;
+            cy += b.h + kGap;
+        }
+        const std::wstring licence =
+            L"MyCam is open source under the MIT licence. Tahoma, Trebuchet MS and Segoe UI are Windows system fonts and "
+            L"are never shipped with MyCam. Switching a phone into accessory mode uses UsbDk (GPL-3.0), which the "
+            L"installer offers separately.";
+        const Size l = paint.Measure(Font::Small, licence, iw);
+        {
+            Item& t = Add(kAboutLicence, Kind::Text, L"", MakeBox(ix, cy, iw, l.h), kCardAbout);
+            t.e.name = t.label = licence;
+            cy += l.h + kGap;
+        }
+        const Size link = paint.Measure(Font::Body, L"Open log folder");
+        Add(kOpenLog, Kind::Link, L"&Open log folder", MakeBox(ix, cy, link.w, link.h), kCardAbout);
+        cy += link.h + kCardPad;
+        const Box box = MakeBox(x, *y, w, cy - *y);
+        cards[ci].box = box;
+        items[ii].e.rect = box;
+        *y = box.b;
+    }
+
+    // --- Pairing (a page while the window is open; the dialog covers the window being closed) --------
+
+    void LayoutPairing(const LinkStatus& s, uint64_t now, float x, float* y, float w) {
+        PageHeader(L"Pair with your phone", L"", x, y, w);
+        const size_t ci = cards.size(), ii = items.size();
+        cards.push_back({kCardPairing, MakeBox(x, *y, w, 10)});
+        Item& card = Add(kCardPairing, Kind::Card, L"", MakeBox(x, *y, w, 10), kNone);
+        card.e.name = L"Pairing";
+        const float iw = w - 2 * kCardPad, ix = x + kCardPad;
+        float cy = *y + kCardPad + 6;
+        {
+            Item& art = Add(kPairArt, Kind::Image, L"", MakeBox(x + (w - 48) / 2, cy, 48, 48), kCardPairing);
+            art.e.name = L"MyCam";
+            cy += 48 + kGap;
+        }
+        const std::wstring title = s.phoneName.empty() ? L"A pairing request has been sent to your phone."
+                                                       : L"A pairing request has been sent to " + s.phoneName + L".";
+        const Size t = paint.Measure(Font::Instruction, title, iw);
+        {
+            Item& h = Add(kPairTitle, Kind::Text, L"", MakeBox(ix, cy, iw, t.h), kCardPairing);
+            h.e.name = h.label = title;
+            h.e.liveRegion = true;
+            cy += t.h + 4;
+        }
+        const std::wstring hint = L"Make sure the code below matches on both devices.";
+        const Size hs = paint.Measure(Font::Body, hint, iw);
+        {
+            Item& h = Add(kPairHint, Kind::Text, L"", MakeBox(ix, cy, iw, hs.h), kCardPairing);
+            h.e.name = h.label = hint;
+            cy += hs.h + kGap + 2;
+        }
+        // The code in a large bordered box.
+        const std::wstring code = s.pairingCode.empty() ? L"— — —" : s.pairingCode;
+        const Size cs = paint.Measure(Font::Code, code);
+        const float boxW = std::min(iw, cs.w + 56), boxH = cs.h + 22;
+        {
+            Item& b = Add(kPairCode, Kind::Text, L"", MakeBox(x + (w - boxW) / 2, cy, boxW, boxH), kCardPairing);
+            b.e.name = L"Pairing code " + code;
+            b.label = code;
+            cy += boxH + kGap + 2;
+        }
+        // The countdown stays, as the green XP chunk bar (owner's decision, §4 Progress).
+        {
+            const uint64_t elapsed = pairingSince ? now - pairingSince : 0;
+            const uint64_t left = elapsed >= kPairingAnswerMs ? 0 : kPairingAnswerMs - elapsed;
+            wchar_t text[8];
+            FormatCountdown(left, text, 8);
+            const float tw = paint.Measure(Font::Body, L"0:00").w + 8;
+            const float barW = std::min(iw, 260.f);
+            Item& bar = Add(kPairProgress, Kind::ProgressBar, L"", MakeBox(x + (w - barW - tw) / 2, cy, barW, 13),
+                            kCardPairing);
+            bar.e.value = float(left) / float(kPairingAnswerMs);
+            bar.label = text;
+            bar.e.name = std::wstring(L"Time left to pair: ") + text;
+            cy += 13 + kGap + 4;
+        }
+        {
+            const Size cancel = ButtonSize(L"Cancel", 110);
+            AddButton(kPairCancel, L"Cancel", FlatStyle::Secondary, MakeBox(x + (w - cancel.w) / 2, cy, cancel.w, cancel.h),
+                      kCardPairing)
+                .e.name = L"Cancel pairing";
+            cy += cancel.h + kCardPad;
+        }
+        const Box box = MakeBox(x, *y, w, cy - *y);
+        cards[ci].box = box;
+        items[ii].e.rect = box;
+        *y = box.b;
+    }
+
+    // --- Scanning -----------------------------------------------------------------------------------
+
+    // A scan is running, or was just asked for and the link hasn't picked it up yet.
+    bool Scanning(const LinkStatus& s, uint64_t now) const {
+        return s.scanning || (scanPressedAt && now - scanPressedAt < 1500 && s.scansDone == scansAtPress);
+    }
+
+    void StartScan() {
+        if (!model->scanForPhones) return;
+        const LinkStatus s = Status();
+        scanPressedAt = Now();
+        scansAtPress = s.scansDone;
+        model->scanForPhones();
+    }
+
+    std::vector<Element> Elements() const {
+        std::vector<Element> out;
+        out.reserve(items.size());
+        for (const auto& it : items) out.push_back(it.e);
+        return out;
+    }
+
+    const Item* FindItem(int id) const {
+        for (const auto& it : items) if (it.e.id == id) return &it;
+        return nullptr;
+    }
+
+    float MaxScroll() const { return std::max(0.f, contentH - contentView.H()); }
+
+    Box ThumbTrack() const { return {content.r - 9, content.t + 3, content.r - 3, content.b - 3}; }
+    Box Thumb() const {
+        const Box t = ThumbTrack();
+        const float h = std::max(28.f, t.H() * contentView.H() / std::max(contentH, 1.f));
+        const float max = MaxScroll();
+        const float top = t.t + (max > 0 ? (t.H() - h) * scroll / max : 0);
+        return {t.l, top, t.r, top + h};
+    }
+
+    void SetScroll(float value) {
+        const float clamped = std::clamp(value, 0.f, MaxScroll());
+        if (clamped == scroll) return;
+        scroll = clamped;
+        Invalidate();
+    }
+
+    void ScrollIntoView(int id) {
+        const Item* it = FindItem(id);
+        if (!it || it->e.rect.l < content.l) return;
+        const Box& r = it->e.rect;
+        if (r.t < contentView.t + 4) SetScroll(scroll - (contentView.t + 4 - r.t) - 8);
+        else if (r.b > contentView.b - 4) SetScroll(scroll + (r.b - (contentView.b - 4)) + 8);
+        Layout();
+    }
+
+    int HitTest(float x, float y) const {
+        // An open dropdown's list is on top of everything else.
+        if (openDrop != kNone) {
+            for (const auto& it : items) {
+                if (it.e.kind != Kind::DropItem || it.e.parent != openDrop || !it.e.visible || !it.e.enabled) continue;
+                if (it.e.rect.Contains(x, y)) return it.e.id;
+            }
+        }
+        for (const auto& it : items) {
+            const Element& e = it.e;
+            const bool clickable = e.kind == Kind::Button || e.kind == Kind::Checkbox || e.kind == Kind::Radio ||
+                                   e.kind == Kind::Link || e.kind == Kind::CaptionButton || e.kind == Kind::Nav ||
+                                   e.kind == Kind::Dropdown || e.kind == Kind::Toggle || e.kind == Kind::Slider;
+            if (!clickable || !e.visible || !e.enabled) continue;
+            if (e.rect.Contains(x, y) && e.clip.Contains(x, y)) return e.id;
         }
         return kNone;
     }
 
-    // Loads an icon resource at the exact pixel size and converts it to a D2D bitmap.
-    ComPtr<ID2D1Bitmap> LoadIconBitmap(int resourceId, int px) {
-        ComPtr<ID2D1Bitmap> out;
-        HICON icon = static_cast<HICON>(LoadImageW(GetModuleHandleW(nullptr), MAKEINTRESOURCEW(resourceId), IMAGE_ICON,
-                                                   px, px, LR_DEFAULTCOLOR));
-        if (!icon || !wic || !rt) return out;
-        ComPtr<IWICBitmap> wicBitmap;
-        ComPtr<IWICFormatConverter> converter;
-        if (SUCCEEDED(wic->CreateBitmapFromHICON(icon, &wicBitmap)) && SUCCEEDED(wic->CreateFormatConverter(&converter)) &&
-            SUCCEEDED(converter->Initialize(wicBitmap.Get(), GUID_WICPixelFormat32bppPBGRA, WICBitmapDitherTypeNone,
-                                            nullptr, 0, WICBitmapPaletteTypeCustom))) {
-            rt->CreateBitmapFromWicBitmap(converter.Get(), nullptr, &out);
-        }
-        DestroyIcon(icon);
-        return out;
-    }
-
-    void EnsureTarget() {
-        if (rt) return;
-        RECT rc;
-        GetClientRect(hwnd, &rc);
-        D2D1_RENDER_TARGET_PROPERTIES props = D2D1::RenderTargetProperties();
-        props.dpiX = props.dpiY = 96.f * scale;
-        d2d->CreateHwndRenderTarget(props, D2D1::HwndRenderTargetProperties(hwnd, D2D1::SizeU(rc.right, rc.bottom)), &rt);
-        rt->SetTextAntialiasMode(D2D1_TEXT_ANTIALIAS_MODE_CLEARTYPE);
-        appIcon16 = LoadIconBitmap(kIconApp, int(16 * scale + 0.5f));
-        statusIcon.Reset();
-        statusIconId = 0;
-    }
-
-    // --- Drawing primitives ----------------------------------------------------------------------
-
-    ComPtr<ID2D1SolidColorBrush> Solid(D2D1_COLOR_F c) {
-        ComPtr<ID2D1SolidColorBrush> b;
-        rt->CreateSolidColorBrush(c, &b);
-        return b;
-    }
-
-    ComPtr<ID2D1LinearGradientBrush> Vertical(float top, float bottom, std::initializer_list<D2D1_GRADIENT_STOP> stops) {
-        ComPtr<ID2D1GradientStopCollection> collection;
-        rt->CreateGradientStopCollection(stops.begin(), UINT32(stops.size()), &collection);
-        ComPtr<ID2D1LinearGradientBrush> b;
-        rt->CreateLinearGradientBrush(D2D1::LinearGradientBrushProperties(D2D1::Point2F(0, top), D2D1::Point2F(0, bottom)),
-                                      collection.Get(), &b);
-        return b;
-    }
-
-    void Text(const std::wstring& s, IDWriteTextFormat* format, D2D1_RECT_F r, D2D1_COLOR_F color,
-              DWRITE_TEXT_ALIGNMENT align = DWRITE_TEXT_ALIGNMENT_LEADING) {
-        format->SetTextAlignment(align);
-        rt->DrawText(s.c_str(), UINT32(s.size()), format, r, Solid(color).Get());
-    }
-
-    // Window frame: Aero "glass" (opaque approximation): sky-blue gradient with soft aurora sheens.
-    void DrawFrame() {
-        const D2D1_RECT_F all = Rect(0, 0, kWidth, kHeight);
-        rt->FillRectangle(all, Vertical(0, kHeight, {{0.f, Rgb(0xC9DDF3)}, {0.08f, Rgb(0xA9C6EA)}, {1.f, Rgb(0x8FB2DD)}}).Get());
-
-        // Aurora: two soft diagonal light streaks.
-        ComPtr<ID2D1GradientStopCollection> stops;
-        D2D1_GRADIENT_STOP s[] = {{0.f, D2D1::ColorF(1, 1, 1, 0.55f)}, {1.f, D2D1::ColorF(1, 1, 1, 0.f)}};
-        rt->CreateGradientStopCollection(s, 2, &stops);
-        ComPtr<ID2D1RadialGradientBrush> glow;
-        rt->CreateRadialGradientBrush(D2D1::RadialGradientBrushProperties(D2D1::Point2F(110, 6), {}, 150, 26), stops.Get(), &glow);
-        rt->FillRectangle(Rect(0, 0, kWidth, kTitleH), glow.Get());
-        rt->CreateRadialGradientBrush(D2D1::RadialGradientBrushProperties(D2D1::Point2F(330, 20), {}, 120, 18), stops.Get(), &glow);
-        rt->FillRectangle(Rect(0, 0, kWidth, kTitleH), glow.Get());
-
-        // Highlight along the top edge, dark outer edge.
-        rt->DrawLine(D2D1::Point2F(1, 1.5f), D2D1::Point2F(kWidth - 1, 1.5f), Solid(D2D1::ColorF(1, 1, 1, 0.8f)).Get());
-        rt->DrawRectangle(D2D1::RectF(0.5f, 0.5f, kWidth - 0.5f, kHeight - 0.5f), Solid(Rgb(0x3E5F8A, 0.9f)).Get());
-
-        // Title: app icon and text with the Win7 white glow behind it.
-        if (appIcon16) rt->DrawBitmap(appIcon16.Get(), Rect(kFrame + 2, 7, 16, 16));
-        ComPtr<ID2D1RadialGradientBrush> textGlow;
-        D2D1_GRADIENT_STOP gs[] = {{0.f, D2D1::ColorF(1, 1, 1, 0.75f)}, {1.f, D2D1::ColorF(1, 1, 1, 0.f)}};
-        ComPtr<ID2D1GradientStopCollection> glowStops;
-        rt->CreateGradientStopCollection(gs, 2, &glowStops);
-        rt->CreateRadialGradientBrush(D2D1::RadialGradientBrushProperties(D2D1::Point2F(80, 15), {}, 62, 13), glowStops.Get(), &textGlow);
-        rt->FillRectangle(Rect(14, 0, 140, kTitleH), textGlow.Get());
-        Text(L"MyCam Settings", fontTitle.Get(), Rect(kFrame + 24, 0, 200, kTitleH), Rgb(kText));
-
-        // Content area with a thin dark edge where it meets the glass.
-        const D2D1_RECT_F content = D2D1::RectF(kFrame, kTitleH, kWidth - kFrame, kHeight - kFrame);
-        rt->FillRectangle(content, Solid(Rgb(kBody)).Get());
-        const D2D1_RECT_F command = D2D1::RectF(kFrame, kHeight - kFrame - kCommandH, kWidth - kFrame, kHeight - kFrame);
-        rt->FillRectangle(command, Solid(Rgb(kCommandArea)).Get());
-        rt->DrawLine(D2D1::Point2F(command.left, command.top + 0.5f), D2D1::Point2F(command.right, command.top + 0.5f),
-                     Solid(Rgb(kCommandLine)).Get());
-        rt->DrawRectangle(D2D1::RectF(content.left - 0.5f, content.top - 0.5f, content.right + 0.5f, content.bottom + 0.5f),
-                          Solid(Rgb(0x6F8DB5, 0.85f)).Get());
-    }
-
-    // Win7 close caption button: glossy red, brighter when hot.
-    void DrawTitleClose(const Element& e) {
-        const D2D1_RECT_F r = e.rect;
-        const bool isHot = hot == e.id, isDown = pressed == e.id && isHot;
-        D2D1_ROUNDED_RECT rr = {r, 3.5f, 3.5f};
-        auto fill = isDown ? Vertical(r.top, r.bottom, {{0.f, Rgb(0xD1987F)}, {0.5f, Rgb(0xB0402A)}, {0.51f, Rgb(0x8E1A08)}, {1.f, Rgb(0xC2481E)}})
-                  : isHot  ? Vertical(r.top, r.bottom, {{0.f, Rgb(0xF4B9A6)}, {0.5f, Rgb(0xE7614A)}, {0.51f, Rgb(0xD2280E)}, {1.f, Rgb(0xEF8B5C)}})
-                           : Vertical(r.top, r.bottom, {{0.f, Rgb(0xE6AE9E)}, {0.5f, Rgb(0xD07560)}, {0.51f, Rgb(0xB8391F)}, {1.f, Rgb(0xD2805D)}});
-        rt->FillRoundedRectangle(rr, fill.Get());
-        rt->DrawRoundedRectangle(rr, Solid(Rgb(0x5A1A10, 0.8f)).Get());
-        D2D1_ROUNDED_RECT inner = {D2D1::RectF(r.left + 1, r.top + 1, r.right - 1, r.bottom - 1), 2.5f, 2.5f};
-        rt->DrawRoundedRectangle(inner, Solid(D2D1::ColorF(1, 1, 1, 0.35f)).Get());
-
-        // White "x" with a dark outline.
-        const float cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2, d = 4.f;
-        auto cross = [&](ID2D1Brush* b, float width) {
-            rt->DrawLine(D2D1::Point2F(cx - d, cy - d), D2D1::Point2F(cx + d, cy + d), b, width);
-            rt->DrawLine(D2D1::Point2F(cx + d, cy - d), D2D1::Point2F(cx - d, cy + d), b, width);
-        };
-        cross(Solid(Rgb(0x4A1208, 0.8f)).Get(), 3.6f);
-        cross(Solid(Rgb(0xFFFFFF)).Get(), 2.0f);
-    }
-
-    // Win7 caption "minimize": clear glass that turns light blue on hover, with a white dash near the bottom.
-    // It sits flush against the red close button, so only its left corners are rounded.
-    void DrawTitleMin(const Element& e) {
-        const D2D1_RECT_F r = e.rect;
-        const bool isHot = hot == e.id, isDown = pressed == e.id && isHot;
-        auto fill = isDown ? Vertical(r.top, r.bottom, {{0.f, Rgb(0x9DB9D9)}, {0.5f, Rgb(0x5E89BC)}, {0.51f, Rgb(0x2E5E98)}, {1.f, Rgb(0x5FA0D6)}})
-                  : isHot  ? Vertical(r.top, r.bottom, {{0.f, Rgb(0xD6E7F8)}, {0.5f, Rgb(0xA6C7EA)}, {0.51f, Rgb(0x6E9FD6)}, {1.f, Rgb(0xA9DDF8)}})
-                           : Vertical(r.top, r.bottom, {{0.f, Rgb(0xE3ECF6, 0.9f)}, {0.5f, Rgb(0xC2D5EC, 0.85f)}, {0.51f, Rgb(0xA4BEDF, 0.85f)}, {1.f, Rgb(0xC5DAF0, 0.9f)}});
-        // Rounded on the left only: draw a rounded rect wider than the button, clipped to the button.
-        rt->PushAxisAlignedClip(r, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-        D2D1_ROUNDED_RECT rr = {D2D1::RectF(r.left, r.top, r.right + 6, r.bottom), 3.5f, 3.5f};
-        rt->FillRoundedRectangle(rr, fill.Get());
-        rt->DrawRoundedRectangle(rr, Solid(Rgb(0x2A4A70, 0.85f)).Get());
-        D2D1_ROUNDED_RECT inner = {D2D1::RectF(r.left + 1, r.top + 1, r.right + 6, r.bottom - 1), 2.5f, 2.5f};
-        rt->DrawRoundedRectangle(inner, Solid(D2D1::ColorF(1, 1, 1, 0.5f)).Get());
-        rt->PopAxisAlignedClip();
-
-        // White dash with a dark outline, low in the button like Windows 7's.
-        const float cx = (r.left + r.right) / 2, y = r.bottom - 6.5f;
-        rt->FillRectangle(D2D1::RectF(cx - 5.5f, y - 2.5f, cx + 5.5f, y + 2.f), Solid(Rgb(0x1E3550, 0.85f)).Get());
-        rt->FillRectangle(D2D1::RectF(cx - 4.5f, y - 1.5f, cx + 4.5f, y + 1.f), Solid(Rgb(0xFFFFFF)).Get());
-    }
-
-    // Aero push button: two-tone gloss split at the middle (IMPROVEMENTS.md 7.2 button tokens).
-    void DrawAeroButton(D2D1_RECT_F r, const std::wstring& label, bool isHot, bool isDown, bool selected,
-                        bool enabled = true) {
-        if (!enabled) {
-            D2D1_ROUNDED_RECT rr = {D2D1::RectF(r.left + 0.5f, r.top + 0.5f, r.right - 0.5f, r.bottom - 0.5f), 3, 3};
-            rt->FillRoundedRectangle(rr, Solid(Rgb(0xF4F4F4)).Get());
-            rt->DrawRoundedRectangle(rr, Solid(Rgb(0xADB2B5)).Get());
-            Text(label, fontBody.Get(), r, Rgb(0x838383), DWRITE_TEXT_ALIGNMENT_CENTER);
-            return;
-        }
-        const bool lit = isDown || selected;
-        auto fill = lit   ? Vertical(r.top, r.bottom, {{0.f, Rgb(0xE5F4FC)}, {0.5f, Rgb(0xC4E5F6)}, {0.51f, Rgb(0x98D1EF)}, {1.f, Rgb(0x68B3DB)}})
-                  : isHot ? Vertical(r.top, r.bottom, {{0.f, Rgb(0xEAF6FD)}, {0.5f, Rgb(0xD9F0FC)}, {0.51f, Rgb(0xBEE6FD)}, {1.f, Rgb(0xA7D9F5)}})
-                          : Vertical(r.top, r.bottom, {{0.f, Rgb(0xF2F2F2)}, {0.5f, Rgb(0xEBEBEB)}, {0.51f, Rgb(0xDDDDDD)}, {1.f, Rgb(0xCFCFCF)}});
-        const UINT32 border = lit ? 0x2C628B : isHot ? 0x3C7FB1 : 0x707070;
-        const float radius = 3;
-        D2D1_ROUNDED_RECT rr = {D2D1::RectF(r.left + 0.5f, r.top + 0.5f, r.right - 0.5f, r.bottom - 0.5f), radius, radius};
-        rt->FillRoundedRectangle(rr, fill.Get());
-        D2D1_ROUNDED_RECT inner = {D2D1::RectF(r.left + 1.5f, r.top + 1.5f, r.right - 1.5f, r.bottom - 1.5f), radius - 1, radius - 1};
-        rt->DrawRoundedRectangle(inner, Solid(D2D1::ColorF(1, 1, 1, lit ? 0.35f : 0.8f)).Get());
-        rt->DrawRoundedRectangle(rr, Solid(Rgb(border)).Get());
-        Text(label, fontBody.Get(), r, Rgb(kText), DWRITE_TEXT_ALIGNMENT_CENTER);
-    }
-
-    // Win7 checkbox: 13px box with a soft inner gradient and a dark blue check.
-    void DrawCheckbox(const Element& e, bool checked, bool enabled = true) {
-        const bool isHot = enabled && hot == e.id;
-        const float y = (e.rect.top + e.rect.bottom) / 2 - 6.5f;
-        const D2D1_RECT_F box = Rect(e.rect.left, y, 13, 13);
-        rt->FillRectangle(box, Solid(Rgb(0xFFFFFF)).Get());
-        rt->DrawRectangle(D2D1::RectF(box.left + 0.5f, box.top + 0.5f, box.right - 0.5f, box.bottom - 0.5f),
-                          Solid(Rgb(isHot ? 0x3C7FB1 : 0x8E8F8F)).Get());
-        const D2D1_RECT_F well = D2D1::RectF(box.left + 2, box.top + 2, box.right - 2, box.bottom - 2);
-        rt->FillRectangle(well, (isHot ? Vertical(well.top, well.bottom, {{0.f, Rgb(0xB9DEF5)}, {1.f, Rgb(0xE9F6FD)}})
-                                       : Vertical(well.top, well.bottom, {{0.f, Rgb(0xCBCFD5)}, {1.f, Rgb(0xF6F6F6)}})).Get());
-        if (checked) {
-            ComPtr<ID2D1PathGeometry> path;
-            d2d->CreatePathGeometry(&path);
-            ComPtr<ID2D1GeometrySink> sink;
-            path->Open(&sink);
-            sink->BeginFigure(D2D1::Point2F(box.left + 3, box.top + 6.5f), D2D1_FIGURE_BEGIN_HOLLOW);
-            sink->AddLine(D2D1::Point2F(box.left + 5.5f, box.top + 9.5f));
-            sink->AddLine(D2D1::Point2F(box.left + 10.5f, box.top + 3));
-            sink->EndFigure(D2D1_FIGURE_END_OPEN);
-            sink->Close();
-            rt->DrawGeometry(path.Get(), Solid(Rgb(0x1B3D82)).Get(), 2.f);
-        }
-        Text(e.text, fontBody.Get(), D2D1::RectF(e.rect.left + 19, e.rect.top, e.rect.right, e.rect.bottom), Rgb(enabled ? kText : 0x838383));
-    }
-
-    void DrawLink(const Element& e) {
-        const bool isHot = hot == e.id;
-        Text(e.text, fontBody.Get(), e.rect, Rgb(isHot ? kLinkHot : kLink));
-        if (isHot) {
-            ComPtr<IDWriteTextLayout> layout;
-            dwrite->CreateTextLayout(e.text.c_str(), UINT32(e.text.size()), fontBody.Get(), 400, 20, &layout);
-            DWRITE_TEXT_METRICS m;
-            layout->GetMetrics(&m);
-            const float y = (e.rect.top + e.rect.bottom) / 2 + 7.5f;
-            rt->DrawLine(D2D1::Point2F(e.rect.left, y), D2D1::Point2F(e.rect.left + m.width, y), Solid(Rgb(kLinkHot)).Get());
-        }
-    }
-
-    void DrawFocus(const Element& e) {
-        D2D1_RECT_F r = e.rect;
-        if (e.kind == Kind::Checkbox || e.kind == Kind::Link) {
-            ComPtr<IDWriteTextLayout> layout;
-            dwrite->CreateTextLayout(e.text.c_str(), UINT32(e.text.size()), fontBody.Get(), 400, 20, &layout);
-            DWRITE_TEXT_METRICS m;
-            layout->GetMetrics(&m);
-            const float left = e.kind == Kind::Checkbox ? r.left + 17 : r.left - 2;
-            r = D2D1::RectF(left, r.top, left + m.width + 4, r.bottom);
-        } else {
-            r = D2D1::RectF(r.left + 3, r.top + 3, r.right - 3, r.bottom - 3);
-        }
-        ComPtr<ID2D1StrokeStyle> dots;
-        d2d->CreateStrokeStyle(D2D1::StrokeStyleProperties(D2D1_CAP_STYLE_FLAT, D2D1_CAP_STYLE_FLAT, D2D1_CAP_STYLE_FLAT,
-                                                           D2D1_LINE_JOIN_MITER, 10.f, D2D1_DASH_STYLE_DOT),
-                               nullptr, 0, &dots);
-        rt->DrawRectangle(D2D1::RectF(r.left + 0.5f, r.top + 0.5f, r.right - 0.5f, r.bottom - 0.5f),
-                          Solid(Rgb(0x000000, 0.7f)).Get(), 1.f, dots.Get());
-    }
-
-    // Row labels and current values for the Video / Camera controls sections.
-    void DrawControlValues(const LinkStatus& status) {
-        const proto::CameraInfo& c = status.camera;
-        const bool known = status.state >= LinkState::Idle && c.valid && c.width > 0;
-        const float x = kFrame + 20, cx = x + 120;
-        const auto ink = Rgb(known ? kText : 0x838383);
-        Text(L"Zoom", fontBody.Get(), Rect(x, 374, 110, 26), ink);
-        Text(L"Brightness", fontBody.Get(), Rect(x, 410, 110, 26), ink);
-        Text(L"Focus", fontBody.Get(), Rect(x, 446, 110, 26), ink);
-        wchar_t buf[32];
-        if (known) {
-            swprintf_s(buf, L"%.1f×", c.zoomX100 / 100.0);
-            Text(buf, fontBody.Get(), Rect(cx + 32, 374, 70, 26), ink, DWRITE_TEXT_ALIGNMENT_CENTER);
-            const double ev = c.ev * c.evStepX100 / 100.0;
-            swprintf_s(buf, L"%s%.1f EV", ev > 0 ? L"+" : L"", ev);
-            Text(c.evMax > c.evMin ? buf : L"—", fontBody.Get(), Rect(cx + 32, 410, 70, 26), ink, DWRITE_TEXT_ALIGNMENT_CENTER);
-            swprintf_s(buf, L"Now: %u×%u at %u fps", c.width, c.height, c.actualFps);
-            Text(buf, fontBody.Get(), Rect(x, 316, 300, 20), Rgb(kSubtle)); // Own row under the frame rates.
-        } else {
-            Text(L"—", fontBody.Get(), Rect(cx + 32, 374, 70, 26), ink, DWRITE_TEXT_ALIGNMENT_CENTER);
-            Text(L"—", fontBody.Get(), Rect(cx + 32, 410, 70, 26), ink, DWRITE_TEXT_ALIGNMENT_CENTER);
-            Text(L"Controls appear once the phone camera has started.", fontBody.Get(), Rect(x, 466, 330, 20), Rgb(kSubtle));
-        }
-    }
-
-    void SectionHeading(const wchar_t* text, float y) {
-        const float x = kFrame + 20;
-        Text(text, fontHeading.Get(), Rect(x, y, 200, 20), Rgb(0x1E3287));
-        ComPtr<IDWriteTextLayout> layout;
-        dwrite->CreateTextLayout(text, UINT32(wcslen(text)), fontHeading.Get(), 300, 20, &layout);
-        DWRITE_TEXT_METRICS m;
-        layout->GetMetrics(&m);
-        rt->DrawLine(D2D1::Point2F(x + m.width + 8, y + 10.5f), D2D1::Point2F(kWidth - kFrame - 20, y + 10.5f),
-                     Solid(Rgb(kRule)).Get());
-    }
-
-    // "LIVE" pill: the Win7 progress-bar green with gloss.
-    void DrawLivePill(float x, float y) {
-        const D2D1_RECT_F r = Rect(x, y, 40, 17);
-        D2D1_ROUNDED_RECT rr = {r, 8.5f, 8.5f};
-        rt->FillRoundedRectangle(rr, Vertical(r.top, r.bottom, {{0.f, Rgb(0x8BE07A)}, {0.5f, Rgb(0x37C12B)}, {0.51f, Rgb(0x06B025)}, {1.f, Rgb(0x3CCB47)}}).Get());
-        rt->DrawRoundedRectangle(rr, Solid(Rgb(0x0A7A1A)).Get());
-        Text(L"LIVE", fontHeading.Get(), r, Rgb(0xFFFFFF), DWRITE_TEXT_ALIGNMENT_CENTER);
-    }
-
-    void Paint() {
-        EnsureTarget();
-        const LinkStatus status = model->status();
-        const StatusView view = DescribeStatus(status, model->cameraRegistered());
-
-        rt->BeginDraw();
-        rt->Clear(Rgb(kBody));
-        DrawFrame();
-
-        // Status: big state icon + main instruction + detail.
-        if (statusIconId != view.icon) {
-            statusIcon = LoadIconBitmap(view.icon, int(48 * scale + 0.5f));
-            statusIconId = view.icon;
-        }
-        const float x = kFrame + 20;
-        if (statusIcon) rt->DrawBitmap(statusIcon.Get(), Rect(x, kTitleH + 20, 48, 48));
-        const float textW = kWidth - kFrame - 20 - 92 - 10 - (x + 62); // Up to the Pause button.
-        Text(view.headline, fontInstruction.Get(), Rect(x + 62, kTitleH + 18, textW, 26), Rgb(kMainInstruction));
-        if (status.state == LinkState::Streaming) {
-            ComPtr<IDWriteTextLayout> layout;
-            dwrite->CreateTextLayout(view.headline.c_str(), UINT32(view.headline.size()), fontInstruction.Get(), 300, 26, &layout);
-            DWRITE_TEXT_METRICS m;
-            layout->GetMetrics(&m);
-            DrawLivePill(x + 62 + m.width + 10, kTitleH + 23);
-        }
-        Text(view.detail, fontBody.Get(), Rect(x + 62, kTitleH + 44, textW, 50), Rgb(kSubtle));
-
-        SectionHeading(L"Camera", 140);
-        SectionHeading(L"Video", 222);
-        SectionHeading(L"Camera controls", 350);
-        SectionHeading(L"Picture", 530);
-        SectionHeading(L"General", 614);
-        DrawControlValues(status);
-
-        const bool front = status.facing == proto::kFacingFront;
-        for (const auto& e : elements) {
-            const bool isHot = hot == e.id, isDown = pressed == e.id && isHot;
-            switch (e.kind) {
-            case Kind::TitleClose: DrawTitleClose(e); break;
-            case Kind::TitleMin: DrawTitleMin(e); break;
-            case Kind::Segment: {
-                const proto::CameraInfo& c = status.camera;
-                bool selected = false;
-                switch (e.id) {
-                case kBack: case kFront: selected = (e.id == kFront) == front; break;
-                case kQ720: selected = c.valid && c.quality == proto::kQuality720p; break;
-                case kQ1080: selected = c.valid && c.quality == proto::kQuality1080p; break;
-                case kQ4K: selected = c.valid && c.quality == proto::kQuality4K; break;
-                // What this quality will run at: the chosen rate, or the best working one below it.
-                case kFps30: selected = c.valid && EffectiveFps(c) == 30; break;
-                case kFps60: selected = c.valid && EffectiveFps(c) == 60; break;
-                case kFps120: selected = c.valid && EffectiveFps(c) == 120; break;
-                case kFocusAuto: selected = c.valid && !(c.flags & proto::kCamFocusLocked); break;
-                case kFocusLock: selected = c.valid && (c.flags & proto::kCamFocusLocked); break;
-                default: break;
-                }
-                const bool on = Enabled(e.id);
-                DrawAeroButton(e.rect, e.text, isHot && on, isDown && on, selected, on);
-                break;
-            }
-            case Kind::Checkbox: {
-                const proto::CameraInfo& c = status.camera;
-                bool checked = e.id == kMirror ? model->mirror()
-                             : e.id == kFill   ? model->fill()
-                             : e.id == kTorch  ? (c.valid && (c.flags & proto::kCamTorchOn))
-                                               : model->autostart();
-                DrawCheckbox(e, checked, Enabled(e.id));
-                break;
-            }
-            case Kind::Link: DrawLink(e); break;
-            case Kind::Button:
-                if (e.id == kPause) DrawAeroButton(e.rect, model->paused() ? L"Resume" : L"Pause", isHot, isDown, false, PauseEnabled());
-                else DrawAeroButton(e.rect, e.text, isHot && Enabled(e.id), isDown && Enabled(e.id), false, Enabled(e.id));
-                break;
-            }
-        }
-        Text(L"The camera turns on only while an app is using it.", fontBody.Get(),
-             Rect(x, 194, 320, 16), Rgb(kSubtle));
-        if (keyboardCues) if (const Element* f = Find(focus)) DrawFocus(*f);
-
-        if (rt->EndDraw() == D2DERR_RECREATE_TARGET) {
-            rt.Reset();
-            appIcon16.Reset();
-            statusIcon.Reset();
-        }
-    }
-
     // --- Behaviour -------------------------------------------------------------------------------
 
-    void Activate(Id id) {
+    void SetSliderFromX(int id, float x) {
+        const Item* it = FindItem(id);
+        if (!it || !it->e.enabled) return;
+        const Box rail = it->extra;
+        const float f = rail.W() > 0 ? (x - rail.l) / rail.W() : 0.f;
+        const float v = SliderValueAt(it->e, f);
+        const LinkStatus s = Status();
+        if (id == kZoomSlider) {
+            model->command(proto::kCmdSetZoom, uint8_t(std::clamp(int(v * 10 + 0.5f), 1, 255)));
+        } else if (id == kEvValue) {
+            const int step = int(std::lround(v));
+            model->command(proto::kCmdSetExposure, uint8_t(std::clamp(step, int(s.camera.evMin), int(s.camera.evMax))));
+        }
+        Invalidate();
+    }
+
+    bool Activate(int id) {
+        const LinkStatus s = Status();
+        const Item* it = FindItem(id);
+        if (it && (!it->e.enabled || !it->e.visible)) return false;
+        // Picking an entry closes the list; the action below is the same one the radio used to do.
+        if (it && it->e.kind == Kind::DropItem) CloseDropdown();
         switch (id) {
-        case kPause:
-            if (PauseEnabled()) model->setPaused(!model->paused());
+        case kNavHome: case kNavDevices: case kNavCamera: case kNavSettings: case kNavAbout:
+            GoTo(PageOfNav(id));
+            return true;
+        case kNavDevicesLink:
+            GoTo(Page::Devices);
+            return true;
+        case kDdCamera: case kDdQuality: case kDdFps:
+            if (openDrop == id) CloseDropdown();
+            else {
+                openDrop = id;
+                dropHot = kNone;
+                dropAnim.Start(1, Now(), Dur(kShortMs), 0);
+            }
             break;
-        case kBack: model->setFacing(proto::kFacingBack); break;
-        case kFront: model->setFacing(proto::kFacingFront); break;
+        case kPause:
+            if (!PauseEnabled(s)) return false;
+            model->setPaused(!model->paused());
+            break;
+        case kBack: model->setFacing(proto::kFacingBack); StartApplying(3, proto::kFacingBack, s); break;
+        case kFront: model->setFacing(proto::kFacingFront); StartApplying(3, proto::kFacingFront, s); break;
         case kMirror: model->setMirror(!model->mirror()); break;
         case kFill: model->setFill(!model->fill()); break;
-        case kQ720: model->command(proto::kCmdSetQuality, proto::kQuality720p); break;
-        case kQ1080: model->command(proto::kCmdSetQuality, proto::kQuality1080p); break;
-        case kQ4K: model->command(proto::kCmdSetQuality, proto::kQuality4K); break;
-        case kFps30: model->command(proto::kCmdSetFps, 30); break;
-        case kFps60: model->command(proto::kCmdSetFps, 60); break;
-        case kFps120: model->command(proto::kCmdSetFps, 120); break;
-        case kZoomOut: case kZoomIn: case kZoomReset: {
-            const proto::CameraInfo c = model->status().camera;
-            double z = id == kZoomReset ? 1.0 : c.zoomX100 / 100.0 * (id == kZoomIn ? 1.25 : 0.8);
-            z = std::clamp(z, c.zoomMinX100 / 100.0, c.zoomMaxX100 / 100.0);
-            model->command(proto::kCmdSetZoom, uint8_t(std::clamp(int(z * 10 + 0.5), 1, 255)));
+        case kQ720: model->command(proto::kCmdSetQuality, proto::kQuality720p); StartApplying(1, proto::kQuality720p, s); break;
+        case kQ1080: model->command(proto::kCmdSetQuality, proto::kQuality1080p); StartApplying(1, proto::kQuality1080p, s); break;
+        case kQ4K: model->command(proto::kCmdSetQuality, proto::kQuality4K); StartApplying(1, proto::kQuality4K, s); break;
+        case kFps30: model->command(proto::kCmdSetFps, 30); StartApplying(2, 30, s); break;
+        case kFps60: model->command(proto::kCmdSetFps, 60); StartApplying(2, 60, s); break;
+        case kFps120: model->command(proto::kCmdSetFps, 120); StartApplying(2, 120, s); break;
+        case kFocusAuto: // Now a switch: on means auto focus.
+            model->command(proto::kCmdSetFocus, (s.camera.flags & proto::kCamFocusLocked) ? 0 : 1);
             break;
-        }
-        case kEvDown: model->command(proto::kCmdSetExposure, uint8_t(model->status().camera.ev - 1)); break;
-        case kEvUp: model->command(proto::kCmdSetExposure, uint8_t(model->status().camera.ev + 1)); break;
-        case kFocusAuto: model->command(proto::kCmdSetFocus, 0); break;
-        case kFocusLock: model->command(proto::kCmdSetFocus, 1); break;
-        case kTorch: model->command(proto::kCmdSetTorch, (model->status().camera.flags & proto::kCamTorchOn) ? 0 : 1); break;
+        case kTorch: model->command(proto::kCmdSetTorch, (s.camera.flags & proto::kCamTorchOn) ? 0 : 1); break;
         case kAuto:
             model->command(proto::kCmdSetZoom, 10);
             model->command(proto::kCmdSetExposure, 0);
@@ -572,34 +1251,689 @@ struct SettingsWindow::Impl {
             model->command(proto::kCmdSetTorch, 0);
             break;
         case kAutostart: model->setAutostart(!model->autostart()); break;
+        case kWireless: model->setWireless(!model->wireless()); break;
         case kReconnect: model->reconnect(); break;
         case kOpenLog: model->openLogFolder(); break;
-        case kClose:
-        case kTitleClose: DestroyWindow(hwnd); return;
-        case kTitleMin: ShowWindow(hwnd, SW_MINIMIZE); return;
-        default: return;
+        case kForgetPhones: if (model->forgetPhones) model->forgetPhones(); break; // They pair again (with a code).
+        case kShowPairing: GoTo(Page::Pairing); break;
+        // "Scan for Devices" shows its results, so it goes to Devices (Refresh on that page stays put).
+        case kScan: StartScan(); GoTo(Page::Devices); break;
+        case kScanNow: StartScan(); GoTo(Page::Devices); break;
+        case kScanUsb: // No passive wait: drop the session and look at the bus again (§2.2).
+            usbScanAt = Now();
+            model->reconnect();
+            break;
+        case kPairCancel:
+            if (model->cancelPairing) model->cancelPairing();
+            break;
+        case kCaptionClose: DestroyWindow(hwnd); return true;
+        case kCaptionMin: ShowWindow(hwnd, SW_MINIMIZE); return true;
+        default: {
+            int part = 0;
+            const int row = ScanRowIndex(id, &part);
+            if (row >= 0 && part == 1 && row < int(deviceRows.size()) && model->connectTo) {
+                model->connectTo(deviceRows[size_t(row)].ipv4); // One Wi-Fi session (pairing as usual if new).
+                break;
+            }
+            return false;
         }
-        InvalidateRect(hwnd, nullptr, FALSE);
+        }
+        Invalidate();
+        return true;
     }
 
-    void MoveFocus(int step) {
-        static const Id order[] = {kPause, kBack, kFront, kQ720, kQ1080, kQ4K, kFps30, kFps60, kFps120, kZoomOut, kZoomIn, kZoomReset,
-                                   kEvDown, kEvUp, kFocusAuto, kFocusLock, kTorch, kAuto, kMirror, kFill, kAutostart,
-                                   kReconnect, kOpenLog, kClose};
-        constexpr int n = int(sizeof(order) / sizeof(order[0]));
-        int i = 0;
-        for (int k = 0; k < n; ++k) if (order[k] == focus) i = k;
-        focus = order[(i + step + n) % n];
-        keyboardCues = true;
-        InvalidateRect(hwnd, nullptr, FALSE);
+    void SetFocusTo(int id, bool cues) {
+        focus = id;
+        if (cues) keyboardCues = true;
+        ScrollIntoView(id);
+        Invalidate();
     }
+
+    void Invalidate() {
+        if (hwnd) InvalidateRect(hwnd, nullptr, FALSE);
+    }
+
+    // --- Timers (only while something moves: no idle CPU) -------------------------------------------
+
+    bool MarqueeRunning() const {
+        if (reducedMotion || paint.HighContrast()) return false;
+        for (int id : {kStatusProgress, kScanProgress}) {
+            const Item* bar = FindItem(id);
+            if (bar && bar->e.value < 0 && bar->e.visible) return true;
+        }
+        return false;
+    }
+
+    bool PairingCountdown() const {
+        const Item* bar = FindItem(kPairProgress);
+        return bar && bar->e.value >= 0;
+    }
+
+    bool Animating(uint64_t now) const {
+        bool any = statusFade.Running(now) || badgePop.Running(now) || liveGlow.Running(now) || previewFade.Running(now) ||
+                   pageAnim.Running(now) || navPill.Running(now) || dropAnim.Running(now) || pressFade.Running(now);
+        for (const auto& [id, t] : valueAnim) any = any || t.Running(now);
+        if (usbScanAt && now - usbScanAt < kUsbScanMs + 100) any = true;
+        return any;
+    }
+
+    void ScheduleTimers() {
+        if (!hwnd) return;
+        const bool visible = IsWindowVisible(hwnd) && !IsIconic(hwnd);
+        const uint64_t now = Now();
+        // While something is animating, repaint straight away rather than on a timer: Present already
+        // waited for the vertical blank, so this runs at exactly the refresh rate. A 16 ms WM_TIMER beats
+        // against the 16.67 ms blank and drops or doubles frames, which is what makes a slide look rough.
+        if (visible && Animating(now) && !surface.Occluded()) {
+            KillTimer(hwnd, kTimerAnim);
+            Invalidate();
+        }
+        else if (visible && Animating(now)) SetTimer(hwnd, kTimerAnim, 16, nullptr);
+        else if (visible && MarqueeRunning()) SetTimer(hwnd, kTimerAnim, 50, nullptr);
+        else if (visible && PairingCountdown()) SetTimer(hwnd, kTimerAnim, 250, nullptr);
+        else KillTimer(hwnd, kTimerAnim);
+        // The preview polls the shared frame at <= 15 fps while frames are fresh, and checks twice a second
+        // for an app starting the camera otherwise. Only the Camera page shows it.
+        if (visible && page == Page::Camera) SetTimer(hwnd, kTimerPreview, previewFresh ? 66 : 500, nullptr);
+        else {
+            KillTimer(hwnd, kTimerPreview);
+            if (!visible) ClosePreview();
+        }
+    }
+
+    void ClosePreview() {
+        if (!previewOpen && !previewFresh) return;
+        preview.Close();
+        previewOpen = false;
+        previewFresh = false;
+        previewFade.Set(0);
+    }
+
+    void PollPreview() {
+        if (!pw || !ph) return;
+        previewOpen = true;
+        const PreviewSource::Result r = preview.Poll(pw, ph, previewPixels);
+        const uint64_t now = Now();
+        if (r == PreviewSource::Result::NewFrame) {
+            previewPending = true;
+            if (!previewFresh) {
+                previewFresh = true;
+                previewFade.Start(1, now, Dur(300), previewFade.Value(now));
+            }
+            Invalidate();
+        } else if (r == PreviewSource::Result::NoFrame && previewFresh) {
+            previewFresh = false;
+            previewFade.Start(0, now, Dur(300), previewFade.Value(now));
+            Invalidate();
+        }
+    }
+
+    // --- Painting --------------------------------------------------------------------------------
+
+    void EnsureBitmaps(ID2D1DeviceContext* dc) {
+        if (iconGen != surface.Generation() || iconScale != scale) {
+            appIcon16 = xp::LoadIconBitmap(dc, kIconApp, int(16 * scale + 0.5f));
+            appIcon48 = xp::LoadIconBitmap(dc, kIconApp, int(48 * scale + 0.5f));
+            statusIcon.Reset();
+            statusIconId = 0;
+            iconGen = surface.Generation();
+            iconScale = scale;
+            liveBitmap.Reset();
+            artBitmap.Reset();
+            artKind = -1;
+            previewPending = !previewPixels.empty(); // Upload the last frame again (it may not change soon).
+        }
+    }
+
+    ComPtr<ID2D1Bitmap>& IconFor(ID2D1DeviceContext* dc, int icon) {
+        // The window draws the plain camera (or the grey one) and pops the state badge on top itself.
+        const int base = icon == kIconDisconnected ? kIconDisconnected : kIconApp;
+        if (statusIconId != base) {
+            statusIcon = xp::LoadIconBitmap(dc, base, int(32 * scale + 0.5f));
+            statusIconId = base;
+        }
+        return statusIcon;
+    }
+
+    // 0 paused, 1 waiting (no phone), 2 ready (connected, no app using the camera).
+    int WantedArt(const LinkStatus& s) const {
+        if (s.lockPaused || s.state == LinkState::Paused) return 0;
+        if (s.state == LinkState::Idle || s.state == LinkState::Streaming) return 2;
+        return 1;
+    }
+
+    void UploadPreview(ID2D1DeviceContext* dc) {
+        const LinkStatus s = Status();
+        const D2D1_BITMAP_PROPERTIES1 props = D2D1::BitmapProperties1(
+            D2D1_BITMAP_OPTIONS_NONE, D2D1::PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED),
+            96.f * scale, 96.f * scale);
+        if (previewPending && previewPixels.size() == size_t(pw) * ph * 4) {
+            D2D1_SIZE_U have = liveBitmap ? liveBitmap->GetPixelSize() : D2D1::SizeU(0, 0);
+            if (!liveBitmap || have.width != pw || have.height != ph) {
+                liveBitmap.Reset();
+                dc->CreateBitmap(D2D1::SizeU(pw, ph), previewPixels.data(), pw * 4, &props, &liveBitmap);
+            } else {
+                liveBitmap->CopyFromMemory(nullptr, previewPixels.data(), pw * 4);
+            }
+            previewPending = false;
+        }
+        const int want = WantedArt(s);
+        if (want != artKind || artW != pw || artH != ph || !artBitmap) {
+            if (!imagesLoaded) {
+                pausedImage = LoadStatusImage(kImagePaused);
+                waitingImage = LoadStatusImage(kImageWaiting);
+                imagesLoaded = true;
+            }
+            std::vector<uint8_t> pixels;
+            PreviewSource::Render(want == 0 ? pausedImage : waitingImage, pw, ph, pixels);
+            artBitmap.Reset();
+            if (pixels.size() == size_t(pw) * ph * 4) dc->CreateBitmap(D2D1::SizeU(pw, ph), pixels.data(), pw * 4, &props, &artBitmap);
+            artKind = want;
+            artW = pw;
+            artH = ph;
+        }
+        if (effectGen != surface.Generation()) {
+            artBlur.Reset();
+            dc->CreateEffect(CLSID_D2D1GaussianBlur, &artBlur);
+            if (artBlur) {
+                artBlur->SetValue(D2D1_GAUSSIANBLUR_PROP_BORDER_MODE, D2D1_BORDER_MODE_HARD);
+                artBlur->SetValue(D2D1_GAUSSIANBLUR_PROP_OPTIMIZATION, D2D1_GAUSSIANBLUR_OPTIMIZATION_BALANCED);
+            }
+            effectGen = surface.Generation();
+        }
+    }
+
+    ID2D1Factory1* surfaceFactory() { return surface.Factory(); }
+
+    void DrawPreview(ID2D1DeviceContext* dc, const Box& p, const LinkStatus& s, uint64_t now, bool chips) {
+        const D2D1_RECT_F r = D2D1::RectF(p.l, p.t, p.r, p.b);
+        ComPtr<ID2D1RoundedRectangleGeometry> shape;
+        if (surfaceFactory()) surfaceFactory()->CreateRoundedRectangleGeometry({r, 8, 8}, &shape);
+        if (shape) dc->PushLayer(D2D1::LayerParameters1(r, shape.Get()), nullptr);
+        dc->FillRectangle(r, paint.Brush(Rgb(0x0B1016)));
+        const float live = previewFade.Value(now, EaseOut);
+        if (artBitmap && live < 1) {
+            if (artKind == 2 && artBlur && !paint.HighContrast()) { // Connected, no app: the hills, softly blurred.
+                artBlur->SetInput(0, artBitmap.Get());
+                artBlur->SetValue(D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, 6.f);
+                const D2D1_POINT_2F at = D2D1::Point2F(p.l, p.t);
+                dc->PushAxisAlignedClip(r, D2D1_ANTIALIAS_MODE_ALIASED);
+                dc->DrawImage(artBlur.Get(), &at);
+                dc->PopAxisAlignedClip();
+            } else {
+                dc->DrawBitmap(artBitmap.Get(), r, 1.f, D2D1_INTERPOLATION_MODE_LINEAR, nullptr, nullptr);
+            }
+        }
+        // The preview starts as a crossfade, never a pop (§12.3).
+        if (liveBitmap && live > 0) dc->DrawBitmap(liveBitmap.Get(), r, live, D2D1_INTERPOLATION_MODE_LINEAR, nullptr, nullptr);
+
+        const bool liveVideo = previewFresh && ((s.state == LinkState::Streaming && !s.lockPaused) || model->testPattern);
+        if (chips && !liveVideo && artKind == 2) {
+            const std::wstring text = L"The preview starts when an app uses the camera.";
+            const Size t = paint.Measure(Font::BodyBold, text, p.W() - 40);
+            const float h = t.h + 12;
+            paint.DarkPill(MakeBox(p.l + (p.W() - t.w - 28) / 2, p.t + (p.H() - h) / 2, t.w + 28, h), text);
+        }
+        if (shape) dc->PopLayer();
+        if (paint.HighContrast()) paint.RoundFrame(p, 8, xp::SysColor(COLOR_WINDOWTEXT));
+    }
+
+    ButtonState StateOf(const Item& it, uint64_t now) const {
+        ButtonState st;
+        st.disabled = !it.e.enabled;
+        st.hot = hot == it.e.id && !st.disabled && (pressed == kNone || pressed == it.e.id);
+        st.pressed = pressed == it.e.id && hot == it.e.id;
+        if (!st.pressed && released == it.e.id) st.press = pressFade.Value(now, EaseOut);
+        st.focused = focus == it.e.id;
+        return st;
+    }
+
+    bool Cues() const { return keyboardCues || xp::KeyboardCuesAlways(); }
+
+    void DrawItem(ID2D1DeviceContext* dc, const Item& it, const LinkStatus& s, uint64_t now) {
+        const Element& e = it.e;
+        const xp::Palette& pal = paint.Colors();
+        const ButtonState st = StateOf(it, now);
+        const int underline = Cues() ? e.accessKeyIndex : -1;
+        switch (e.kind) {
+        case Kind::CaptionButton:
+            paint.CaptionButton(e.rect, e.id == kCaptionClose, st);
+            break;
+        case Kind::Nav: {
+            const bool sel = e.selected;
+            const D2D1_COLOR_F ink = sel ? pal.accentText : st.hot ? pal.text : pal.subtle;
+            if (!sel && (st.hot || st.pressed)) paint.RoundRect(e.rect, 7, Rgb(0xEDF2F9));
+            const float gs = std::min(18.f, e.rect.H() - 10);
+            if (it.hasGlyph) paint.Icon(it.glyph, MakeBox(e.rect.l + 10, (e.rect.t + e.rect.b - gs) / 2, gs, gs), ink);
+            paint.Text(sel ? Font::BodyBold : Font::Body, it.label,
+                       Box{e.rect.l + 10 + gs + 10, e.rect.t, e.rect.r - 6, e.rect.b}, ink, Align::Leading, underline, true,
+                       true);
+            break;
+        }
+        case Kind::Button: {
+            const float gs = 14;
+            Box text = e.rect;
+            if (it.hasGlyph) text = Box{e.rect.l + gs, e.rect.t, e.rect.r, e.rect.b};
+            paint.FlatButton(e.rect, L"", -1, st, it.style, Font::BodyBold);
+            const xp::Palette& p2 = paint.Colors();
+            const D2D1_COLOR_F ink = paint.HighContrast() ? (st.hot ? xp::SysColor(COLOR_HIGHLIGHTTEXT) : xp::SysColor(COLOR_BTNTEXT))
+                                     : st.disabled        ? (it.style == FlatStyle::Primary ? Rgb(0xF2F6FD) : p2.disabledText)
+                                     : it.style == FlatStyle::Primary ? p2.accentText
+                                                                      : p2.text;
+            if (it.hasGlyph) {
+                const Size t = paint.Measure(Font::BodyBold, it.label);
+                const float total = gs + 6 + t.w;
+                const float gx = (e.rect.l + e.rect.r - total) / 2;
+                paint.Icon(it.glyph, MakeBox(gx, (e.rect.t + e.rect.b - gs) / 2, gs, gs), ink, 1.6f);
+                paint.Text(Font::BodyBold, it.label, Box{gx + gs + 6, e.rect.t, e.rect.r, e.rect.b}, ink, Align::Leading,
+                           underline, true, true);
+            } else {
+                paint.Text(Font::BodyBold, it.label, text, ink, Align::Center, underline, true, true);
+            }
+            break;
+        }
+        case Kind::Dropdown:
+            paint.Combo(e.rect, it.label, st, openDrop == e.id);
+            break;
+        case Kind::Toggle: {
+            const float on = AnimValue(e.id, e.checked ? 1.f : 0.f);
+            paint.Switch(it.extra, on, st);
+            paint.Text(Font::Body, it.label, Box{e.rect.l, e.rect.t, it.extra.l - 10, e.rect.b},
+                       e.enabled ? pal.text : pal.disabledText, Align::Leading, underline, true, true);
+            break;
+        }
+        case Kind::Slider:
+            paint.SliderRail(it.extra, AnimValue(e.id, SliderFraction(e)),
+                             [&] {
+                                 ButtonState s2 = st;
+                                 s2.pressed = sliderDrag == e.id;
+                                 return s2;
+                             }());
+            break;
+        case Kind::Checkbox: {
+            const Box box = MakeBox(e.rect.l, e.rect.t + std::max(0.f, (std::min(e.rect.H(), lineH + 2) - 13) / 2), 13, 13);
+            paint.Checkbox(box, e.checked, st);
+            paint.Text(Font::Body, it.label, Box{e.rect.l + 18, e.rect.t, e.rect.r + 2, e.rect.b},
+                       e.enabled ? pal.text : pal.disabledText, Align::Leading, underline);
+            break;
+        }
+        case Kind::Radio: {
+            const Box box = MakeBox(e.rect.l, e.rect.t + std::max(0.f, (std::min(e.rect.H(), lineH + 2) - 13) / 2), 13, 13);
+            paint.Radio(box, e.selected, st);
+            paint.Text(Font::Body, it.label, Box{e.rect.l + 18, e.rect.t, e.rect.r + 2, e.rect.b},
+                       e.enabled ? pal.text : pal.disabledText, Align::Leading, underline);
+            break;
+        }
+        case Kind::Link: {
+            const bool isHot = hot == e.id;
+            const D2D1_COLOR_F ink = isHot ? pal.linkHot : pal.link;
+            paint.Text(Font::Body, it.label, e.rect, ink, Align::Leading, underline);
+            if (isHot) {
+                const float w = paint.Measure(Font::Body, it.label).w;
+                paint.Line(e.rect.l, e.rect.t + lineH - 0.5f, e.rect.l + w, e.rect.t + lineH - 0.5f, ink);
+            }
+            break;
+        }
+        case Kind::ProgressBar:
+            if (e.value >= 0) {
+                paint.ProgressChunks(e.rect, DeterminateChunks(e.value, e.rect.W() - 6, xp::Painter::kChunk, xp::Painter::kChunkGap));
+                paint.Text(Font::Body, it.label, Box{e.rect.r + 8, e.rect.t - 2, e.rect.r + 64, e.rect.b + 2}, pal.subtle,
+                           Align::Leading, -1, false, true);
+            } else if (reducedMotion || paint.HighContrast()) {
+                if (e.id == kScanProgress) break; // The sentence under it already says "Looking for phones…".
+                paint.Text(Font::Body, L"Working…", e.rect.Inset(0, -2), pal.subtle, Align::Leading, -1, false, true);
+            } else {
+                paint.ProgressMarquee(e.rect, MarqueeOffset(now, e.rect.W() - 6, xp::Painter::kChunk, xp::Painter::kChunkGap));
+            }
+            break;
+        case Kind::Image:
+            if (e.id == kPreview) DrawPreview(dc, e.rect, s, now, true);
+            else if ((e.id == kAboutLogo || e.id == kPairArt) && appIcon48)
+                dc->DrawBitmap(appIcon48.Get(), D2D1::RectF(e.rect.l, e.rect.t, e.rect.r, e.rect.b), 1.f,
+                               D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+            break;
+        case Kind::Text:
+            DrawTextItem(dc, it, s, now);
+            break;
+        default:
+            break;
+        }
+    }
+
+    void DrawTextItem(ID2D1DeviceContext* dc, const Item& it, const LinkStatus& s, uint64_t now) {
+        const Element& e = it.e;
+        const xp::Palette& pal = paint.Colors();
+        (void)s;
+        if (it.hasGlyph) { // A card's flat line icon.
+            paint.Icon(it.glyph, e.rect, paint.HighContrast() ? pal.text : pal.accent, 1.6f);
+            return;
+        }
+        switch (e.id) {
+        case kStatusHeadline: case kStatusDetail: {
+            // Crossfade from the previous status (200 ms).
+            const float t = statusFade.Value(now, EaseOut);
+            const Font font = e.id == kStatusHeadline ? Font::Instruction : Font::Small;
+            D2D1_COLOR_F ink = e.id == kStatusHeadline ? pal.text : pal.subtle;
+            if (t < 1) {
+                const std::wstring& old = e.id == kStatusHeadline ? prevView.headline : prevView.facts;
+                D2D1_COLOR_F faded = ink;
+                faded.a = 1 - t;
+                paint.Text(font, old, Box{e.rect.l, e.rect.t, e.rect.r, e.rect.t + 200}, faded);
+                ink.a = t;
+            }
+            paint.Text(font, it.label, Box{e.rect.l, e.rect.t, e.rect.r, e.rect.t + 200}, ink);
+            break;
+        }
+        case kPageTitle:
+            paint.Text(Font::Instruction, it.label, e.rect, pal.text);
+            break;
+        case kPairTitle:
+            paint.Text(Font::Instruction, it.label, e.rect, pal.text, Align::Center);
+            break;
+        case kPairHint:
+            paint.Text(Font::Body, it.label, e.rect, pal.subtle, Align::Center);
+            break;
+        case kPairCode: {
+            paint.RoundRect(e.rect, 8, paint.HighContrast() ? pal.card : Rgb(0xF7F9FC));
+            paint.RoundFrame(e.rect, 8, paint.HighContrast() ? pal.text : pal.ctlBorder);
+            paint.Text(Font::Code, it.label, e.rect, pal.text, Align::Center, -1, false, true);
+            break;
+        }
+        case kAboutVersion: case kAboutText:
+            paint.Text(e.id == kAboutText ? Font::Body : Font::Body, it.label, e.rect, pal.subtle);
+            break;
+        case kPageSubtitle: case kAboutLicence: case kFpsReason: case kScanResult: case kUsbNote: case kControlsNote:
+        case kNowMode: case kStatusSentence: case kConnectedNote: case kAvailableNote: case kCameraHint:
+            paint.Text(Font::Small, it.label, e.rect, pal.subtle);
+            break;
+        case kConnectedTitle: case kAvailableTitle:
+            paint.Text(Font::BodyBold, it.label, e.rect, pal.text);
+            break;
+        default: {
+            int part = 0;
+            const int row = ScanRowIndex(e.id, &part);
+            if (row >= 0 && part == 0 && row < int(deviceRows.size())) {
+                DrawDeviceRow(deviceRows[size_t(row)], row);
+                break;
+            }
+            paint.Text(Font::Body, it.label, e.rect, pal.text);
+            break;
+        }
+        }
+        (void)dc;
+    }
+
+    void DrawDeviceRow(const DeviceRow& r, int index) {
+        (void)index;
+        const xp::Palette& pal = paint.Colors();
+        if (!r.firstInCard) { // A hairline between the rows of the same card, never above its first row.
+            const Box card = CardBox(r.card);
+            paint.Line(card.l + kCardPad, r.glyphBox.t - (r.glyphBox.H() / 2) - 8, card.r - kCardPad,
+                       r.glyphBox.t - (r.glyphBox.H() / 2) - 8, pal.cardBorder);
+        }
+        paint.Icon(Glyph::Phone, r.glyphBox, paint.HighContrast() ? pal.text : pal.subtle, 1.5f);
+        paint.Text(Font::BodyBold, r.name, r.nameBox, pal.text, Align::Leading, -1, true, true);
+        paint.Text(Font::Small, r.where + L" · " + r.status, r.whereBox, pal.subtle, Align::Leading, -1, true, true);
+        paint.Icon(r.usb ? Glyph::Usb : Glyph::Wifi, r.transportBox,
+                   paint.HighContrast() ? pal.text : r.connected ? pal.accent : pal.subtle, 1.5f);
+    }
+
+    Box CardBox(int id) const {
+        for (const CardGeo& c : cards) if (c.id == id) return c.box;
+        return {};
+    }
+
+    void DrawStatusIcon(ID2D1DeviceContext* dc, const Box& at, uint64_t now) {
+        auto& icon = IconFor(dc, view.icon);
+        const float t = statusFade.Value(now, EaseOut);
+        if (icon) dc->DrawBitmap(icon.Get(), D2D1::RectF(at.l, at.t, at.r, at.b), 1.f, D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
+        // The state badge pops in (scale 0.6 -> 1 with a slight overshoot, 250 ms).
+        const float pop = badgePop.Running(now) ? Lerp(0.6f, 1.f, BackOut(badgePop.Progress(now))) : 1.f;
+        paint.Badge(at.r - 5, at.b - 5, 6.5f, BadgeFor(view.icon), pop * std::max(t, 0.6f));
+    }
+
+    void DrawSidebar(ID2D1DeviceContext* dc, const LinkStatus& s, uint64_t now) {
+        const xp::Palette& pal = paint.Colors();
+        paint.Fill(nav, pal.navBg);
+        if (!paint.HighContrast()) paint.Line(nav.r - 0.5f, nav.t, nav.r - 0.5f, nav.b, pal.cardBorder);
+        else paint.Line(nav.r - 0.5f, nav.t, nav.r - 0.5f, nav.b, pal.text);
+        // The pill slides to the selected item (200 ms, §12).
+        const Item* selected = nullptr;
+        for (const auto& it : items) if (it.e.kind == Kind::Nav && it.e.selected) selected = &it;
+        if (selected) paint.NavPill(MakeBox(selected->e.rect.l, navPill.Value(now, EaseOut), selected->e.rect.W(),
+                                            selected->e.rect.H()));
+        for (const auto& it : items) {
+            if (it.e.kind == Kind::Nav) DrawItem(dc, it, s, now);
+        }
+    }
+
+    // Draws one page's content: its cards, its static text and its items.
+    void DrawPageContent(ID2D1DeviceContext* dc, const std::vector<Item>& list, const std::vector<Deco>& deco,
+                         const std::vector<CardGeo>& cardList, const LinkStatus& s, uint64_t now) {
+        for (const CardGeo& c : cardList) paint.Card(c.box);
+        const xp::Palette& pal = paint.Colors();
+        for (const Deco& d : deco) {
+            if (d.text.empty()) continue;
+            paint.Text(d.font, d.text, d.box, d.dim ? pal.disabledText : d.subtle ? pal.subtle : pal.text, Align::Leading,
+                       d.underline, true, false);
+        }
+        for (const Item& it : list) {
+            if (it.e.kind == Kind::Nav || it.e.kind == Kind::CaptionButton || it.e.kind == Kind::Card) continue;
+            if (it.e.kind == Kind::DropItem) continue; // Drawn with the open panel, on top.
+            DrawItem(dc, it, s, now);
+        }
+    }
+
+    void DrawOutgoingPage(ID2D1DeviceContext* dc, const LinkStatus& s, uint64_t now, float dx, float alpha) {
+        if (fadeItems.empty()) return;
+        D2D1_LAYER_PARAMETERS1 lp = D2D1::LayerParameters1();
+        lp.opacity = alpha;
+        lp.contentBounds = D2D1::RectF(contentView.l, contentView.t, contentView.r, contentView.b);
+        dc->PushLayer(lp, nullptr);
+        dc->SetTransform(D2D1::Matrix3x2F::Translation(dx, 0));
+        // The preview keeps its picture while it slides out.
+        for (const Item& it : fadeItems) {
+            if (it.e.id == kPreview && fadePreview.W() > 0) DrawPreview(dc, fadePreview, s, now, false);
+        }
+        std::vector<DeviceRow> keep = deviceRows;
+        deviceRows = fadeRows;
+        DrawPageContent(dc, fadeItems, fadeDecos, fadeCards, s, now);
+        deviceRows = keep;
+        dc->SetTransform(D2D1::Matrix3x2F::Identity());
+        dc->PopLayer();
+    }
+
+    void DrawDropdown(ID2D1DeviceContext* dc, uint64_t now) {
+        if (openDrop == kNone || dropPanel.W() <= 0) return;
+        const float t = dropAnim.Value(now, EaseOut);
+        const xp::Palette& pal = paint.Colors();
+        D2D1_LAYER_PARAMETERS1 lp = D2D1::LayerParameters1();
+        lp.opacity = t;
+        dc->PushLayer(lp, nullptr);
+        // Opens with a small scale from the control's edge, never a slide (§12.8).
+        const float sc = Lerp(0.96f, 1.f, t);
+        dc->SetTransform(D2D1::Matrix3x2F::Scale(sc, sc, D2D1::Point2F((dropPanel.l + dropPanel.r) / 2, dropPanel.t)));
+        paint.DropPanel(dropPanel);
+        for (const Item& it : items) {
+            if (it.e.kind != Kind::DropItem || it.e.parent != openDrop) continue;
+            const bool isHot = dropHot == it.e.id && it.e.enabled;
+            paint.DropRow(it.e.rect, it.e.selected, isHot);
+            const D2D1_COLOR_F ink = !it.e.enabled ? pal.disabledText
+                                     : isHot       ? pal.accentText
+                                                   : pal.text;
+            paint.Text(it.e.selected ? Font::BodyBold : Font::Body, it.label,
+                       Box{it.e.rect.l + 10, it.e.rect.t, it.e.rect.r - 8, it.e.rect.b}, ink, Align::Leading, -1, true, true);
+        }
+        dc->SetTransform(D2D1::Matrix3x2F::Identity());
+        dc->PopLayer();
+    }
+
+    void DrawFocus() {
+        if (!Cues() || GetFocus() != hwnd) return;
+        const Item* it = FindItem(focus);
+        if (!it || !CanFocus(it->e)) return;
+        const Element& e = it->e;
+        const bool clip = e.rect.l >= content.l;
+        if (clip) paint.Dc()->PushAxisAlignedClip(D2D1::RectF(contentView.l, contentView.t, contentView.r, contentView.b),
+                                                  D2D1_ANTIALIAS_MODE_ALIASED);
+        if (IsFlat(e.kind)) {
+            paint.FocusRing(e.rect.Inset(-2, -2), e.kind == Kind::Nav ? 9.f : 8.f);
+        } else if (e.kind == Kind::Checkbox || e.kind == Kind::Radio) {
+            const Size t = paint.Measure(Font::Body, it->label, e.rect.W() - 18);
+            paint.FocusRect(Box{e.rect.l + 16, e.rect.t - 1, e.rect.l + 18 + t.w + 3, e.rect.t + t.h + 1});
+        } else {
+            paint.FocusRect(e.rect.Inset(-2, -1));
+        }
+        if (clip) paint.Dc()->PopAxisAlignedClip();
+    }
+
+    void Paint() {
+        const uint64_t now = Now();
+        ID2D1DeviceContext* dc = surface.Begin(scale);
+        if (!dc) return;
+        paint.BeginFrame(dc, surface.Factory());
+        Layout();
+        const float maxScroll = MaxScroll();
+        if (scroll > maxScroll) { // Content shrank: pull it back down.
+            scroll = maxScroll;
+            Layout();
+        }
+        EnsureBitmaps(dc);
+        const Box pv = page == Page::Camera ? previewBox : fadePreview;
+        pw = UINT(std::max(0.f, pv.W()) * scale) & ~1u;
+        ph = UINT(std::max(0.f, pv.H()) * scale) & ~1u;
+        if (pw && ph) UploadPreview(dc);
+        const LinkStatus s = Status();
+
+        dc->Clear(D2D1::ColorF(0, 0, 0, 0));
+        xp::WindowChrome(paint, kW, kH, L"MyCam", active, appIcon16.Get());
+        const xp::Palette& pal = paint.Colors();
+        // Minimise and Close sit in the title bar, so they are drawn with the chrome and not with a page:
+        // DrawPageContent skips them, and they must stay outside the content clip and the page animation.
+        for (const Item& it : items) {
+            if (it.e.kind == Kind::CaptionButton) DrawItem(dc, it, s, now);
+        }
+        paint.Fill(content, pal.pageBg);
+        DrawSidebar(dc, s, now);
+
+        dc->PushAxisAlignedClip(D2D1::RectF(contentView.l, contentView.t, contentView.r, contentView.b),
+                                D2D1_ANTIALIAS_MODE_ALIASED);
+        const bool moving = pageAnim.Running(now);
+        const float t = pageAnim.Value(now, EaseOut);
+        if (moving) {
+            // Outgoing fades out and slides toward the nav; incoming fades in from the far side (§12).
+            DrawOutgoingPage(dc, s, now, -kPageSlideDip * t, 1 - t);
+            D2D1_LAYER_PARAMETERS1 lp = D2D1::LayerParameters1();
+            lp.opacity = t;
+            dc->PushLayer(lp, nullptr);
+            dc->SetTransform(D2D1::Matrix3x2F::Translation(kPageSlideDip * (1 - t), 0));
+        }
+        DrawPageContent(dc, items, decos, cards, s, now);
+        if (page == Page::Home) {
+            if (const Item* head = FindItem(kStatusHeadline))
+                DrawStatusIcon(dc, MakeBox(head->e.rect.l - 42, head->e.rect.t + 1, 32, 32), now);
+        }
+        if (moving) {
+            dc->SetTransform(D2D1::Matrix3x2F::Identity());
+            dc->PopLayer();
+        } else {
+            fadeItems.clear();
+            fadeDecos.clear();
+            fadeCards.clear();
+            fadeRows.clear();
+        }
+        DrawDropdown(dc, now);
+        DrawFocus();
+
+        // A thin flat scrollbar when a page overflows (large text, many devices).
+        if (MaxScroll() > 0) {
+            const Box track = ThumbTrack(), thumbBox = Thumb();
+            if (paint.HighContrast()) {
+                paint.Fill(track, xp::SysColor(COLOR_SCROLLBAR));
+                paint.Fill(thumbBox, xp::SysColor(thumbHot || thumbDrag ? COLOR_HIGHLIGHT : COLOR_BTNTEXT));
+            } else {
+                paint.RoundRect(track, 3, Rgb(0xE6EBF2));
+                paint.RoundRect(thumbBox, 3, thumbHot || thumbDrag ? Rgb(0x8E9CB2) : Rgb(0xB6C0CE));
+            }
+        }
+        dc->PopAxisAlignedClip();
+
+        if (!surface.End()) Invalidate(); // Device lost: rebuild and draw again, or the window stays empty.
+        ScheduleTimers();
+    }
+
+    // --- Window procedure --------------------------------------------------------------------------
 
     void ToDips(LPARAM lp, float* x, float* y) const {
         *x = GET_X_LPARAM(lp) / scale;
         *y = GET_Y_LPARAM(lp) / scale;
     }
 
+    void ReadSystemSettings() {
+        reducedMotion = xp::ReducedMotion();
+        paint.SetPalette(xp::HighContrastOn());
+        paint.SetTextScale(xp::TextScaleFactor());
+    }
+
+    bool HandleKey(WPARAM key) {
+        std::vector<Element> list = Elements();
+        const Element* f = FindElement(list, focus);
+        switch (key) {
+        case VK_TAB:
+            CloseDropdown();
+            SetFocusTo(NextTabStop(list, focus, GetKeyState(VK_SHIFT) < 0), true);
+            return true;
+        case VK_LEFT: case VK_UP: case VK_RIGHT: case VK_DOWN: {
+            const int delta = key == VK_LEFT || key == VK_UP ? -1 : 1;
+            keyboardCues = true;
+            if (f && f->kind == Kind::Dropdown) { // Arrows pick the next entry that this phone can do.
+                const int next = DropdownStep(list, f->id, delta);
+                if (next != kNone) Activate(next);
+                return true;
+            }
+            if (f && f->kind == Kind::Slider) {
+                const float v = SliderStep(*f, delta);
+                const Item* it = FindItem(f->id);
+                if (it && it->extra.W() > 0) {
+                    const float frac = (f->rangeMax > f->rangeMin) ? (v - f->rangeMin) / (f->rangeMax - f->rangeMin) : 0.f;
+                    SetSliderFromX(f->id, it->extra.l + it->extra.W() * frac);
+                }
+                return true;
+            }
+            const int target = ArrowTarget(list, focus, delta);
+            const Element* t = FindElement(list, target);
+            SetFocusTo(target, true);
+            if (t && (t->kind == Kind::Radio || t->kind == Kind::Nav) && !t->selected) Activate(target);
+            return true;
+        }
+        case VK_SPACE: case VK_RETURN: {
+            keyboardCues = true;
+            if (f && f->kind == Kind::Dropdown) {
+                Activate(f->id); // Opens or closes the list.
+                return true;
+            }
+            if (f && (key == VK_SPACE || f->kind != Kind::Checkbox)) Activate(focus);
+            return true;
+        }
+        case VK_PRIOR: SetScroll(scroll - contentView.H() * 0.8f); return true;
+        case VK_NEXT: SetScroll(scroll + contentView.H() * 0.8f); return true;
+        case VK_ESCAPE:
+            if (openDrop != kNone) {
+                CloseDropdown();
+                Invalidate();
+                return true;
+            }
+            DestroyWindow(hwnd);
+            return true;
+        }
+        return false;
+    }
+
     LRESULT Handle(UINT msg, WPARAM wp, LPARAM lp) {
+        if (uia) {
+            LRESULT r = 0;
+            if (uia->HandleMessage(msg, wp, lp, &r)) return r;
+        }
         switch (msg) {
         case WM_NCCALCSIZE:
             if (wp) return 0; // The whole window is client area; we draw our own frame.
@@ -608,29 +1942,56 @@ struct SettingsWindow::Impl {
             POINT pt = {GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
             ScreenToClient(hwnd, &pt);
             const float x = pt.x / scale, y = pt.y / scale;
-            if (y < kTitleH && HitTest(x, y) != kTitleClose && HitTest(x, y) != kTitleMin) return HTCAPTION;
+            const int h = HitTest(x, y);
+            if (y < xp::kTitleBarH && h != kCaptionClose && h != kCaptionMin) return HTCAPTION;
             return HTCLIENT;
         }
+        case WM_NCACTIVATE:
+            active = wp != FALSE;
+            Invalidate();
+            return TRUE; // Nothing non-client to draw.
         case WM_PAINT: {
             PAINTSTRUCT ps;
             BeginPaint(hwnd, &ps);
             Paint();
             EndPaint(hwnd, &ps);
+            if (uia) uia->Update(); // After the layout: states, focus, rectangles and UIA events.
             return 0;
         }
         case WM_ERASEBKGND:
             return 1;
         case WM_SIZE:
-            if (rt) rt->Resize(D2D1::SizeU(LOWORD(lp), HIWORD(lp)));
+            if (wp == SIZE_MINIMIZED) ScheduleTimers();
+            else Invalidate();
+            return 0;
+        case WM_SHOWWINDOW:
+            if (!wp) {
+                KillTimer(hwnd, kTimerAnim);
+                KillTimer(hwnd, kTimerPreview);
+                ClosePreview();
+            } else {
+                Invalidate();
+            }
+            break;
+        case WM_TIMER:
+            if (wp == kTimerPreview) PollPreview();
+            else Invalidate();
+            if (wp == kTimerAnim && !Animating(Now()) && !MarqueeRunning() && !PairingCountdown()) KillTimer(hwnd, kTimerAnim);
             return 0;
         case WM_DPICHANGED: {
-            scale = HIWORD(wp) / 96.f;
+            if (forcedScale <= 0) scale = HIWORD(wp) / 96.f;
             const RECT* r = reinterpret_cast<RECT*>(lp);
-            rt.Reset();
             SetWindowPos(hwnd, nullptr, r->left, r->top, r->right - r->left, r->bottom - r->top, SWP_NOZORDER | SWP_NOACTIVATE);
-            InvalidateRect(hwnd, nullptr, FALSE);
+            Invalidate();
             return 0;
         }
+        case WM_SETTINGCHANGE: case WM_SYSCOLORCHANGE: case WM_THEMECHANGED:
+            ReadSystemSettings();
+            Invalidate();
+            break;
+        case WM_SETFOCUS: case WM_KILLFOCUS:
+            Invalidate();
+            return 0;
         case WM_MOUSEMOVE: {
             if (!tracking) {
                 TRACKMOUSEEVENT tme = {sizeof(tme), TME_LEAVE, hwnd, 0};
@@ -639,54 +2000,156 @@ struct SettingsWindow::Impl {
             }
             float x, y;
             ToDips(lp, &x, &y);
-            Id h = HitTest(x, y);
-            if (h != hot) {
-                hot = h;
-                InvalidateRect(hwnd, nullptr, FALSE);
+            if (thumbDrag) {
+                const Box track = ThumbTrack(), thumbBox = Thumb();
+                const float span = track.H() - thumbBox.H();
+                if (span > 0) SetScroll(dragStartScroll + (y - dragStartY) * MaxScroll() / span);
+                return 0;
             }
-            SetCursor(LoadCursorW(nullptr, Find(h) && Find(h)->kind == Kind::Link ? IDC_HAND : IDC_ARROW));
+            if (sliderDrag != kNone) {
+                SetSliderFromX(sliderDrag, x);
+                return 0;
+            }
+            const int h = HitTest(x, y);
+            const bool overThumb = MaxScroll() > 0 && Thumb().Inset(-2, 0).Contains(x, y);
+            const Item* over = FindItem(h);
+            const int newDropHot = over && over->e.kind == Kind::DropItem ? h : kNone;
+            if (h != hot || overThumb != thumbHot || newDropHot != dropHot) {
+                hot = h;
+                thumbHot = overThumb;
+                dropHot = newDropHot;
+                Invalidate();
+            }
+            SetCursor(LoadCursorW(nullptr, over && over->e.kind == Kind::Link ? IDC_HAND : IDC_ARROW));
             return 0;
         }
         case WM_MOUSELEAVE:
             tracking = false;
             hot = kNone;
-            InvalidateRect(hwnd, nullptr, FALSE);
+            thumbHot = false;
+            dropHot = kNone;
+            Invalidate();
             return 0;
         case WM_SETCURSOR:
             if (LOWORD(lp) == HTCLIENT) return TRUE; // Set in WM_MOUSEMOVE.
             break;
-        case WM_LBUTTONDOWN: {
+        case WM_MOUSEWHEEL:
+            if (MaxScroll() > 0) SetScroll(scroll - GET_WHEEL_DELTA_WPARAM(wp) / float(WHEEL_DELTA) * 48.f);
+            return 0;
+        case WM_LBUTTONDOWN: case WM_LBUTTONDBLCLK: {
             float x, y;
             ToDips(lp, &x, &y);
-            pressed = HitTest(x, y);
-            if (pressed != kNone && pressed != kTitleClose && pressed != kTitleMin) focus = pressed;
+            SetFocus(hwnd);
             keyboardCues = false;
+            if (MaxScroll() > 0 && ThumbTrack().Inset(-2, 0).Contains(x, y)) {
+                const Box thumbBox = Thumb();
+                if (thumbBox.Inset(-2, 0).Contains(x, y)) {
+                    thumbDrag = true;
+                    dragStartY = y;
+                    dragStartScroll = scroll;
+                    SetCapture(hwnd);
+                } else {
+                    SetScroll(scroll + (y < thumbBox.t ? -1 : 1) * contentView.H() * 0.8f);
+                }
+                Invalidate();
+                return 0;
+            }
+            const int target = HitTest(x, y);
+            // A click outside an open list closes it and does nothing else.
+            if (openDrop != kNone) {
+                const Item* it = FindItem(target);
+                const bool inList = it && (it->e.kind == Kind::DropItem || it->e.id == openDrop);
+                if (!inList) {
+                    CloseDropdown();
+                    Invalidate();
+                    return 0;
+                }
+            }
+            pressed = target;
+            const Item* it = FindItem(pressed);
+            if (it && it->e.focusable) focus = pressed;
+            if (it && it->e.kind == Kind::Slider && it->e.enabled) {
+                sliderDrag = pressed;
+                SetSliderFromX(pressed, x);
+            }
             SetCapture(hwnd);
-            InvalidateRect(hwnd, nullptr, FALSE);
+            Invalidate();
             return 0;
         }
         case WM_LBUTTONUP: {
             ReleaseCapture();
+            if (thumbDrag) {
+                thumbDrag = false;
+                Invalidate();
+                return 0;
+            }
+            if (sliderDrag != kNone) {
+                sliderDrag = kNone;
+                pressed = kNone;
+                Invalidate();
+                return 0;
+            }
             float x, y;
             ToDips(lp, &x, &y);
-            Id target = pressed;
+            const int target = pressed;
             pressed = kNone;
-            InvalidateRect(hwnd, nullptr, FALSE);
+            if (target != kNone) { // The press was immediate; the release eases back (§12.5).
+                released = target;
+                pressFade.Start(0, Now(), Dur(kShortMs), 1);
+            }
+            Invalidate();
             if (target != kNone && HitTest(x, y) == target) Activate(target);
             return 0;
         }
+        case WM_CAPTURECHANGED:
+            thumbDrag = false;
+            sliderDrag = kNone;
+            return 0;
         case WM_KEYDOWN:
-            switch (wp) {
-            case VK_TAB: MoveFocus(GetKeyState(VK_SHIFT) < 0 ? -1 : 1); return 0;
-            case VK_RIGHT: case VK_DOWN: MoveFocus(1); return 0;
-            case VK_LEFT: case VK_UP: MoveFocus(-1); return 0;
-            case VK_SPACE: case VK_RETURN: keyboardCues = true; Activate(focus); return 0;
-            case VK_ESCAPE: DestroyWindow(hwnd); return 0;
+            if (HandleKey(wp)) return 0;
+            break;
+        case WM_SYSKEYDOWN:
+            if (wp == VK_MENU || wp == VK_F10) { // Alt shows the access-key underlines.
+                if (!keyboardCues) {
+                    keyboardCues = true;
+                    Invalidate();
+                }
+                if (wp == VK_MENU) return 0;
+            } else if (wp >= 'A' && wp <= 'Z' && (lp & (1 << 29))) {
+                const int target = AccessKeyTarget(Elements(), wchar_t(wp));
+                if (target != kNone) {
+                    sysKeyHandled = true;
+                    keyboardCues = true;
+                    focus = target;
+                    ScrollIntoView(target);
+                    Activate(target);
+                    Invalidate();
+                    return 0;
+                }
             }
             break;
+        case WM_SYSCHAR:
+            if (sysKeyHandled) { // Handled in WM_SYSKEYDOWN: no beep.
+                sysKeyHandled = false;
+                return 0;
+            }
+            break;
+        case WM_GETDLGCODE:
+            return DLGC_WANTALLKEYS;
         case WM_DESTROY:
-            rt.Reset();
+            if (uia) uia->Disconnect(); // Kept until the next Create: this may run inside its own action.
+            KillTimer(hwnd, kTimerAnim);
+            KillTimer(hwnd, kTimerPreview);
+            ClosePreview();
+            surface.Reset();
+            liveBitmap.Reset();
+            artBitmap.Reset();
+            artBlur.Reset();
+            appIcon16.Reset();
+            appIcon48.Reset();
+            statusIcon.Reset();
             hwnd = nullptr;
+            if (owner->elementsChanged_) owner->elementsChanged_();
             return 0;
         }
         return DefWindowProcW(hwnd, msg, wp, lp);
@@ -716,8 +2179,15 @@ struct SettingsWindow::Impl {
             RegisterClassExW(&wc);
             registered = true;
         }
-        if (!d2d) CreateFactories();
-        Layout();
+        if (!dwrite) {
+            DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED, __uuidof(IDWriteFactory), reinterpret_cast<IUnknown**>(dwrite.GetAddressOf()));
+            paint.Init(dwrite.Get(), xp::TextScaleFactor());
+        }
+        ReadSystemSettings();
+        // Developer override for checking layouts at other scales without changing Windows' settings:
+        // MYCAM_UI_SCALE=1.5 draws the window as at 150 %.
+        wchar_t env[16] = {};
+        if (GetEnvironmentVariableW(L"MYCAM_UI_SCALE", env, 16)) forcedScale = float(_wtof(env));
 
         // Centre on the work area of the monitor under the cursor, at that monitor's DPI.
         POINT cursor;
@@ -734,26 +2204,53 @@ struct SettingsWindow::Impl {
             }
             FreeLibrary(shcore);
         }
-        scale = dpi / 96.f;
-        const int w = int(kWidth * scale + 0.5f), h = int(kHeight * scale + 0.5f);
+        scale = forcedScale > 0 ? forcedScale : dpi / 96.f;
+        const int w = int(kW * scale + 0.5f), h = int(kH * scale + 0.5f);
         const RECT& wa = mi.rcWork;
-        const int x = wa.left + (wa.right - wa.left - w) / 2, y = wa.top + (wa.bottom - wa.top - h) / 2;
+        const int x = wa.left + std::max(0, int(wa.right - wa.left - w) / 2);
+        const int y = wa.top + std::max(0, int(wa.bottom - wa.top - h) / 2);
 
-        CreateWindowExW(WS_EX_APPWINDOW, L"MyCamSettings", L"MyCam Settings",
+        CreateWindowExW(WS_EX_APPWINDOW | WS_EX_NOREDIRECTIONBITMAP, L"MyCamSettings", L"MyCam",
                         WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX, x, y, w, h, nullptr, nullptr, instance, this);
         if (!hwnd) return;
-        scale = GetDpiForWindow(hwnd) / 96.f;
+        scale = forcedScale > 0 ? forcedScale : GetDpiForWindow(hwnd) / 96.f;
+        surface.Attach(hwnd);
+        uia = std::make_unique<UiaHost>(hwnd, UiaSource{
+            [this] { return owner->Elements(); },
+            [this](int id) { return owner->Invoke(id); },
+            [this](int id) { return owner->Focus(id); },
+            [this] { return owner->FocusedId(); },
+            [this](const Box& b) { return owner->ClientDipsToScreen(b); },
+            [this](int id, double value) { return owner->SetValue(id, value); },
+        });
 
-        // Keep the DWM drop shadow and use small rounded corners with a glass-coloured border.
+        // XP silhouette: square bottom corners from DWM (the rounded top ones are drawn, transparent
+        // outside), no Windows 11 accent border, and keep the DWM drop shadow.
         MARGINS margins = {0, 0, 0, 1};
         DwmExtendFrameIntoClientArea(hwnd, &margins);
-        const DWORD corners = 3; // DWMWCP_ROUNDSMALL
+        const DWORD corners = 1; // DWMWCP_DONOTROUND
         DwmSetWindowAttribute(hwnd, 33 /* DWMWA_WINDOW_CORNER_PREFERENCE */, &corners, sizeof(corners));
-        const COLORREF border = RGB(0x3E, 0x5F, 0x8A);
-        DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, &border, sizeof(border));
+        const COLORREF none = 0xFFFFFFFE; // DWMWA_COLOR_NONE
+        DwmSetWindowAttribute(hwnd, 34 /* DWMWA_BORDER_COLOR */, &none, sizeof(none));
         SetWindowPos(hwnd, nullptr, 0, 0, 0, 0, SWP_FRAMECHANGED | SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER);
+
+        viewShown = false;
+        navPillSet = false;
+        valueAnim.clear();
+        page = Status().pairingCode.empty() ? Page::Home : Page::Pairing;
+        returnPage = Page::Home;
+        pageAnim.Set(1);
+        UpdateStatus();
+        statusFade.Set(1);
+        badgePop.Set(1);
+        // Draw the first frame before the window is shown. WS_EX_NOREDIRECTIONBITMAP means it has no
+        // surface of its own, so showing it before the swap chain holds a frame flashes a see-through
+        // window for one or two frames. Nothing animates on this first paint (§12.2).
+        Paint();
+        ValidateRect(hwnd, nullptr);
         ShowWindow(hwnd, SW_SHOW);
         SetForegroundWindow(hwnd);
+        SetFocus(hwnd);
     }
 };
 
@@ -765,6 +2262,7 @@ SettingsWindow::~SettingsWindow() {
 void SettingsWindow::Show() {
     if (!impl_) {
         impl_ = new Impl();
+        impl_->owner = this;
         impl_->model = &model_;
     }
     if (impl_->hwnd) {
@@ -776,7 +2274,70 @@ void SettingsWindow::Show() {
 }
 
 void SettingsWindow::Refresh() {
-    if (impl_ && impl_->hwnd) InvalidateRect(impl_->hwnd, nullptr, FALSE);
+    if (!impl_ || !impl_->hwnd) return;
+    impl_->UpdateStatus();
+    impl_->Invalidate();
 }
+
+void SettingsWindow::StartScan() {
+    Show();
+    if (!impl_ || !impl_->hwnd) return;
+    impl_->GoTo(ui::Page::Devices);
+    impl_->StartScan();
+    impl_->Invalidate();
+}
+
+void SettingsWindow::ShowPairing() {
+    Show();
+    if (!impl_ || !impl_->hwnd) return;
+    impl_->GoTo(ui::Page::Pairing);
+    impl_->Invalidate();
+}
+
+HWND SettingsWindow::Hwnd() const { return impl_ ? impl_->hwnd : nullptr; }
+
+std::vector<ui::Element> SettingsWindow::Elements() const {
+    if (!impl_ || !impl_->hwnd) return {};
+    return impl_->Elements();
+}
+
+bool SettingsWindow::Invoke(int id) { return impl_ && impl_->hwnd && impl_->Activate(id); }
+
+bool SettingsWindow::Focus(int id) {
+    if (!impl_ || !impl_->hwnd) return false;
+    const auto list = impl_->Elements();
+    const ui::Element* e = ui::FindElement(list, id);
+    if (!e || !ui::CanFocus(*e)) return false;
+    impl_->SetFocusTo(id, true);
+    return true;
+}
+
+bool SettingsWindow::SetValue(int id, double value) {
+    if (!impl_ || !impl_->hwnd) return false;
+    const auto list = impl_->Elements();
+    const ui::Element* e = ui::FindElement(list, id);
+    if (!e || e->kind != ui::Kind::Slider || !e->enabled) return false;
+    const Item* it = impl_->FindItem(id);
+    if (!it || it->extra.W() <= 0) return false;
+    const float span = e->rangeMax - e->rangeMin;
+    const float frac = span > 0 ? float((value - e->rangeMin) / span) : 0.f;
+    impl_->SetSliderFromX(id, it->extra.l + it->extra.W() * std::clamp(frac, 0.f, 1.f));
+    return true;
+}
+
+int SettingsWindow::FocusedId() const { return impl_ && impl_->hwnd ? impl_->focus : ui::kNone; }
+
+RECT SettingsWindow::ClientDipsToScreen(const ui::Box& box) const {
+    RECT r = {};
+    if (!impl_ || !impl_->hwnd) return r;
+    const float s = impl_->scale;
+    POINT a = {LONG(std::floor(box.l * s)), LONG(std::floor(box.t * s))};
+    POINT b = {LONG(std::ceil(box.r * s)), LONG(std::ceil(box.b * s))};
+    ClientToScreen(impl_->hwnd, &a);
+    ClientToScreen(impl_->hwnd, &b);
+    return {a.x, a.y, b.x, b.y};
+}
+
+void SettingsWindow::SetElementsChanged(std::function<void()> callback) { elementsChanged_ = std::move(callback); }
 
 } // namespace mycam

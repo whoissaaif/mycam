@@ -25,14 +25,33 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [~] No UAC prompt for new phones (SYSTEM scheduled task from the installer) [2.2]: built and installed (1.3.2), test with a never-connected phone
 
 - [~] Dim the phone screen while streaming, with a heat warning [4.1]: built, test on the phone
-- [ ] Write `design/STYLE.md` [7.2]
+- [x] Write `design/STYLE.md` [7.2]
+- [~] Windows XP redesign (branch `xp-redesign`, redesign.md) [7]: phone app, PC window + preview + pairing dialog, logo, hills pictures, waiting marquee built
+  - [ ] Test on the phone over USB and Wi-Fi (pairing dialog, countdown, per-PC forget, first run, dim screen)
+  - [ ] Test the PC window with a real phone; check high contrast and reduced motion by eye
+  - [ ] Narrator pass on the PC window (UI Automation)
+  - [~] "Scan for phones" on the PC (redesign.md §8.6): one-shot 6 s Wi-Fi scan, results with Connect, tray item; checked with demos, `uia_dump` and a real phone; Narrator pass to do
+  - [ ] Release APK test (R8) before publishing
+  - [~] First-run guide shown only once (persist on Skip, "Got it" or first connection)
+  - [~] "Scan for PCs" (phone) and "Scan for phones" (PC) buttons
+- [ ] Designer mockup pass: sidebar nav, cards, dropdowns/toggles/sliders, splash, QR pairing ([redesign-v2.md](redesign-v2.md)) [7]
+- [~] Redesign fixes from the owner's first pass (2026-10-11), all built; test on the phone and the PC:
+  - [x] Phone: a finished scan that found nothing no longer says "Devices found"
+  - [x] Phone: tapping a PC in Find Devices asks it to connect, so a pairing starts from either screen
+  - [x] PC: "Scan for Devices" goes to the Devices page
+  - [x] PC: the paused camera picture is the supplied image exactly
+  - [x] PC: Resolution and Frame rate open with no phone (entries still capability-gated) + a note saying why
+  - [x] PC: page transitions run on the performance counter and the vertical blank, with cached text layouts
+  - [x] PC: Minimise and Close are drawn again (they were in the model but no page drew them)
+  - [x] PC: Devices has a Connected Device section above Available Devices
+- [x] PC window opened as a transparent flash (first frame now drawn before ShowWindow)
 
 ## Backlog
 
 - [~] Lower phone-side latency (capture→encoded 150–230 ms on the test phone) [3.4]: camera/encoder tweaks and a camera-vs-encoder split in the log built; measure on the phone
 - [~] 30 / 60 / 120 fps choice; 60 and 120 on the back camera through high-speed capture [3.2]: built, test on the phone
 - [ ] Adaptive-bitrate Int overflow fix at 4K (in `WebcamService.kt`): test, then release as 1.3.2
-- [ ] Screen-reader support for the settings window (UI Automation) [5.2]
+- [~] Screen-reader support (UI Automation) for the settings window and pairing dialog [5.2]: built (`uia_provider.cpp`, checked with `pc/tools/uia_dump`); try with Narrator
 - [ ] Code-sign the installer and companion [5.3]
 - [ ] USB debugging on: the accessory shows up as accessory+adb (composite), WinUSB isn't bound to its interface, so it never connects; bind the MI_00 interface too [2.1]
 - [ ] Test the release APK (not just debug) on a phone before every release: R8 only runs on release builds
@@ -67,6 +86,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 
 | Version | Date | What changed |
 |---|---|---|
+| **1.4.0** | 2026-10-11 | **Stable.** Wi-Fi mode (discovery, one-time pairing with a code, encrypted sessions) and the v2 shell on both apps. A phone can now start the pairing itself from Find Devices. PC: Devices page split into Connected / Available, Scan goes there, Resolution and Frame rate open with no phone, vsync-paced transitions, Minimise and Close drawn again, the owner's "Camera paused" picture. Pairing surfaces moved off the old beige/navy. |
+| 1.4.0-beta4 | 2026-10-11 | Windows XP (Luna) redesign of both apps, new camera logo, hills artwork, PC live preview, scan buttons, screen-reader support, Wi-Fi pairing dialog. |
 | 1.3.3 | 2026-10-10 | Hotfix: the 1.3.2 phone app crashed on launch (R8 packageScope); clearer frame-rate hint. |
 | 1.3.2 | 2026-10-10 | 30/60/120 fps per quality (high-speed capture), no-UAC phone setup, dim screen + heat warning, lower phone latency, 4K bitrate fixes. |
 | 1.3.1 | 2026-10-09 | Quality & 60 fps, camera controls + Auto, crop to fill, adaptive streaming, lower PC latency (protocol v3). |
@@ -86,6 +107,9 @@ run `installer\build.ps1` and `gradlew assembleDebug`, commit, tag `vX.Y.Z`, pus
 | 2026-10-09 | Transport: Android Open Accessory (no Developer Options) + Windows 11 virtual camera |
 | 2026-10-09 | UsbDk only switches the phone into accessory mode; streaming uses Windows' WinUSB driver |
 | 2026-10-09 | Design language: Windows 7 Aero (option A) |
+| 2026-10-10 | Design language changed to **Windows XP, Luna Blue only**, no dark mode; DejaVu Sans on the phone; new "Snap" camera logo (not an eye); preview on the PC only; original hills art (the photo in `inspo/` is a reference only) (redesign.md) |
 | 2026-10-09 | The phone owns the pause state; Windows-lock pause is PC-only and never undoes a user pause |
 | 2026-10-09 | License: MIT. Repo private on `whoissaaif`. `inspo/` (Microsoft artwork) never committed |
 | 2026-10-09 | Commits use the GitHub no-reply email |
+| 2026-10-11 | A phone may ask a PC it can see to connect ("MYCAM+1" on the discovery socket), so a Wi-Fi pairing can be started from either screen (PROTOCOL.md "The phone asks for a session") |
+| 2026-10-11 | The paused camera picture is `design/assets/source/camera-paused-reference.png` itself, cropped to 16:9 — not a recreation of it, and with no wordmark over it |

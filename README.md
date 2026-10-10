@@ -10,7 +10,8 @@ browsers, and the Windows Camera app. Both the front and back cameras work.
 * **Wired only, plug and play.** No Wi-Fi, and no Developer Options or USB debugging.
 * **Privacy first.** Pause from the phone, its notification, or the PC tray. The camera also turns off by itself
   while Windows is locked. Other apps then see a "Camera paused" picture instead of you.
-* **Windows 7 Aero look** on both the phone app and the PC (tray icons, settings window, installer).
+* **Windows XP look** on both the phone app and the PC (tray icons, the MyCam window with a live preview,
+  the installer), with a friendly camera logo.
 
 ## How it works
 
@@ -108,5 +109,5 @@ replugged.
 MIT. See [LICENSE](LICENSE). Third-party parts keep their own licenses:
 [libusb](https://libusb.info) (LGPL-2.1, vendored in `pc/third_party/libusb`),
 [UsbDk](https://github.com/daynix/UsbDk) (Apache-2.0, downloaded by the installer build), and
-[Selawik](https://github.com/microsoft/Selawik) (SIL OFL 1.1). The Windows 7 look is an homage drawn from scratch;
-no Microsoft artwork is included.
+[DejaVu fonts](https://dejavu-fonts.github.io) (Bitstream Vera licence, with the DejaVu changes in the public
+domain). The Windows XP look is an homage drawn from scratch: no Microsoft artwork or fonts are included.

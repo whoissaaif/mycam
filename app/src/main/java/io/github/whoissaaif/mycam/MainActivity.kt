@@ -25,7 +25,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.core.content.IntentCompat
+import androidx.core.content.edit
 import io.github.whoissaaif.mycam.ui.DimScreen
+import io.github.whoissaaif.mycam.ui.FirstRun
+import io.github.whoissaaif.mycam.ui.FirstRunScreen
+import io.github.whoissaaif.mycam.ui.ScreenActions
+import io.github.whoissaaif.mycam.ui.SplashGate
 import io.github.whoissaaif.mycam.ui.WebcamScreen
 import io.github.whoissaaif.mycam.ui.theme.MycamTheme
 import kotlinx.coroutines.delay
@@ -43,13 +48,38 @@ class MainActivity : ComponentActivity() {
     private var lastTouch = SystemClock.elapsedRealtime()
     private var swallowGesture = false
 
+    /** Settings > Phone: dim automatically while streaming (persisted). */
+    private var autoDim by mutableStateOf(true)
+
+    /** First-run cards (redesign.md 5.7): until the first connection, or Skip for this launch. */
+    private var firstRun by mutableStateOf(false)
+
+    /** The splash (redesign-v2.md 3.2): about a second on every launch, never on a recreation. */
+    private var splash by mutableStateOf(true)
+
+    /** Settings > Preview: show the camera on this phone (persisted, default on). */
+    private var previewOn by mutableStateOf(true)
+
+    /** The activity is resumed: with the Dim screen, this decides whether a preview may run at all. */
+    private var resumed = false
+
     private val requestPermissions = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { results ->
         val acc = pendingAccessory
         pendingAccessory = null
         if (results[Manifest.permission.CAMERA] == true && acc != null) startWebcam(acc)
+        if (pendingWireless && granted(Manifest.permission.CAMERA)) {
+            if (pendingScan) scanForPcs() else setWireless(true)
+        }
+        pendingWireless = false
+        pendingScan = false
     }
+
+    /** Wireless was switched on before camera access was granted. */
+    private var pendingWireless = false
+    /** ...by "Turn on and scan". */
+    private var pendingScan = false
 
     private val usbPermissionReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -61,6 +91,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_FIRST_RUN_HIDDEN, !firstRun)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -68,16 +103,31 @@ class MainActivity : ComponentActivity() {
         WebcamService.showIdleFacing(prefs.getInt(WebcamService.PREF_FACING, Protocol.FACING_BACK))
         WebcamService.showIdlePaused(prefs.getBoolean(WebcamService.PREF_PAUSED, false))
         WebcamService.showIdleCamera(WebcamService.loadCameraSettings(prefs))
+        WebcamService.showPairedPcs(PairedPcs(prefs).list())
+        autoDim = prefs.getBoolean(WebcamService.PREF_AUTO_DIM, true)
+        previewOn = prefs.getBoolean(WebcamService.PREF_PREVIEW, true)
+        PhonePreview.setOn(previewOn)
+        splash = savedInstanceState == null
+        // First run: shown once, to a new user. Skip, Got it and the first connection end it for good.
+        firstRun = FirstRun.shouldShow(prefs) && savedInstanceState?.getBoolean(STATE_FIRST_RUN_HIDDEN) != true
         ContextCompat.registerReceiver(
             this, usbPermissionReceiver, IntentFilter(ACTION_USB_PERMISSION), ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
+        val actions = ScreenActions(
+            onFacing = ::setFacing, onPause = ::setPaused, onCommand = ::sendCommand, onDim = { dimmed = true },
+            onWireless = ::setWireless, onAnswerPc = ::answerPc, onForgetPc = ::forgetPc, onForgetAllPcs = ::forgetPcs,
+            onScan = ::scanForPcs, onConnectPc = ::connectToPc, onPreview = ::changePreview,
+            onAutoDim = ::changeAutoDim, onDismissTimedOut = WebcamService::dismissPairingTimedOut,
         )
         setContent {
             MycamTheme {
                 val state by WebcamService.state.collectAsState()
                 val live = state.streaming && !state.paused
-                // Dim once the phone has been left alone for a while during a stream; any touch wakes it.
-                LaunchedEffect(live) {
+                // Dim once the phone has been left alone for a while during a stream (if the user wants that);
+                // any touch wakes it. "Dim screen" in the bottom bar works either way.
+                LaunchedEffect(live, autoDim) {
                     if (!live) { dimmed = false; return@LaunchedEffect }
+                    if (!autoDim) return@LaunchedEffect
                     while (true) {
                         if (SystemClock.elapsedRealtime() - lastTouch >= DIM_AFTER_MS) dimmed = true
                         delay(1000)
@@ -87,14 +137,27 @@ class MainActivity : ComponentActivity() {
                     window.attributes = window.attributes.apply {
                         screenBrightness = if (dimmed) DIM_BRIGHTNESS else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
                     }
+                    // No preview surface runs behind the Dim screen (redesign-v2.md 6.1); waking brings it back.
+                    updatePreviewVisible()
                 }
-                if (dimmed) {
-                    DimScreen(state)
-                } else {
-                    WebcamScreen(
-                        state = state, onFacing = ::setFacing, onPause = ::setPaused, onCommand = ::sendCommand,
-                        onDim = { dimmed = true },
-                    )
+                // The first successful connection ends the first-run cards for good.
+                LaunchedEffect(state.connected) {
+                    if (state.connected) {
+                        FirstRun.done(prefs)
+                        firstRun = false
+                    }
+                }
+                // The splash shows over everything for about a second, then fades and lifts into the app
+                // while the hills photo stays put. The setup cards still appear only once.
+                SplashGate(show = splash, onDone = { splash = false }) {
+                    when {
+                        dimmed -> DimScreen(state)
+                        firstRun && !state.connected && state.pendingPc == null && state.pairingTimedOut == null -> FirstRunScreen(onDone = {
+                            FirstRun.done(prefs)
+                            firstRun = false
+                        })
+                        else -> WebcamScreen(state = state, actions = actions, autoDim = autoDim, previewOn = previewOn)
+                    }
                 }
             }
         }
@@ -114,6 +177,22 @@ class MainActivity : ComponentActivity() {
         }
         return super.dispatchTouchEvent(ev)
     }
+
+    override fun onResume() {
+        super.onResume()
+        resumed = true
+        updatePreviewVisible()
+    }
+
+    override fun onPause() {
+        resumed = false
+        // Off in the background (redesign-v2.md 6.1), before the window goes away.
+        updatePreviewVisible()
+        super.onPause()
+    }
+
+    /** The preview may only run while the app is in front and the screen isn't dimmed. */
+    private fun updatePreviewVisible() = PhonePreview.setAppVisible(resumed && !dimmed)
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -150,6 +229,13 @@ class MainActivity : ComponentActivity() {
             if (needed.isNotEmpty() && !askedOnLaunch) {
                 askedOnLaunch = true
                 requestPermissions.launch(needed.toTypedArray())
+            }
+            // Wireless mode was on last time: be findable again while the app is open.
+            val prefs = getSharedPreferences(WebcamService.PREFS, MODE_PRIVATE)
+            if (prefs.getBoolean(WebcamService.PREF_WIRELESS, false) && !WebcamService.state.value.wirelessOn &&
+                granted(Manifest.permission.CAMERA)
+            ) {
+                setWireless(true)
             }
             return
         }
@@ -201,6 +287,75 @@ class MainActivity : ComponentActivity() {
     }
 
     /** Pause or resume. With a PC connected the service applies it (and tells the PC); otherwise it is saved. */
+    /** Wireless mode on/off. The service runs it (and keeps running while it is on). */
+    private fun setWireless(on: Boolean) {
+        if (on && !granted(Manifest.permission.CAMERA)) {
+            pendingWireless = true
+            requestPermissions.launch(missingPermissions().toTypedArray())
+            return
+        }
+        val intent = Intent(this, WebcamService::class.java)
+            .setAction(WebcamService.ACTION_WIRELESS)
+            .putExtra(WebcamService.EXTRA_ON, on)
+        if (on) ContextCompat.startForegroundService(this, intent)
+        else if (WebcamService.state.value.wirelessOn) startService(intent)
+        else getSharedPreferences(WebcamService.PREFS, MODE_PRIVATE).edit().putBoolean(WebcamService.PREF_WIRELESS, false).apply()
+    }
+
+    /** "Scan for PCs" (or "Turn on and scan": the service turns wireless mode on first). */
+    private fun scanForPcs() {
+        if (!granted(Manifest.permission.CAMERA)) {
+            pendingWireless = true
+            pendingScan = true
+            requestPermissions.launch(missingPermissions().toTypedArray())
+            return
+        }
+        val intent = Intent(this, WebcamService::class.java).setAction(WebcamService.ACTION_SCAN)
+        if (WebcamService.state.value.wirelessOn) startService(intent)
+        else ContextCompat.startForegroundService(this, intent)
+    }
+
+    /** The user picked a PC in "Find Devices": ask it to connect here, so the pairing starts from the phone. */
+    private fun connectToPc(ip: String) {
+        startService(
+            Intent(this, WebcamService::class.java)
+                .setAction(WebcamService.ACTION_CONNECT_PC)
+                .putExtra(WebcamService.EXTRA_PC_IP, ip)
+        )
+    }
+
+    private fun forgetPcs() {
+        startService(Intent(this, WebcamService::class.java).setAction(WebcamService.ACTION_FORGET_PCS))
+    }
+
+    /** Forgets one paired PC (A11). */
+    private fun forgetPc(id: String) {
+        startService(
+            Intent(this, WebcamService::class.java).setAction(WebcamService.ACTION_FORGET_PCS)
+                .putExtra(WebcamService.EXTRA_PC_ID, id)
+        )
+    }
+
+    /** Settings / Camera: the phone's own preview on or off (persisted; the service picks it up). */
+    private fun changePreview(on: Boolean) {
+        previewOn = on
+        PhonePreview.setOn(on)
+        getSharedPreferences(WebcamService.PREFS, MODE_PRIVATE).edit { putBoolean(WebcamService.PREF_PREVIEW, on) }
+    }
+
+    private fun changeAutoDim(on: Boolean) {
+        autoDim = on
+        getSharedPreferences(WebcamService.PREFS, MODE_PRIVATE).edit { putBoolean(WebcamService.PREF_AUTO_DIM, on) }
+    }
+
+    private fun answerPc(allow: Boolean) {
+        startService(
+            Intent(this, WebcamService::class.java)
+                .setAction(WebcamService.ACTION_WIRELESS_ANSWER)
+                .putExtra(WebcamService.EXTRA_ALLOW, allow)
+        )
+    }
+
     private fun setPaused(paused: Boolean) {
         if (WebcamService.state.value.connected) {
             startService(
@@ -246,5 +401,6 @@ class MainActivity : ComponentActivity() {
         const val ACCESSORY_MANUFACTURER = "MyCam"
         private const val DIM_AFTER_MS = 30_000L
         private const val DIM_BRIGHTNESS = 0.02f
+        private const val STATE_FIRST_RUN_HIDDEN = "first_run_hidden"
     }
 }

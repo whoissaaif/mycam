@@ -37,3 +37,6 @@ local.properties
 /keystore.properties
 *.jks
 *.keystore
+
+# Agent worktrees
+/.claude/worktrees/

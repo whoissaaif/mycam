@@ -13,6 +13,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
 import android.hardware.usb.UsbAccessory
 import android.hardware.usb.UsbManager
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Handler
 import android.os.HandlerThread
@@ -30,6 +31,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import java.io.FileInputStream
+import java.io.InputStream
+import java.io.OutputStream
+import java.net.Socket
 import java.io.FileOutputStream
 import java.io.IOException
 import java.nio.ByteBuffer
@@ -54,6 +58,33 @@ class WebcamService : Service() {
         val error: String? = null,
         /** PowerManager.THERMAL_STATUS_* (0 = none); the UI warns from MODERATE up. */
         val thermal: Int = 0,
+        /** Wireless mode is on (the phone can be found and connected to over Wi-Fi). */
+        val wirelessOn: Boolean = false,
+        /** The current link is Wi-Fi (else USB). */
+        val wireless: Boolean = false,
+        /** This phone's address on Wi-Fi, shown so the user can tell which network it is on. */
+        val wirelessAddress: String? = null,
+        /** A PC that is pairing over Wi-Fi and waiting for the user to allow it, and the code both screens show. */
+        val pendingPc: String? = null,
+        val pendingCode: String? = null,
+        /** SystemClock.elapsedRealtime() at which the pending pairing times out (the dialog counts down to it). */
+        val pendingDeadline: Long = 0L,
+        /** Name of a PC whose pairing request timed out unanswered; the dialog says so until dismissed. */
+        val pairingTimedOut: String? = null,
+        /** The PCs this phone is paired with (they connect without asking). */
+        val pairedPcs: List<PairedPc> = emptyList(),
+        /** Name of the PC connected over Wi-Fi. */
+        val wirelessPc: String? = null,
+        /** IP address of the PC connected over Wi-Fi (marks it in the nearby list). */
+        val wirelessPcIp: String? = null,
+        /** PCs looking for phones on this Wi-Fi right now (probes in the last 6 s), by name. */
+        val nearbyPcs: List<NearbyPc> = emptyList(),
+        /** IP of a nearby PC this phone has asked to connect ("connect to me"), until it does or gives up. */
+        val invitingPc: String? = null,
+        /** "Scan for PCs" is running (6 s: three of the PC's probe intervals). */
+        val scanning: Boolean = false,
+        /** A scan has finished since wireless mode was turned on (the UI can say "No PC found"). */
+        val scanned: Boolean = false,
     )
 
     private lateinit var cameraThread: HandlerThread
@@ -63,10 +94,56 @@ class WebcamService : Service() {
     private var thermalListener: Any? = null // PowerManager.OnThermalStatusChangedListener (API 29+).
     private var wakeLock: PowerManager.WakeLock? = null
 
+    // The link to the PC: a USB accessory or (wireless mode) a TCP socket. Opened and closed on the main thread.
     private var accessory: UsbAccessory? = null
     private var pfd: ParcelFileDescriptor? = null
-    private var output: FileOutputStream? = null
+    private var socket: Socket? = null
+    @Volatile private var output: OutputStream? = null
+    @Volatile private var linked = false
+    @Volatile private var linkId = 0 // Bumped per link, so a late "read ended" from an old link is ignored.
     private var readerThread: Thread? = null
+    private var foreground = false
+
+    // Wireless mode (main thread).
+    private val main by lazy { Handler(mainLooper) }
+    private var wireless: WirelessServer? = null
+    private var wirelessOn = false
+    private var wifiLock: WifiManager.WifiLock? = null
+    private var handshaking = false                      // A PC is pairing or proving its pairing key.
+    private var pendingAnswer: ((Boolean) -> Unit)? = null // Waiting for Allow / Don't allow on a pairing.
+    private val pairedPcs by lazy { PairedPcs(getSharedPreferences(PREFS, MODE_PRIVATE)) }
+    private val nearby = NearbyPcs()
+    /** Drops PCs that stopped probing; runs every second while the nearby list isn't empty. */
+    private val expireNearby = object : Runnable {
+        override fun run() {
+            publishNearby()
+            if (!nearby.isEmpty()) main.postDelayed(this, 1_000)
+        }
+    }
+    private val endScan = Runnable { _state.update { it.copy(scanning = false, scanned = true) } }
+
+    /**
+     * "Connect to me" asked of one nearby PC: its IP, the probes left to send and the resend timer. One
+     * datagram may be lost, so it goes out every 2 s for INVITE_TRIES tries, and stops as soon as that PC
+     * connects (or wireless mode goes off).
+     */
+    private var invitingIp: String? = null
+    private var invitesLeft = 0
+    private val resendInvite = object : Runnable {
+        override fun run() {
+            val ip = invitingIp ?: return
+            if (!wirelessOn || linked || handshaking) { stopInviting(); return }
+            val pc = nearby.find(ip, SystemClock.elapsedRealtime())
+            if (pc == null || pc.port == 0 || invitesLeft <= 0) {
+                Log.i(TAG, "no answer from $ip to \"connect to me\"")
+                stopInviting()
+                return
+            }
+            --invitesLeft
+            wireless?.askToConnect(pc.ip, pc.port)
+            main.postDelayed(this, INVITE_EVERY_MS)
+        }
+    }
 
     // Owned by the camera thread.
     private var wantStreaming = false
@@ -92,9 +169,10 @@ class WebcamService : Service() {
     private val detachReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val detached = IntentCompat.getParcelableExtra(intent, UsbManager.EXTRA_ACCESSORY, UsbAccessory::class.java)
-            if (detached == null || detached == accessory) {
+            if (accessory != null && (detached == null || detached == accessory)) {
                 Log.i(TAG, "Accessory detached")
-                stopSelf()
+                val id = linkId
+                camera.post { onLinkLost(id) }
             }
         }
     }
@@ -107,10 +185,16 @@ class WebcamService : Service() {
         facing = prefs.getInt(PREF_FACING, Protocol.FACING_BACK)
         paused = prefs.getBoolean(PREF_PAUSED, false)
         camSettings = loadCameraSettings(prefs)
-        _state.update { UiState(facing = facing, paused = paused, camera = camSettings) }
+        _state.update { UiState(facing = facing, paused = paused, camera = camSettings, pairedPcs = pairedPcs.list()) }
+        // The phone's own preview (redesign-v2.md 6.1): the screen hands over a surface, this thread hands it
+        // to the running capture session. The streamer decides whether the mode can carry it.
+        PhonePreview.setOn(prefs.getBoolean(PREF_PREVIEW, true))
+        PhonePreview.onTargetChanged = { surface -> camera.post { streamer?.setPreviewSurface(surface) } }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             val listener = PowerManager.OnThermalStatusChangedListener { status ->
                 _state.update { it.copy(thermal = status) }
+                // Severe heat turns the preview off by itself; the stream is never sacrificed for it.
+                PhonePreview.setThermal(status)
                 camera.post { remoteLog("thermal status $status") }
             }
             getSystemService(PowerManager::class.java).addThermalStatusListener(mainExecutor, listener)
@@ -155,6 +239,29 @@ class WebcamService : Service() {
                 camera.post { setPaused(p) }
                 return START_NOT_STICKY
             }
+            ACTION_WIRELESS -> {
+                setWireless(intent.getBooleanExtra(EXTRA_ON, false))
+                return START_NOT_STICKY
+            }
+            ACTION_SCAN -> {
+                // "Turn on and scan": the user asked for wireless mode too.
+                if (!wirelessOn) setWireless(true)
+                if (wirelessOn) startScan()
+                return START_NOT_STICKY
+            }
+            ACTION_CONNECT_PC -> {
+                intent.getStringExtra(EXTRA_PC_IP)?.let { askPcToConnect(it) }
+                return START_NOT_STICKY
+            }
+            ACTION_FORGET_PCS -> {
+                val id = intent.getStringExtra(EXTRA_PC_ID)
+                if (id != null) forgetPc(id) else forgetPcs()
+                return START_NOT_STICKY
+            }
+            ACTION_WIRELESS_ANSWER -> {
+                answerPc(intent.getBooleanExtra(EXTRA_ALLOW, false))
+                return START_NOT_STICKY
+            }
         }
 
         val acc = intent?.let { IntentCompat.getParcelableExtra(it, UsbManager.EXTRA_ACCESSORY, UsbAccessory::class.java) }
@@ -163,9 +270,233 @@ class WebcamService : Service() {
             return START_NOT_STICKY
         }
         if (acc != null && acc != accessory) openAccessory(acc)
-        else if (accessory == null) stopSelf()
+        else if (!linked && !wirelessOn) stopSelf()
         return START_NOT_STICKY
     }
+
+    // --- Wireless mode (IMPROVEMENTS.md 11) ----------------------------------------------------------
+
+    /** Main thread. Turns wireless mode on (findable on Wi-Fi, accepting PCs) or off. */
+    private fun setWireless(on: Boolean) {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(PREF_WIRELESS, on).apply()
+        if (on == wirelessOn) return
+        if (on) {
+            if (!goForeground()) { stopSelf(); return }
+            wirelessOn = true
+            wireless = WirelessServer(
+                this,
+                onProbe = { ip, port, name -> main.post { onProbe(ip, port, name) } },
+                onClient = { sock, name -> main.post { offerPc(sock, name) } },
+            ).also { it.start() }
+            _state.update {
+                it.copy(wirelessOn = true, wirelessAddress = WirelessServer.localAddress(this), pairedPcs = pairedPcs.list())
+            }
+        } else {
+            wirelessOn = false
+            wireless?.stop()
+            wireless = null
+            answerPc(false)
+            main.removeCallbacks(endScan)
+            main.removeCallbacks(expireNearby)
+            stopInviting()
+            nearby.clear()
+            _state.update { it.copy(wirelessOn = false, wirelessAddress = null, nearbyPcs = emptyList(), scanning = false, scanned = false) }
+            if (socket != null) {
+                val id = linkId
+                camera.post { onLinkLost(id) }
+            } else if (!linked) {
+                stopSelf()
+            }
+        }
+        updateNotification()
+    }
+
+    /**
+     * Main thread. "Scan for PCs": the phone never probes (PROTOCOL.md "Wireless transport"), so a scan is
+     * listening for three of the PCs' 2 s probes while the UI shows progress. The nearby list itself is kept
+     * all the time wireless mode is on. Also refreshes this phone's address (it may have changed networks).
+     */
+    private fun startScan() {
+        main.removeCallbacks(endScan)
+        publishNearby()
+        _state.update { it.copy(scanning = true, wirelessAddress = WirelessServer.localAddress(this)) }
+        main.postDelayed(endScan, NearbyPcs.MAX_AGE_MS)
+    }
+
+    /**
+     * Main thread. The user picked a PC from the nearby list: ask it to connect to this phone (PROTOCOL.md
+     * "The phone asks for a session"), so a pairing can start from either screen. The PC does the rest -
+     * it opens the TCP session and runs the handshake, and the 6-digit code appears on both.
+     */
+    private fun askPcToConnect(ip: String) {
+        if (!wirelessOn || linked || handshaking) return
+        val pc = nearby.find(ip, SystemClock.elapsedRealtime())
+        if (pc == null || pc.port == 0) {
+            Log.w(TAG, "can't ask $ip to connect: it isn't in the nearby list any more")
+            return
+        }
+        main.removeCallbacks(resendInvite)
+        invitingIp = ip
+        invitesLeft = INVITE_TRIES
+        _state.update { it.copy(invitingPc = ip) }
+        Log.i(TAG, "asking ${pc.name} ($ip:${pc.port}) to connect")
+        resendInvite.run()
+    }
+
+    /** Main thread. Stops asking a PC to connect (it did, it never answered, or wireless mode went off). */
+    private fun stopInviting() {
+        main.removeCallbacks(resendInvite)
+        invitingIp = null
+        invitesLeft = 0
+        if (_state.value.invitingPc != null) _state.update { it.copy(invitingPc = null) }
+    }
+
+    /** Main thread. A PC's discovery probe arrived. */
+    private fun onProbe(ip: String, port: Int, name: String) {
+        if (!wirelessOn) return
+        val wasEmpty = nearby.isEmpty()
+        if (nearby.seen(ip, name, SystemClock.elapsedRealtime(), port)) publishNearby()
+        if (wasEmpty) {
+            main.removeCallbacks(expireNearby)
+            main.postDelayed(expireNearby, 1_000)
+        }
+    }
+
+    /** Main thread. Shows the current nearby PCs (only when the list changed, not on every probe). */
+    private fun publishNearby() {
+        val list = nearby.list(SystemClock.elapsedRealtime())
+        if (list != _state.value.nearbyPcs) _state.update { it.copy(nearbyPcs = list) }
+    }
+
+    /**
+     * Main thread. A PC connected over Wi-Fi. Unless USB is in use or another PC is being set up, run the
+     * handshake on its own thread: a paired PC connects straight away; a new one is paired only if the user
+     * allows it after comparing the 6-digit code (PROTOCOL.md "Wireless security").
+     */
+    private fun offerPc(sock: Socket, discoveredName: String) {
+        if (!wirelessOn || linked || handshaking) {
+            // The cable wins, and only one PC at a time.
+            try { sock.close() } catch (_: IOException) {}
+            return
+        }
+        handshaking = true
+        stopInviting() // A PC turned up: whether or not it is the one we asked, the asking is over.
+        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
+        Thread({
+            val result = WifiHandshake(sock, pairedPcs, PairedPcs.phoneId(prefs), WirelessServer.deviceName(this), ::askUser).run()
+            main.post {
+                handshaking = false
+                if (result != null && wirelessOn && !linked) openSocket(sock, result)
+                else try { sock.close() } catch (_: IOException) {}
+            }
+        }, "wifi-handshake").start()
+        Log.i(TAG, "Wi-Fi connection from $discoveredName (${sock.inetAddress.hostAddress})")
+    }
+
+    /** Handshake thread. Shows "Pair with <PC>? Code …" and waits for Allow / Don't allow (or the timeout). */
+    private fun askUser(pcName: String, code: String, pcGone: () -> Boolean): Boolean {
+        val latch = java.util.concurrent.CountDownLatch(1)
+        val answer = java.util.concurrent.atomic.AtomicBoolean(false)
+        main.post {
+            pendingAnswer = { allow -> answer.set(allow); latch.countDown() }
+            val deadline = android.os.SystemClock.elapsedRealtime() + APPROVAL_TIMEOUT_MS
+            _state.update { it.copy(pendingPc = pcName, pendingCode = code, pendingDeadline = deadline, pairingTimedOut = null) }
+            showApprovalNotification(pcName, code)
+        }
+        // Wait for the answer, the timeout, or the PC hanging up (Cancel pairing on the PC).
+        val giveUp = android.os.SystemClock.elapsedRealtime() + APPROVAL_TIMEOUT_MS
+        var answered = false
+        while (!answered && !pcGone()) {
+            val left = giveUp - android.os.SystemClock.elapsedRealtime()
+            if (left <= 0) break
+            answered = latch.await(minOf(left, 250L), java.util.concurrent.TimeUnit.MILLISECONDS)
+        }
+        val cancelled = !answered && pcGone()
+        main.post {
+            // Unanswered: refuse, and let the dialog say "Pairing timed out" instead of vanishing (unless the
+            // PC cancelled: then it just closes).
+            if (!answered && pendingAnswer != null) {
+                answerPc(false)
+                if (!cancelled) _state.update { it.copy(pairingTimedOut = pcName) }
+            }
+        }
+        return answered && answer.get()
+    }
+
+    /** Main thread. The user allowed or refused the PC that is pairing. */
+    private fun answerPc(allow: Boolean) {
+        val reply = pendingAnswer ?: return
+        pendingAnswer = null
+        _state.update { it.copy(pendingPc = null, pendingCode = null, pendingDeadline = 0L) }
+        getSystemService(NotificationManager::class.java).cancel(APPROVAL_NOTIFICATION_ID)
+        reply(allow && wirelessOn && !linked)
+    }
+
+    /** Main thread. Forgets every paired PC: they have to pair again (with a code) next time. */
+    private fun forgetPcs() {
+        pairedPcs.forgetAll()
+        _state.update { it.copy(pairedPcs = emptyList()) }
+        if (!linked && !wirelessOn) stopSelf() // Started just for this.
+    }
+
+    /** Main thread. Forgets one paired PC (A11). A PC connected right now stays connected until it leaves. */
+    private fun forgetPc(id: String) {
+        pairedPcs.forget(id)
+        _state.update { it.copy(pairedPcs = pairedPcs.list()) }
+        if (!linked && !wirelessOn) stopSelf()
+    }
+
+    private fun showApprovalNotification(name: String, code: String) {
+        val nm = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            nm.createNotificationChannel(
+                NotificationChannel(APPROVAL_CHANNEL_ID, getString(R.string.channel_wireless), NotificationManager.IMPORTANCE_HIGH)
+            )
+        }
+        fun answer(allow: Boolean, requestCode: Int) = PendingIntent.getService(
+            this, requestCode, Intent(this, WebcamService::class.java).setAction(ACTION_WIRELESS_ANSWER).putExtra(EXTRA_ALLOW, allow),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val open = PendingIntent.getActivity(this, 2, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        nm.notify(
+            APPROVAL_NOTIFICATION_ID,
+            NotificationCompat.Builder(this, APPROVAL_CHANNEL_ID)
+                .setSmallIcon(R.drawable.ic_stat_webcam)
+                .setContentTitle(getString(R.string.wireless_pair_title, name))
+                .setContentText(getString(R.string.wireless_pair_text, formatCode(code)))
+                .setStyle(NotificationCompat.BigTextStyle().bigText(getString(R.string.wireless_pair_text, formatCode(code))))
+                .setPriority(NotificationCompat.PRIORITY_HIGH)
+                .setCategory(NotificationCompat.CATEGORY_CALL)
+                .setContentIntent(open)
+                .setAutoCancel(true)
+                .setTimeoutAfter(APPROVAL_TIMEOUT_MS)
+                .addAction(0, getString(R.string.wireless_deny), answer(false, 3))
+                .addAction(0, getString(R.string.wireless_allow), answer(true, 4))
+                .build(),
+        )
+    }
+
+    /** Main thread. Uses a paired, encrypted Wi-Fi connection as the link. */
+    private fun openSocket(sock: Socket, secure: WifiHandshake.Result) {
+        closeLink()
+        try {
+            sock.tcpNoDelay = true
+            // A small send buffer keeps delay low: a big one hides a slow network from the adaptive bitrate
+            // (writes return at once while seconds of video queue up behind them).
+            sock.sendBufferSize = 128 * 1024
+        } catch (_: IOException) {}
+        socket = sock
+        startLink(secure.output, secure.input, wirelessPc = secure.pcName)
+        _state.update { it.copy(wirelessPcIp = sock.inetAddress?.hostAddress) }
+        if (secure.newlyPaired) _state.update { it.copy(pairedPcs = pairedPcs.list()) }
+        wifiLock = getSystemService(WifiManager::class.java)?.createWifiLock(
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) WifiManager.WIFI_MODE_FULL_LOW_LATENCY
+            else @Suppress("DEPRECATION") WifiManager.WIFI_MODE_FULL_HIGH_PERF,
+            "MyCam:stream",
+        )?.apply { setReferenceCounted(false); acquire() }
+        Log.i(TAG, "Wi-Fi link to ${secure.pcName} (${sock.inetAddress.hostAddress}), encrypted")
+    }
+
 
     private fun goForeground(): Boolean {
         if (ContextCompat.checkSelfPermission(this, android.Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
@@ -185,6 +516,7 @@ class WebcamService : Service() {
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
+            foreground = true
             true
         } catch (e: Exception) {
             Log.e(TAG, "startForeground failed", e)
@@ -204,8 +536,8 @@ class WebcamService : Service() {
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_stat_webcam)
-            .setContentTitle(getString(if (paused) R.string.notification_title_paused else R.string.notification_title))
-            .setContentText(getString(if (paused) R.string.notification_text_paused else R.string.notification_text))
+            .setContentTitle(getString(when { paused -> R.string.notification_title_paused; !linked && wirelessOn -> R.string.notification_title_wireless; else -> R.string.notification_title }))
+            .setContentText(getString(when { paused -> R.string.notification_text_paused; !linked && wirelessOn -> R.string.notification_text_wireless; else -> R.string.notification_text }))
             .setContentIntent(open)
             .setOngoing(true)
             .setOnlyAlertOnce(true)
@@ -218,31 +550,39 @@ class WebcamService : Service() {
     }
 
     private fun updateNotification() {
-        if (accessory == null) return
+        if (!foreground) return
         getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, buildNotification())
     }
 
     private fun openAccessory(acc: UsbAccessory) {
-        closeAccessory()
+        // The cable wins over Wi-Fi: drop a wireless link (and any PC waiting for approval).
+        answerPc(false)
+        closeLink()
         val usb = getSystemService(UsbManager::class.java)
         val fd = try { usb.openAccessory(acc) } catch (e: SecurityException) { null }
         if (fd == null) {
             _state.update { it.copy(error = getString(R.string.error_open_accessory)) }
-            stopSelf()
+            if (!wirelessOn) stopSelf()
             return
         }
         accessory = acc
         pfd = fd
-        output = FileOutputStream(fd.fileDescriptor)
-        val input = FileInputStream(fd.fileDescriptor)
-        _state.update { it.copy(connected = true, error = null) }
-        orientationListener?.takeIf { it.canDetectOrientation() }?.enable()
-        acquireWakeLock()
-
-        readerThread = Thread({ readLoop(input) }, "accessory-reader").apply { start() }
+        startLink(FileOutputStream(fd.fileDescriptor), FileInputStream(fd.fileDescriptor), wirelessPc = null)
     }
 
-    private fun readLoop(input: FileInputStream) {
+    /** Main thread. Common start of a USB or Wi-Fi link: reader thread, sensors, wake lock, UI state. */
+    private fun startLink(out: OutputStream, input: InputStream, wirelessPc: String?) {
+        val id = ++linkId
+        output = out
+        linked = true
+        _state.update { it.copy(connected = true, error = null, wireless = wirelessPc != null, wirelessPc = wirelessPc) }
+        orientationListener?.takeIf { it.canDetectOrientation() }?.enable()
+        acquireWakeLock()
+        updateNotification()
+        readerThread = Thread({ readLoop(input, id) }, if (wirelessPc != null) "wifi-reader" else "accessory-reader").apply { start() }
+    }
+
+    private fun readLoop(input: InputStream, id: Int) {
         // AOA reads must use a buffer of at least 16 KiB or some kernels fail the transfer.
         val buf = ByteArray(16384)
         val parser = Protocol.CommandParser()
@@ -253,11 +593,24 @@ class WebcamService : Service() {
                 for (c in parser.feed(buf, n)) camera.post { handleCommand(c.cmd, c.arg) }
             }
         } catch (e: IOException) {
-            Log.i(TAG, "Accessory read ended: ${e.message}")
+            Log.i(TAG, "Link read ended: ${e.message}")
         }
-        camera.post {
-            // The PC side went away (companion closed or cable pulled).
-            if (accessory != null) stopSelf()
+        // The PC side went away (companion closed, cable pulled or Wi-Fi lost).
+        camera.post { onLinkLost(id) }
+    }
+
+    /**
+     * Camera thread. The link [id] ended: turn the camera off and close it. The service stays up while
+     * wireless mode is on (a PC may connect again); otherwise it stops, as before.
+     */
+    private fun onLinkLost(id: Int) {
+        if (id != linkId || !linked) return
+        wantStreaming = false
+        stopStreamer()
+        main.post {
+            if (id != linkId) return@post
+            closeLink()
+            if (!wirelessOn) stopSelf()
         }
     }
 
@@ -364,12 +717,14 @@ class WebcamService : Service() {
     }
 
     private fun startStreamer() {
-        if (accessory == null) return
+        if (!linked) return
         remoteLog("starting ${if (facing == Protocol.FACING_FRONT) "front" else "back"} camera")
         framesSent = 0
         bytesSent = 0L
         val s = CameraStreamer(this, camera, facing, camSettings, object : CameraStreamer.Listener {
             override fun onLog(message: String) = remoteLog(message)
+
+            override fun onPreviewSupport(support: PreviewSupport) = PhonePreview.reportSupport(support)
 
             override fun onCameraInfo(info: Protocol.CameraInfo) {
                 lastCameraInfo = info
@@ -421,12 +776,15 @@ class WebcamService : Service() {
         framesDropped = 0
         slowestWriteMs = 0
         lastBitrateChange = SystemClock.elapsedRealtime()
+        // Whatever the screen is asking for right now; it is attached once the session is configured.
+        s.setPreviewSurface(PhonePreview.target())
         s.start()
     }
 
     private fun stopStreamer() {
         streamer?.stop()
         streamer = null
+        PhonePreview.cameraStopped()
         lastConfig = null
         _state.update { it.copy(streaming = false, resolution = "") }
         sendState()
@@ -513,17 +871,28 @@ class WebcamService : Service() {
         }
     }
 
-    private fun closeAccessory() {
+    /** Closes the current link (USB or Wi-Fi), if any. */
+    private fun closeLink() {
+        linked = false
         readerThread?.interrupt()
         readerThread = null
         try { pfd?.close() } catch (_: IOException) {}
+        try { socket?.close() } catch (_: IOException) {}
         pfd = null
+        socket = null
         output = null
         accessory = null
+        wifiLock?.release()
+        wifiLock = null
+        orientationListener?.disable()
+        _state.update { it.copy(connected = false, streaming = false, resolution = "", wireless = false, wirelessPc = null, wirelessPcIp = null) }
+        updateNotification()
     }
 
     override fun onDestroy() {
         unregisterReceiver(detachReceiver)
+        PhonePreview.onTargetChanged = null
+        PhonePreview.cameraStopped()
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
             (thermalListener as? PowerManager.OnThermalStatusChangedListener)
                 ?.let { getSystemService(PowerManager::class.java).removeThermalStatusListener(it) }
@@ -534,10 +903,17 @@ class WebcamService : Service() {
             streamer = null
         }
         cameraThread.quitSafely()
-        closeAccessory()
+        wireless?.stop()
+        wireless = null
+        main.removeCallbacks(endScan)
+        main.removeCallbacks(expireNearby)
+        main.removeCallbacks(resendInvite)
+        pendingAnswer?.invoke(false) // Unblocks a pairing that is waiting for the user.
+        pendingAnswer = null
+        closeLink()
         wakeLock?.release()
         wakeLock = null
-        _state.update { UiState(facing = facing, paused = paused, camera = camSettings) }
+        _state.update { UiState(facing = facing, paused = paused, camera = camSettings, pairedPcs = pairedPcs.list()) }
         super.onDestroy()
     }
 
@@ -557,6 +933,36 @@ class WebcamService : Service() {
         const val ACTION_COMMAND = "io.github.whoissaaif.mycam.COMMAND"
         const val EXTRA_CMD = "cmd"
         const val EXTRA_ARG = "arg"
+        const val PREF_WIRELESS = "wireless"
+        const val ACTION_WIRELESS = "io.github.whoissaaif.mycam.WIRELESS"
+        const val EXTRA_ON = "on"
+        const val ACTION_WIRELESS_ANSWER = "io.github.whoissaaif.mycam.WIRELESS_ANSWER"
+        const val EXTRA_ALLOW = "allow"
+        /** "Scan for PCs": turns wireless mode on if needed, then shows progress for 6 s while PCs are heard. */
+        const val ACTION_SCAN = "io.github.whoissaaif.mycam.SCAN"
+        /** Asks the nearby PC at EXTRA_PC_IP to connect to this phone, so a pairing can start here. */
+        const val ACTION_CONNECT_PC = "io.github.whoissaaif.mycam.CONNECT_PC"
+        /** With ACTION_CONNECT_PC: the IP address of the PC to ask, as the nearby list shows it. */
+        const val EXTRA_PC_IP = "pc_ip"
+        const val ACTION_FORGET_PCS ="io.github.whoissaaif.mycam.FORGET_PCS"
+        /** With ACTION_FORGET_PCS: forget only this PC (PairedPc.id); without it, forget them all. */
+        const val EXTRA_PC_ID = "pc_id"
+        /** Dim the screen automatically while streaming (Settings > Phone). */
+        const val PREF_AUTO_DIM = "auto_dim"
+        /** The phone's own live preview (redesign-v2.md 6.1). Default on. */
+        const val PREF_PREVIEW = "preview"
+        /** Set after the first successful connection: the first-run cards stop showing. */
+        const val PREF_FIRST_RUN_DONE = "first_run_done"
+
+        /** "554294" -> "554 294", easier to compare between screens. */
+        fun formatCode(code: String) = if (code.length == 6) code.substring(0, 3) + " " + code.substring(3) else code
+        private const val APPROVAL_CHANNEL_ID = "wireless"
+        private const val APPROVAL_NOTIFICATION_ID = 2
+        private const val APPROVAL_TIMEOUT_MS = 60_000L
+
+        /** "Connect to me" is resent every 2 s, five times, because a single datagram may be lost. */
+        private const val INVITE_EVERY_MS = 2_000L
+        private const val INVITE_TRIES = 5
 
         fun loadCameraSettings(prefs: android.content.SharedPreferences) = CameraStreamer.Settings(
             quality = prefs.getInt("quality", Protocol.QUALITY_1080P),
@@ -589,5 +995,18 @@ class WebcamService : Service() {
         fun showIdlePaused(paused: Boolean) {
             _state.update { if (it.connected) it else it.copy(paused = paused) }
         }
+
+        /** Shows the paired PCs before the service runs (Settings > Paired PCs). */
+        fun showPairedPcs(pcs: List<PairedPc>) {
+            _state.update { it.copy(pairedPcs = pcs) }
+        }
+
+        /** The user closed the "Pairing timed out" dialog. */
+        fun dismissPairingTimedOut() {
+            _state.update { it.copy(pairingTimedOut = null) }
+        }
+
+        /** How long a pairing request waits for Allow / Don't allow; the dialog counts this down. */
+        const val PAIRING_TIMEOUT_MS = APPROVAL_TIMEOUT_MS
     }
 }

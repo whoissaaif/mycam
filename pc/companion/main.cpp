@@ -16,7 +16,9 @@
 
 #include "../common/guids.h"
 #include "app_settings.h"
+#include "capabilities.h"
 #include "log.h"
+#include "pairing_dialog.h"
 #include "driver_task.h"
 #include "phone_link.h"
 #include "protocol.h"
@@ -46,14 +48,20 @@ enum MenuId : UINT {
     kMenuReconnect,
     kMenuAutostart,
     kMenuExit,
+    kMenuQ720,
+    kMenuQ1080,
+    kMenuQ4K,
+    kMenuScan,
 };
 
 HWND g_hwnd = nullptr;
 NOTIFYICONDATAW g_tray = {};
 PhoneLink* g_link = nullptr;
 SettingsWindow* g_settings = nullptr;
+PairingDialog* g_pairing = nullptr;
 bool g_mirror = false;
 bool g_fill = false;
+bool g_wireless = false; // "Find phones on Wi-Fi" (beta)
 
 std::mutex g_statusLock;
 LinkStatus g_status;
@@ -62,6 +70,10 @@ bool g_vcamOk = false;
 bool g_sessionLocked = false; // Windows session locked (WTS notifications)
 bool g_suspended = false;     // PC going to sleep
 int g_trayIcon = 0;
+
+// --demo modes: a made-up scan (see DemoScan).
+constexpr UINT_PTR kDemoScanTimer = 7;
+void DemoScanDone();
 
 LinkStatus CurrentStatus() {
     std::lock_guard<std::mutex> lock(g_statusLock);
@@ -100,6 +112,11 @@ void UpdateTray() {
     }
     Shell_NotifyIconW(NIM_MODIFY, &g_tray);
     if (g_settings) g_settings->Refresh();
+    // A new pairing code opens the pairing dialog; it closes itself when the pairing resolves.
+    if (g_pairing) {
+        if (!s.pairingCode.empty() && s.pairingCode != g_shownStatus.pairingCode) g_pairing->Show(g_settings ? g_settings->Hwnd() : nullptr);
+        else g_pairing->Refresh();
+    }
 
     // Balloon only on meaningful transitions.
     bool wasConnected = g_shownStatus.state >= LinkState::Idle;
@@ -107,8 +124,10 @@ void UpdateTray() {
     if (s.state == LinkState::NoDriver && g_shownStatus.state != LinkState::NoDriver) {
         Notify(view.headline.c_str(), view.detail);
     } else if (isConnected && !wasConnected) {
-        Notify(L"Phone connected", L"Choose “MyCam” as the camera in any app.");
-    } else if (s.state == LinkState::Waiting && g_shownStatus.state != LinkState::Waiting) {
+        Notify(s.wireless ? L"Phone connected over Wi-Fi" : L"Phone connected", L"Choose “MyCam” as the camera in any app.");
+    } else if (!s.pairingCode.empty() && s.pairingCode != g_shownStatus.pairingCode) {
+        Notify(view.headline.c_str(), view.detail); // "Pairing with …": clicking it opens the pairing dialog.
+    } else if (s.state == LinkState::Waiting && g_shownStatus.state != LinkState::Waiting && !s.wireless) {
         Notify(L"Phone found", L"Tap OK on your phone to open MyCam (tick “Always” so you're never asked again).");
     }
     g_shownStatus = s;
@@ -126,6 +145,12 @@ void SetFill(bool fill) {
     WriteSetting(L"Fill", fill);
 }
 
+void SetWireless(bool on) {
+    g_wireless = on;
+    g_link->SetWireless(on);
+    WriteSetting(L"Wireless", on);
+}
+
 // Windows locked or asleep: keep the phone camera off (privacy). Separate from the user's own pause.
 void UpdateLockPause() {
     if (g_link) g_link->SetLockPaused(g_sessionLocked || g_suspended);
@@ -135,22 +160,38 @@ void ShowMenu(HWND hwnd) {
     const LinkStatus s = CurrentStatus();
     const StatusView view = DescribeStatus(s, g_vcamOk);
     HMENU menu = CreatePopupMenu();
-    AppendMenuW(menu, MF_STRING, kMenuSettings, L"&Settings…");
-    SetMenuDefaultItem(menu, kMenuSettings, FALSE); // Bold; also what a left-click opens.
+    // The status line comes first (redesign.md §8.5), then the window.
+    std::wstring status = L"MyCam: " + view.headline;
+    for (size_t at = 0; (at = status.find(L'&', at)) != std::wstring::npos; at += 2) status.insert(at, 1, L'&');
+    AppendMenuW(menu, MF_STRING | MF_GRAYED, kMenuStatus, status.c_str());
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING | MF_GRAYED, kMenuStatus, view.headline.c_str());
+    AppendMenuW(menu, MF_STRING, kMenuSettings, L"&Open MyCam");
+    SetMenuDefaultItem(menu, kMenuSettings, FALSE); // Bold; also what a left-click opens.
     const bool paused = s.state == LinkState::Paused;
     const bool connected = s.state >= LinkState::Idle;
     AppendMenuW(menu, MF_STRING | (connected && !s.lockPaused ? 0 : MF_GRAYED), kMenuPause,
-                paused ? L"Resume camera" : L"Pause camera");
+                paused ? L"&Resume camera" : L"&Pause camera");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kMenuBack, L"Back camera");
-    AppendMenuW(menu, MF_STRING, kMenuFront, L"Front camera");
+    AppendMenuW(menu, MF_STRING, kMenuBack, L"&Back camera");
+    AppendMenuW(menu, MF_STRING, kMenuFront, L"&Front camera");
     CheckMenuRadioItem(menu, kMenuBack, kMenuFront, s.facing == proto::kFacingFront ? kMenuFront : kMenuBack, MF_BYCOMMAND);
-    AppendMenuW(menu, MF_STRING | (g_mirror ? MF_CHECKED : 0), kMenuMirror, L"Mirror image");
+    // Quality, greyed by what the phone reports, exactly like the window.
+    HMENU quality = CreatePopupMenu();
+    const bool linked = connected && s.camera.valid;
+    const struct { UINT id; uint8_t q; const wchar_t* label; } qualities[] = {
+        {kMenuQ720, proto::kQuality720p, L"720p"}, {kMenuQ1080, proto::kQuality1080p, L"1080p"}, {kMenuQ4K, proto::kQuality4K, L"4K"}};
+    for (const auto& q : qualities) {
+        AppendMenuW(quality, MF_STRING | (caps::QualityEnabled(linked, s.camera, q.q) ? 0 : MF_GRAYED), q.id, q.label);
+    }
+    if (linked && s.camera.quality <= proto::kQuality4K) {
+        CheckMenuRadioItem(quality, kMenuQ720, kMenuQ4K, kMenuQ720 + s.camera.quality, MF_BYCOMMAND);
+    }
+    AppendMenuW(menu, MF_POPUP | (linked ? 0 : MF_GRAYED), reinterpret_cast<UINT_PTR>(quality), L"&Quality");
+    AppendMenuW(menu, MF_STRING | (g_mirror ? MF_CHECKED : 0), kMenuMirror, L"&Mirror image");
     AppendMenuW(menu, MF_STRING | (g_fill ? MF_CHECKED : 0), kMenuFill, L"Fill the frame");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kMenuReconnect, L"Reconnect phone");
+    AppendMenuW(menu, MF_STRING, kMenuScan, L"&Scan for phones"); // Opens the window and scans the Wi-Fi.
     AppendMenuW(menu, MF_STRING | (AutostartEnabled() ? MF_CHECKED : 0), kMenuAutostart, L"Start with Windows");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kMenuExit, L"Exit");
@@ -193,6 +234,10 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_TRAY:
         switch (LOWORD(lp)) {
         case WM_LBUTTONUP: if (g_settings) g_settings->Show(); break;
+        case NIN_BALLOONUSERCLICK: // The pairing balloon opens the pairing dialog; any other opens the window.
+            if (g_pairing && !CurrentStatus().pairingCode.empty()) g_pairing->Show(g_settings ? g_settings->Hwnd() : nullptr);
+            else if (g_settings) g_settings->Show();
+            break;
         case WM_RBUTTONUP:
         case WM_CONTEXTMENU: ShowMenu(hwnd); break;
         }
@@ -211,6 +256,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_NEED_DRIVER:
         RunDriverBinder();
         return 0;
+    case WM_TIMER:
+        if (wp == kDemoScanTimer) DemoScanDone();
+        return 0;
     case WM_STATUS:
         UpdateTray();
         return 0;
@@ -222,7 +270,11 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
         case kMenuFront: g_link->RequestFacing(proto::kFacingFront); break;
         case kMenuMirror: SetMirror(!g_mirror); break;
         case kMenuFill: SetFill(!g_fill); break;
+        case kMenuQ720: case kMenuQ1080: case kMenuQ4K:
+            g_link->RequestCommand(proto::kCmdSetQuality, uint8_t(LOWORD(wp) - kMenuQ720));
+            break;
         case kMenuReconnect: g_link->RequestReconnect(); break;
+        case kMenuScan: if (g_settings) g_settings->StartScan(); break;
         case kMenuAutostart: SetAutostart(!AutostartEnabled()); break;
         case kMenuExit: DestroyWindow(hwnd); break;
         }
@@ -264,6 +316,102 @@ void RunTestPattern(std::atomic<bool>& quit, uint32_t rotation) {
         writer.Write(frame.data(), w, h, rotation, false, g_fill);
         Sleep(33);
     }
+}
+
+// Made-up phones for the scan demos (addresses in network order). `firstConnected`: the first one is the
+// phone of the current Wi-Fi session.
+std::vector<NearbyPhone> DemoPhones(bool firstConnected) {
+    auto phone = [](uint8_t last, const char* name, bool paired) {
+        NearbyPhone p;
+        p.ip = 192u | 168u << 8 | 1u << 16 | uint32_t(last) << 24;
+        p.ipText = "192.168.1." + std::to_string(last);
+        p.port = 47800;
+        p.name = name;
+        p.paired = paired;
+        return p;
+    };
+    std::vector<NearbyPhone> out = {phone(23, "Pixel 8", true), phone(41, "Galaxy S23 Ultra (the big one in the kitchen)", false),
+                                    phone(57, "moto g54", false)};
+    out[0].connected = firstConnected;
+    return out;
+}
+
+// --demo=<state> (developer use, with or without --test-pattern): shows the window in a made-up link state
+// (ready, streaming, paused, pairing, waiting, error, scanning, scan-results, scan-none, scan-wifi) without
+// a phone, for checking the UI. The phone link doesn't run.
+bool DemoStatus(LinkStatus* s) {
+    const wchar_t* arg = wcsstr(GetCommandLineW(), L"--demo=");
+    if (!arg) return false;
+    const std::wstring state(arg + 7, wcscspn(arg + 7, L" \""));
+    proto::CameraInfo& c = s->camera;
+    c.valid = true;
+    c.quality = proto::kQuality1080p;
+    c.fps = 30;
+    c.zoomX100 = 100; c.zoomMinX100 = 60; c.zoomMaxX100 = 500;
+    c.ev = 1; c.evMin = -4; c.evMax = 4; c.evStepX100 = 50;
+    c.flags = proto::kCamTorchAvailable | proto::kCamHas4K | proto::kCamHasAutofocus | proto::kCamHas60Fps;
+    c.width = 1920; c.height = 1080; c.actualFps = 30;
+    c.hasFpsModes = true;
+    c.fpsModes[0] = proto::kFps30Bit | proto::kFps60Bit | proto::kFps120Bit;
+    c.fpsModes[1] = proto::kFps30Bit | proto::kFps60Bit;
+    c.fpsModes[2] = proto::kFps30Bit;
+    s->facing = proto::kFacingBack;
+    if (state == L"streaming") { s->state = LinkState::Streaming; s->width = 1920; s->height = 1080; }
+    else if (state == L"paused") { s->state = LinkState::Paused; c.width = 0; }
+    else if (state == L"ready") { s->state = LinkState::Idle; c.width = 0; }
+    else if (state == L"error") { s->state = LinkState::PhoneError; }
+    else if (state == L"waiting") { s->state = LinkState::Waiting; c = {}; }
+    else if (state == L"pairing") {
+        s->state = LinkState::Waiting;
+        c = {};
+        s->wireless = s->wirelessSearch = true;
+        s->phoneName = L"Pixel 8 Pro (Saif's phone with a rather long name)";
+        s->pairingCode = L"554 294";
+    } else if (state == L"scan-wifi") { // Connected over Wi-Fi: the scan shows in the Wi-Fi group.
+        s->state = LinkState::Idle;
+        c.width = 0;
+        s->wireless = s->wirelessSearch = true;
+        s->phoneName = L"Pixel 8";
+        s->scansDone = 1;
+        s->nearbyPhones = DemoPhones(true);
+    } else {
+        s->state = LinkState::Searching;
+        c = {};
+        if (state == L"scanning") { // A scan running, one phone answered so far.
+            s->scanning = true;
+            s->nearbyPhones = DemoPhones(false);
+            s->nearbyPhones.resize(1);
+        } else if (state == L"scan-results") {
+            s->scansDone = 1;
+            s->nearbyPhones = DemoPhones(false);
+        } else if (state == L"scan-none") {
+            s->scansDone = 1;
+        }
+    }
+    return true;
+}
+
+// Demo mode: "Scan for phones" runs a made-up 6 s scan that finds the demo phones.
+void DemoScan() {
+    {
+        std::lock_guard<std::mutex> lock(g_statusLock);
+        g_status.scanning = true;
+        g_status.nearbyPhones.clear();
+    }
+    PostMessageW(g_hwnd, WM_STATUS, 0, 0);
+    SetTimer(g_hwnd, kDemoScanTimer, UINT(PhoneLink::kScanWindowMs), nullptr);
+}
+
+void DemoScanDone() {
+    KillTimer(g_hwnd, kDemoScanTimer);
+    {
+        std::lock_guard<std::mutex> lock(g_statusLock);
+        g_status.scanning = false;
+        ++g_status.scansDone;
+        g_status.nearbyPhones = DemoPhones(g_status.wireless);
+        if (wcsstr(GetCommandLineW(), L"--demo=scan-none")) g_status.nearbyPhones.clear();
+    }
+    PostMessageW(g_hwnd, WM_STATUS, 0, 0);
 }
 
 int QuitRunningInstance() {
@@ -340,6 +488,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
 
     g_mirror = ReadSetting(L"Mirror", 0) != 0;
     g_fill = ReadSetting(L"Fill", 0) != 0;
+    g_wireless = ReadSetting(L"Wireless", 0) != 0;
     PhoneLink link([](const LinkStatus& s) {
         {
             std::lock_guard<std::mutex> lock(g_statusLock);
@@ -349,32 +498,64 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     }, [] { PostMessageW(g_hwnd, WM_NEED_DRIVER, 0, 0); });
     link.SetMirror(g_mirror);
     link.SetFill(g_fill);
+    link.SetWireless(g_wireless);
     link.SetStatusImages(LoadStatusImage(kImagePaused), LoadStatusImage(kImageWaiting));
     g_link = &link;
 
-    SettingsWindow settings({
-        CurrentStatus,
-        [] { return g_vcamOk; },
-        [] { return g_mirror; },
-        SetMirror,
-        AutostartEnabled,
-        SetAutostart,
-        [](int facing) { g_link->RequestFacing(facing); },
-        [] { g_link->RequestReconnect(); },
-        OpenLogFolder,
-        [] { return CurrentStatus().state == LinkState::Paused; },
-        [](bool pause) { g_link->RequestPause(pause); },
-        [] { return g_fill; },
-        SetFill,
-        [](uint8_t cmd, uint8_t arg) { g_link->RequestCommand(cmd, arg); },
-    });
+    const bool testPattern = wcsstr(GetCommandLineW(), L"--test-pattern") != nullptr;
+    PairingDialog pairing({CurrentStatus, [] { g_link->CancelPairing(); }});
+    g_pairing = &pairing;
+
+    SettingsModel model;
+    model.status = CurrentStatus;
+    model.cameraRegistered = [] { return g_vcamOk; };
+    model.mirror = [] { return g_mirror; };
+    model.setMirror = SetMirror;
+    model.autostart = AutostartEnabled;
+    model.setAutostart = SetAutostart;
+    model.setFacing = [](int facing) { g_link->RequestFacing(facing); };
+    model.reconnect = [] { g_link->RequestReconnect(); };
+    model.openLogFolder = OpenLogFolder;
+    model.paused = [] { return CurrentStatus().state == LinkState::Paused; };
+    model.setPaused = [](bool pause) { g_link->RequestPause(pause); };
+    model.fill = [] { return g_fill; };
+    model.setFill = SetFill;
+    model.command = [](uint8_t cmd, uint8_t arg) { g_link->RequestCommand(cmd, arg); };
+    model.wireless = [] { return g_wireless; };
+    model.setWireless = SetWireless;
+    model.forgetPhones = ForgetPairedPhones; // They pair again (with a code) next time.
+    model.showPairing = [] { if (g_pairing && g_settings) g_pairing->Show(g_settings->Hwnd()); };
+    model.scanForPhones = [] { g_link->ScanForPhones(); };
+    model.connectTo = [](uint32_t ip) { g_link->ConnectTo(ip); };
+    model.testPattern = testPattern;
+    LinkStatus demo;
+    const bool demoMode = DemoStatus(&demo);
+    if (demoMode && !testPattern) {
+        // No phone link: Pause flips the made-up state, so status changes (and what Narrator announces
+        // for them) can be checked too.
+        model.setPaused = [](bool pause) {
+            {
+                std::lock_guard<std::mutex> lock(g_statusLock);
+                if (g_status.state != LinkState::Streaming && g_status.state != LinkState::Paused) return;
+                g_status.state = pause ? LinkState::Paused : LinkState::Streaming;
+            }
+            PostMessageW(g_hwnd, WM_STATUS, 0, 0);
+        };
+        model.scanForPhones = DemoScan;
+        model.connectTo = [](uint32_t) { Log("demo: Connect pressed (no phone link in demo mode)"); };
+    }
+    SettingsWindow settings(std::move(model));
     g_settings = &settings;
+    if (demoMode) {
+        std::lock_guard<std::mutex> lock(g_statusLock);
+        g_status = demo;
+    }
     UpdateTray();
     if (wcsstr(GetCommandLineW(), L"--settings")) settings.Show();
 
     std::atomic<bool> quitPattern{false};
-    const bool testPattern = wcsstr(GetCommandLineW(), L"--test-pattern") != nullptr;
     std::thread worker([&] {
+        if (demoMode && !testPattern) return; // Made-up status only: no phone link.
         if (testPattern) {
             const wchar_t* rot = wcsstr(GetCommandLineW(), L"--rotate=");
             RunTestPattern(quitPattern, rot ? uint32_t(_wtoi(rot + 9)) : 0);
@@ -396,6 +577,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     link.Quit();
     quitPattern = true;
     worker.join();
+    g_pairing = nullptr;
     g_settings = nullptr;
     g_link = nullptr;
     if (vcam) {
