@@ -602,11 +602,11 @@ but fixes the most serious PC issues.
 
 ---
 
-## 12. Open questions for the owner
+## 12. Decisions (owner, 2026-10-10)
 
-1. **Pause background:** paint an original hills scene by script (recommended, safe to ship), or do you
-   hold a licence for a specific photo?
-2. **XP colour scheme:** Luna **Blue** only (recommended), or also offer Olive Green and Silver?
-3. **Dark mode:** XP had none. Keep the apps light, with only the night Dim screen dark (recommended), or
-   design a dark Luna variant?
-4. **Phone fonts:** DejaVu Sans Condensed for a Tahoma feel (recommended), or keep Selawik for readability?
+| # | Question | Decision |
+|---|---|---|
+| 1 | Pause background | **An original hills-and-sky scene painted by script.** The owner's photo is a colour and composition reference only; it is never shipped. |
+| 2 | XP colour scheme | **Luna Blue only.** |
+| 3 | Dark mode | **None.** The apps stay light; only the Dim screen is dark (the night hills). |
+| 4 | Phone fonts | **DejaVu Sans** (Condensed for body, Bold for titles, Mono for the pairing code). Selawik is removed. |
