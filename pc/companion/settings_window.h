@@ -34,6 +34,8 @@ struct SettingsModel {
     std::function<void(bool)> setWireless;
     std::function<void()> forgetPhones;            // Forget Wi-Fi phones
     std::function<void()> showPairing;             // Opens the pairing dialog (headline click while pairing)
+    std::function<void()> scanForPhones;           // "Scan for phones" (PhoneLink::ScanForPhones)
+    std::function<void(uint32_t)> connectTo;       // Connect, from the scan list (PhoneLink::ConnectTo, IPv4)
     bool testPattern = false;                      // --test-pattern: the preview shows the pattern as live
 };
 
@@ -44,6 +46,7 @@ public:
 
     void Show();               // Creates the window, or brings it to the front.
     void Refresh();            // Status or settings changed elsewhere; repaint if open.
+    void StartScan();          // Tray "Scan for phones": opens the window and starts a scan.
     HWND Hwnd() const;         // nullptr while closed.
 
     // --- Element model (for keyboard navigation and a UI Automation provider) ----------------------

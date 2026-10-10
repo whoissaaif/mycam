@@ -76,6 +76,8 @@ void PhoneLink::Run() {
         for (uint64_t start = GetTickCount64(); !quit_ && GetTickCount64() - start < 1000;) {
             SyncLockPaused();
             WriteStatusFrame(GetTickCount64()); // "Waiting for the phone" while none is connected.
+            PollDiscovery(GetTickCount64());     // "Scan for phones" answers arrive promptly.
+            if (connectRequest_ != 0) break;     // Connect (from the scan list): NetScanOnce runs it now.
             Sleep(StatusWaitMs());
         }
     }
@@ -374,6 +376,7 @@ bool PhoneLink::SessionLoop(const std::function<void()>& pump) {
         LogStats(now);
         SyncLockPaused();
         WriteStatusFrame(now);
+        PollDiscovery(now); // A scan may run during a session: it only lists phones, it never connects.
         if (reconnect_.exchange(false)) return true;
         if (!gotHello_) {
             if (now - lastHello > 2000) {
@@ -617,6 +620,10 @@ void PhoneLink::OnDecodedFrame(const H264Decoder::Nv12View& frame) {
 void PhoneLink::Publish() {
     status_.lockPaused = lockPaused_;
     status_.wirelessSearch = wireless_;
+    status_.scanning = scanUntil_ != 0;
+    status_.scansDone = scansDone_;
+    status_.nearbyPhones = nearby_.Phones();
+    nearbyDirty_ = false;
     if (onStatus_) onStatus_(status_);
 }
 

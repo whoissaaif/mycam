@@ -64,7 +64,21 @@ struct Item {
     Element e;
     std::wstring label; // What is drawn (the accessible name may say more).
     float alpha = 1;    // Fades with its group's expand/collapse.
+    int drawGroup = kNone; // The task group it is drawn in (usually e.parent; scan rows sit in the list).
 };
+
+// One row of the "Scan for phones" results, as drawn (the row's Element carries the accessible name).
+struct ScanRow {
+    std::wstring name, ip, status; // name already ellipsized to fit
+    uint32_t ipv4 = 0;
+    Box nameBox, ipBox, statusBox;
+};
+
+std::wstring Wide(const std::string& utf8) {
+    std::wstring w(size_t(MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), int(utf8.size()), nullptr, 0)), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), int(utf8.size()), w.data(), int(w.size()));
+    return w;
+}
 
 // Static text that isn't an element of its own (row labels).
 struct Deco {
@@ -140,6 +154,10 @@ struct SettingsWindow::Impl {
     std::wstring pairingCode;
     uint64_t applyingSince = 0;
     int applyKind = 0, applyValue = 0; // 1 quality, 2 fps, 3 facing
+    // "Scan for phones": pressed at (so the marquee shows before the link picks the request up).
+    uint64_t scanPressedAt = 0;
+    uint32_t scansAtPress = 0;
+    std::vector<ScanRow> scanRows;
 
     // Preview.
     PreviewSource preview;
@@ -253,6 +271,7 @@ struct SettingsWindow::Impl {
         it.e.visible = curVisible;
         it.e.focusable = kind == Kind::Button || kind == Kind::Checkbox || kind == Kind::Radio || kind == Kind::Link;
         it.alpha = curAlpha;
+        it.drawGroup = parent;
         items.push_back(std::move(it));
         return items.back();
     }
@@ -342,6 +361,7 @@ struct SettingsWindow::Impl {
         items.clear();
         decos.clear();
         groups.clear();
+        scanRows.clear();
         lineH = paint.LineHeight(Font::Body);
 
         const float border = xp::kBorder, top = xp::kTitleBarH;
@@ -414,6 +434,11 @@ struct SettingsWindow::Impl {
                 AddCheck(kAutostart, L"Start MyCam with Windows", model->autostart(), kGroupWifi, ix, &cy, iw, true);
                 cy += 6;
                 AddCheck(kWireless, L"Find phones on Wi-Fi (beta)", model->wireless(), kGroupWifi, ix, &cy, iw, true);
+                if (model->scanForPhones) {
+                    cy += 8;
+                    AddScanButton(kScan, kGroupWifi, ix, &cy, iw);
+                    if (!ScanInNow(s)) LayoutScan(s, now, kGroupWifi, ix, &cy, iw);
+                }
                 cy += 8;
                 AddLink(kForgetPhones, L"Forget Wi-Fi phones", kGroupWifi, ix, &cy);
                 items.back().e.name = L"Forget Wi-Fi phones (they pair again with a code)";
@@ -522,11 +547,107 @@ struct SettingsWindow::Impl {
             }
             *y += barH + 10;
         }
+        // No phone: offer "Scan for phones" right here, with its results.
+        if (model->scanForPhones && ScanInNow(s)) {
+            AddScanButton(kScanNow, kGroupNow, x, y, w);
+            LayoutScan(s, now, kGroupNow, x, y, w);
+            *y += 10;
+        }
         const LinkStatus& st = s;
         const bool paused = model->paused();
         Item& pause = Add(kPause, Kind::Button, paused ? L"&Resume the camera" : L"&Pause the camera", MakeBox(x, *y, w, 32), kGroupNow);
         pause.e.enabled = PauseEnabled(st);
         *y += 32;
+    }
+
+    // --- Scan for phones ---------------------------------------------------------------------------
+
+    // The scan sits in Now while no phone is connected (where people look then), else in the Wi-Fi group.
+    static bool ScanInNow(const LinkStatus& s) { return s.state == LinkState::Searching || s.state == LinkState::NoDriver; }
+
+    // A scan is running, or was just asked for and the link hasn't picked it up yet.
+    bool Scanning(const LinkStatus& s, uint64_t now) const {
+        return s.scanning || (scanPressedAt && now - scanPressedAt < 1500 && s.scansDone == scansAtPress);
+    }
+
+    void AddScanButton(int id, int parent, float x, float* y, float w) {
+        const Size t = paint.Measure(Font::Body, L"Scan for phones");
+        const float bw = std::min(w, std::max(75.f, t.w + 24)), bh = std::max(23.f, t.h + 10);
+        Add(id, Kind::Button, L"&Scan for phones", MakeBox(x, *y, bw, bh), parent);
+        *y += bh;
+    }
+
+    // The marquee while scanning, the result sentence (a live region), then one row per phone: its name,
+    // address and status, and Connect while no phone is connected.
+    void LayoutScan(const LinkStatus& s, uint64_t now, int host, float x, float* y, float w) {
+        scanRows.clear();
+        const bool scanning = Scanning(s, now);
+        if (!scanning && s.scansDone == 0) return; // Never scanned: nothing to show yet.
+        *y += 8;
+        if (scanning) {
+            const float barH = 13;
+            Item& bar = Add(kScanProgress, Kind::ProgressBar, L"", MakeBox(x, *y, w, barH), host);
+            bar.e.value = -1;
+            bar.e.name = L"Looking for phones";
+            *y += barH + 6;
+        }
+        const std::vector<NearbyPhone>& phones = s.nearbyPhones;
+        const std::wstring sentence = scanning ? L"Looking for phones on this Wi-Fi…" : ScanResultSentence(phones.size());
+        const float sh = paint.Measure(Font::Body, sentence, w).h;
+        {
+            Item& t = Add(kScanResult, Kind::Text, L"", MakeBox(x, *y, w, sh), host);
+            t.e.name = t.label = sentence;
+            t.e.liveRegion = true;
+        }
+        *y += sh;
+        if (phones.empty()) return;
+        *y += 8;
+        const size_t listIndex = items.size();
+        Add(kScanList, Kind::Group, L"Phones found", MakeBox(x, *y, w, 0), host);
+        const bool canConnect = ScanInNow(s) && model->connectTo;
+        const float linkW = LinkSize(L"Connect").w, l1 = std::max(lineH, 15.f), top = *y;
+        const int n = int(std::min<size_t>(phones.size(), size_t(kScanRowsMax)));
+        for (int i = 0; i < n; ++i) {
+            const NearbyPhone& p = phones[size_t(i)];
+            ScanRow row;
+            row.ipv4 = p.ip;
+            row.ip = Wide(p.ipText);
+            row.name = Wide(p.name);
+            row.status = p.connected ? L"Connected" : p.paired ? L"Paired" : L"New: it will ask for a code";
+            const bool connect = canConnect && !p.connected;
+            const float nameW = w - (connect ? linkW + 8 : 0);
+            const float stH = paint.Measure(Font::Body, row.status, w).h;
+            row.nameBox = MakeBox(x, *y, nameW, l1);
+            row.ipBox = MakeBox(x, row.nameBox.b, w, lineH);
+            row.statusBox = MakeBox(x, row.ipBox.b, w, stH);
+            const Box rowBox = {x, *y, x + w, row.statusBox.b};
+            {
+                Item& r = Add(ScanRowId(i, 0), Kind::Text, L"", rowBox, kScanList);
+                r.e.name = row.name + L", " + row.ip + L", " + row.status;
+                r.drawGroup = host;
+            }
+            if (connect) {
+                Item& c = Add(ScanRowId(i, 1), Kind::Link, L"Connect", MakeBox(x + w - linkW, *y, linkW, l1), kScanList);
+                c.e.name = L"Connect to " + row.name;
+                c.drawGroup = host;
+            }
+            scanRows.push_back(std::move(row));
+            *y = rowBox.b + 8;
+        }
+        *y -= 8;
+        items[listIndex].e.rect = Box{x, top, x + w, *y};
+    }
+
+    void StartScan() {
+        if (!model->scanForPhones) return;
+        const LinkStatus s = Status();
+        scanPressedAt = Now();
+        scansAtPress = s.scansDone;
+        model->scanForPhones();
+        // The results show in the Wi-Fi group while a phone is connected: make sure it's open.
+        for (const GroupDef& g : kGroups) {
+            if (g.id == kGroupWifi && !ScanInNow(s) && !(openBits & g.bit)) ToggleGroup(kGroupWifi);
+        }
     }
 
     void LayoutRight(const LinkStatus& s, const proto::CameraInfo& c, bool known) {
@@ -762,14 +883,22 @@ struct SettingsWindow::Impl {
         case kOpenLog: model->openLogFolder(); break;
         case kForgetPhones: if (model->forgetPhones) model->forgetPhones(); break; // They pair again (with a code).
         case kShowPairing: if (model->showPairing) model->showPairing(); break;
+        case kScan: case kScanNow: StartScan(); break;
         case kCaptionClose: DestroyWindow(hwnd); return true;
         case kCaptionMin: ShowWindow(hwnd, SW_MINIMIZE); return true;
-        default:
+        default: {
             if (id >= kGroupNow && id <= kGroupTasks) {
                 ToggleGroup(id);
                 break;
             }
+            int part = 0;
+            const int row = ScanRowIndex(id, &part);
+            if (row >= 0 && part == 1 && row < int(scanRows.size()) && model->connectTo) {
+                model->connectTo(scanRows[size_t(row)].ipv4); // One Wi-Fi session (pairing as usual if new).
+                break;
+            }
             return false;
+        }
         }
         Invalidate();
         return true;
@@ -789,8 +918,12 @@ struct SettingsWindow::Impl {
     // --- Timers (only while something moves: no idle CPU) -------------------------------------------
 
     bool MarqueeRunning() const {
-        const Item* bar = FindItem(kStatusProgress);
-        return bar && bar->e.value < 0 && !reducedMotion && !paint.HighContrast();
+        if (reducedMotion || paint.HighContrast()) return false;
+        for (int id : {kStatusProgress, kScanProgress}) {
+            const Item* bar = FindItem(id);
+            if (bar && bar->e.value < 0 && bar->e.visible) return true;
+        }
+        return false;
     }
 
     bool PairingCountdown() const {
@@ -1049,6 +1182,7 @@ struct SettingsWindow::Impl {
                 paint.Text(Font::Body, it.label, Box{e.rect.r + 6, e.rect.t - 2, e.rect.r + 60, e.rect.b + 2}, pal.subtle,
                            Align::Leading, -1, false, true);
             } else if (reducedMotion || paint.HighContrast()) {
+                if (e.id == kScanProgress) break; // The sentence under it already says "Looking for phones…".
                 paint.Text(Font::Body, L"Working…", e.rect.Inset(0, -2), pal.subtle, Align::Leading, -1, false, true);
             } else {
                 paint.ProgressMarquee(e.rect, MarqueeOffset(now, e.rect.W() - 6, xp::Painter::kChunk, xp::Painter::kChunkGap));
@@ -1123,8 +1257,19 @@ struct SettingsWindow::Impl {
         case kStatusSentence: case kControlsNote: case kNowMode:
             paint.Text(Font::Body, it.label, e.rect, pal.subtle);
             break;
-        default:
+        case kScanResult:
+            paint.Text(Font::Body, it.label, e.rect, pal.text);
             break;
+        default: {
+            int part = 0;
+            const int row = ScanRowIndex(e.id, &part);
+            if (row < 0 || part != 0 || row >= int(scanRows.size())) break;
+            const ScanRow& r = scanRows[size_t(row)];
+            paint.Text(Font::BodyBold, r.name, r.nameBox, pal.text, Align::Leading, -1, true, true);
+            paint.Text(Font::Body, r.ip, r.ipBox, pal.subtle);
+            paint.Text(Font::Body, r.status, r.statusBox, pal.subtle);
+            break;
+        }
         }
         (void)dc;
     }
@@ -1167,7 +1312,7 @@ struct SettingsWindow::Impl {
                 if (d.parent == g.id) paint.Text(Font::Body, d.text, d.box, d.dim ? pal.disabledText : d.subtle ? pal.subtle : pal.text);
             }
             for (const Item& it : items) {
-                if (it.e.parent == g.id && it.e.id != kLivePill) DrawItem(dc, it, s, now);
+                if (it.drawGroup == g.id && it.e.id != kLivePill) DrawItem(dc, it, s, now);
             }
             if (fading) dc->PopLayer();
             dc->PopAxisAlignedClip();
@@ -1268,7 +1413,7 @@ struct SettingsWindow::Impl {
             if (d.parent == kNone) paint.Text(Font::Body, d.text, d.box, pal.text, Align::Leading, -1, false, true);
         }
         for (const Item& it : items) {
-            if (it.e.parent == kNone && it.e.kind != Kind::Group) DrawItem(dc, it, s, now);
+            if (it.drawGroup == kNone && it.e.kind != Kind::Group) DrawItem(dc, it, s, now);
         }
         DrawFocus();
 
@@ -1624,6 +1769,13 @@ void SettingsWindow::Show() {
 void SettingsWindow::Refresh() {
     if (!impl_ || !impl_->hwnd) return;
     impl_->UpdateStatus();
+    impl_->Invalidate();
+}
+
+void SettingsWindow::StartScan() {
+    Show();
+    if (!impl_ || !impl_->hwnd) return;
+    impl_->StartScan();
     impl_->Invalidate();
 }
 

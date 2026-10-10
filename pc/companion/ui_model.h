@@ -37,7 +37,7 @@ enum Id : int {
     kGroupNow = 100, kGroupCamera = 101, kGroupVideo = 102, kGroupPicture = 103, kGroupWifi = 104, kGroupTasks = 105,
     // "Now" group.
     kStatusHeadline = 200, kStatusDetail = 201, kPause = 202, kLivePill = 203, kStatusProgress = 204,
-    kShowPairing = 205,
+    kShowPairing = 205, kScanNow = 206, // "Scan for phones" in Now (only while no phone is connected).
     // Camera group.
     kBack = 300, kFront = 301, kCameraNote = 302,
     // Video group.
@@ -46,6 +46,10 @@ enum Id : int {
     kMirror = 500, kFill = 501,
     // Wi-Fi and startup group.
     kAutostart = 600, kWireless = 601, kForgetPhones = 602,
+    // "Scan for phones": the button, its marquee, the result sentence (live region) and the list of phones
+    // (a Group whose children are the rows, see ScanRowId). Shown in Now while no phone is connected, else
+    // in the Wi-Fi group.
+    kScan = 603, kScanProgress = 604, kScanResult = 605, kScanList = 606,
     // Task links.
     kReconnect = 700, kOpenLog = 701,
     // Right side: preview and live camera controls.
@@ -54,7 +58,18 @@ enum Id : int {
     kNowMode = 813, kControlsNote = 814,
     // Pairing dialog.
     kPairTitle = 900, kPairCode = 901, kPairHint = 902, kPairProgress = 903, kPairCancel = 904,
+    // Scan results: one block of ids per row (ScanRowId).
+    kScanRowBase = 1000, kScanRowStride = 10, kScanRowsMax = 16,
 };
+
+// Scan result row `index`: part 0 is the row's Text (name, address and status), part 1 its Connect link.
+inline int ScanRowId(int index, int part) { return kScanRowBase + index * kScanRowStride + part; }
+// The row index of a scan-row id, or -1; *part receives 0 (row) or 1 (Connect).
+inline int ScanRowIndex(int id, int* part) {
+    if (id < kScanRowBase || id >= kScanRowBase + kScanRowsMax * kScanRowStride) return -1;
+    *part = (id - kScanRowBase) % kScanRowStride;
+    return (id - kScanRowBase) / kScanRowStride;
+}
 
 // Radio sets (Element::radioSet). UIA: the Selection container for their Radios.
 enum RadioSet : int { kSetNone = 0, kSetFacing = 1, kSetQuality = 2, kSetFps = 3, kSetFocus = 4 };
