@@ -35,6 +35,15 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
   - [~] First-run guide shown only once (persist on Skip, "Got it" or first connection)
   - [~] "Scan for PCs" (phone) and "Scan for phones" (PC) buttons
 - [ ] Designer mockup pass: sidebar nav, cards, dropdowns/toggles/sliders, splash, QR pairing ([redesign-v2.md](redesign-v2.md)) [7]
+- [~] Redesign fixes from the owner's first pass (2026-10-11), all built; test on the phone and the PC:
+  - [x] Phone: a finished scan that found nothing no longer says "Devices found"
+  - [x] Phone: tapping a PC in Find Devices asks it to connect, so a pairing starts from either screen
+  - [x] PC: "Scan for Devices" goes to the Devices page
+  - [x] PC: the paused camera picture is the supplied image exactly
+  - [x] PC: Resolution and Frame rate open with no phone (entries still capability-gated) + a note saying why
+  - [x] PC: page transitions run on the performance counter and the vertical blank, with cached text layouts
+  - [x] PC: Minimise and Close are drawn again (they were in the model but no page drew them)
+  - [x] PC: Devices has a Connected Device section above Available Devices
 - [x] PC window opened as a transparent flash (first frame now drawn before ShowWindow)
 
 ## Backlog
@@ -77,6 +86,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 
 | Version | Date | What changed |
 |---|---|---|
+| **1.4.0** | 2026-10-11 | **Stable.** Wi-Fi mode (discovery, one-time pairing with a code, encrypted sessions) and the v2 shell on both apps. A phone can now start the pairing itself from Find Devices. PC: Devices page split into Connected / Available, Scan goes there, Resolution and Frame rate open with no phone, vsync-paced transitions, Minimise and Close drawn again, the owner's "Camera paused" picture. Pairing surfaces moved off the old beige/navy. |
 | 1.4.0-beta4 | 2026-10-11 | Windows XP (Luna) redesign of both apps, new camera logo, hills artwork, PC live preview, scan buttons, screen-reader support, Wi-Fi pairing dialog. |
 | 1.3.3 | 2026-10-10 | Hotfix: the 1.3.2 phone app crashed on launch (R8 packageScope); clearer frame-rate hint. |
 | 1.3.2 | 2026-10-10 | 30/60/120 fps per quality (high-speed capture), no-UAC phone setup, dim screen + heat warning, lower phone latency, 4K bitrate fixes. |
@@ -101,3 +111,5 @@ run `installer\build.ps1` and `gradlew assembleDebug`, commit, tag `vX.Y.Z`, pus
 | 2026-10-09 | The phone owns the pause state; Windows-lock pause is PC-only and never undoes a user pause |
 | 2026-10-09 | License: MIT. Repo private on `whoissaaif`. `inspo/` (Microsoft artwork) never committed |
 | 2026-10-09 | Commits use the GitHub no-reply email |
+| 2026-10-11 | A phone may ask a PC it can see to connect ("MYCAM+1" on the discovery socket), so a Wi-Fi pairing can be started from either screen (PROTOCOL.md "The phone asks for a session") |
+| 2026-10-11 | The paused camera picture is `design/assets/source/camera-paused-reference.png` itself, cropped to 16:9 — not a recreation of it, and with no wordmark over it |

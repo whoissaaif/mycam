@@ -8,15 +8,15 @@ holds the detail behind each item, and [ISSUES.md](ISSUES.md) records problems f
 
 ## Where things stand (2026-10-10)
 
-- **Latest release: v1.3.3** (private): https://github.com/whoissaaif/mycam/releases/tag/v1.3.3
-  (`MyCam-1.3.3.apk` + `MyCam-Setup-1.3.3.exe`). It's a hotfix: the 1.3.2 phone app crashed on launch. The
-  v1.3.2 release is marked "superseded" and its broken APK was removed.
+- **Latest release: v1.4.0** (private): https://github.com/whoissaaif/mycam/releases/tag/v1.4.0
+  (`MyCam-1.4.0.apk` + `MyCam-Setup-1.4.0.exe`). Stable: Wi-Fi mode leaves beta and both apps ship the v2
+  shell. Released from `xp-redesign` on 2026-10-11, tested live on the CMF Phone 1 over Wi-Fi.
 - **Branches:**
-  - `main` = 1.3.3, released and stable.
-  - `wireless` = **1.4.0-beta3**: Wi-Fi mode with one-time pairing and encryption, tested live. Not merged yet.
+  - `xp-redesign` = **1.4.0**, released and stable.
+  - `main` = 1.3.3 (the previous stable); `wireless` = 1.4.0-beta3, now superseded by `xp-redesign`.
   - `aiyan` = a contributor's iPhone transport work, reviewed but not merged (see section 14).
-- **Rollback points:** the tags `v1.3.3`, `v1.3.2`, and `pre-wireless` (main before any Wi-Fi work).
-- **Test devices now:** PC and phone both run 1.4.0-beta3. The phone is a CMF Phone 1 (A015, MediaTek, Android 16).
+- **Rollback points:** the tags `v1.4.0`, `v1.3.3`, `v1.3.2`, and `pre-wireless` (main before any Wi-Fi work).
+- **Test devices now:** PC and phone both run 1.4.0. The phone is a CMF Phone 1 (A015, MediaTek, Android 16).
 - **Working:**
   - **Streaming:** wired plug-and-play, front/back camera, and Wi-Fi (beta, paired + encrypted).
   - **Quality:** 720p/1080p/4K; 30/60/120 fps where each quality supports it.
