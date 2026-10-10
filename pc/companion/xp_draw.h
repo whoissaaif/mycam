@@ -40,8 +40,9 @@ public:
     void Attach(HWND hwnd) { hwnd_ = hwnd; }
     // Starts a frame at the window's current size and DPI. Returns nullptr if no device could be made.
     ID2D1DeviceContext* Begin(float dpiScale);
-    // Ends the frame and presents it. Handles device loss (the next Begin rebuilds).
-    void End();
+    // Ends the frame and presents it. Handles device loss (the next Begin rebuilds): returns false when the
+    // device was lost, so the caller repaints (DirectComposition shows nothing until it does).
+    bool End();
     void Reset(); // Drop all device resources (window destroyed, or device lost).
 
     ID2D1Factory1* Factory();
@@ -175,7 +176,7 @@ private:
     ComPtr<IDWriteTextFormat> formats_[int(Font::Count)];
     ComPtr<IDWriteTextFormat> ellipsisFormat_[int(Font::Count)];
     ComPtr<ID2D1SolidColorBrush> brush_;
-    ID2D1DeviceContext* brushOwner_ = nullptr;
+    ComPtr<ID2D1DeviceContext> brushOwner_; // Held, so a new context after device loss can't reuse its address.
     std::map<std::tuple<int, int, std::wstring>, Size> measureCache_;
 };
 

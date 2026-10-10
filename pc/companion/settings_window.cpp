@@ -852,6 +852,7 @@ struct SettingsWindow::Impl {
             liveBitmap.Reset();
             artBitmap.Reset();
             artKind = -1;
+            previewPending = !previewPixels.empty(); // Upload the last frame again (it may not change soon).
         }
     }
 
@@ -1272,7 +1273,7 @@ struct SettingsWindow::Impl {
         DrawFocus();
 
         if (opening) dc->PopLayer();
-        surface.End();
+        if (!surface.End()) Invalidate(); // Device lost: rebuild and draw again, or the window stays empty.
         ScheduleTimers();
     }
 

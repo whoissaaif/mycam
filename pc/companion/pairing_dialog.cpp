@@ -164,8 +164,8 @@ struct PairingDialog::Impl {
             }
         }
         if (opening) dc->PopLayer();
-        surface.End();
-        if (opening) InvalidateRect(hwnd, nullptr, FALSE);
+        const bool presented = surface.End();
+        if (opening || !presented) InvalidateRect(hwnd, nullptr, FALSE); // Device lost: draw again.
     }
 
     void Cancel() {
@@ -174,6 +174,9 @@ struct PairingDialog::Impl {
     }
 
     void Destroy() {
+        // Re-enable the owner first (as modal dialogs do), so it gets the activation back instead of
+        // another application.
+        if (hwnd && owner && IsWindow(owner)) EnableWindow(owner, TRUE);
         if (hwnd) DestroyWindow(hwnd);
     }
 
@@ -322,7 +325,10 @@ struct PairingDialog::Impl {
         // Centre over the owner if it's open, else on the monitor under the cursor.
         RECT anchor;
         HMONITOR monitor;
-        if (ownerWindow && IsWindowVisible(ownerWindow) && !IsIconic(ownerWindow)) {
+        // Only an owner that is on screen: Windows hides the windows a minimised owner owns, and this
+        // time-limited dialog must be seen.
+        if (ownerWindow && (!IsWindowVisible(ownerWindow) || IsIconic(ownerWindow))) ownerWindow = nullptr;
+        if (ownerWindow) {
             GetWindowRect(ownerWindow, &anchor);
             monitor = MonitorFromWindow(ownerWindow, MONITOR_DEFAULTTONEAREST);
         } else {

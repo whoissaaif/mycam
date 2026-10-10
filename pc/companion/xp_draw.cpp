@@ -112,15 +112,19 @@ ID2D1DeviceContext* Surface::Begin(float dpiScale) {
     return dc_.Get();
 }
 
-void Surface::End() {
-    if (!dc_) return;
+bool Surface::End() {
+    if (!dc_) return false;
     HRESULT hr = dc_->EndDraw();
     if (hr == D2DERR_RECREATE_TARGET) {
         Reset();
-        return;
+        return false;
     }
     hr = swapChain_->Present(1, 0);
-    if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) Reset();
+    if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
+        Reset();
+        return false;
+    }
+    return true;
 }
 
 void Surface::Reset() {
@@ -277,7 +281,7 @@ void Painter::Text(Font font, const std::wstring& text, const Box& box, D2D1_COL
 // --- Painter: primitives ------------------------------------------------------------------------------
 
 ID2D1SolidColorBrush* Painter::Brush(D2D1_COLOR_F c) {
-    if (!brush_ || brushOwner_ != dc_) {
+    if (!brush_ || brushOwner_.Get() != dc_) {
         brush_.Reset();
         dc_->CreateSolidColorBrush(c, &brush_);
         brushOwner_ = dc_;
