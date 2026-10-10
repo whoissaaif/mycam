@@ -27,6 +27,8 @@ struct UiaSource {
     std::function<bool(int)> focus;           // Move keyboard focus.
     std::function<int()> focusedId;
     std::function<RECT(const ui::Box&)> toScreen; // Client DIPs -> screen pixels.
+    // RangeValue::SetValue on a slider, in the control's own scale. Empty where there are no sliders.
+    std::function<bool(int, double)> setValue;
 };
 
 class UiaHost {

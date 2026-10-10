@@ -16,6 +16,10 @@
 
 namespace mycam::ui {
 
+// Shown on the About page. Keep in step with app/build.gradle.kts, installer/mycam.iss and
+// installer/build.ps1 when releasing (see CLAUDE.md "Release steps").
+constexpr wchar_t kAppVersion[] = L"1.4.0-beta4";
+
 enum class Kind {
     Group,          // Collapsible task-pane group (or the fixed "Now" group). UIA: Group + ExpandCollapse.
     Button,         // Push button. UIA: Button + Invoke.
@@ -51,7 +55,7 @@ enum Id : int {
     kStatusHeadline = 200, kStatusDetail = 201, kPause = 202, kLivePill = 203, kStatusProgress = 204,
     kShowPairing = 205, kScanNow = 206, // "Scan for phones" in Now (only while no phone is connected).
     kScanUsb = 207,                     // "Scan for USB Devices" (re-enumerate + reconnect).
-    kPageTitle = 208, kPageSubtitle = 209,
+    kPageTitle = 208, kPageSubtitle = 209, kUsbNote = 210, kNavDevicesLink = 211,
     // Camera group.
     kBack = 300, kFront = 301, kCameraNote = 302,
     kDdCamera = 303, // Camera dropdown; its entries are kBack / kFront.
