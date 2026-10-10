@@ -70,12 +70,15 @@ private:
 
 // --- Text ---------------------------------------------------------------------------------------------
 
+// Body text is Segoe UI (redesign-v2.md §4); only the window caption keeps Trebuchet MS Bold, so the XP
+// chrome still reads as XP while the interior is a clean modern app.
 enum class Font {
-    Body,        // Tahoma 8 pt
-    BodyBold,    // Tahoma Bold 8 pt (group titles, buttons)
-    Caption,     // Trebuchet MS Bold 10 pt (window title)
-    Instruction, // Trebuchet MS Bold 13 pt (main instruction)
-    Code,        // Trebuchet MS Bold 24 pt (pairing code)
+    Body,        // Segoe UI 9 pt
+    BodyBold,    // Segoe UI Semibold 9 pt (card titles, buttons)
+    Caption,     // Trebuchet MS Bold 10 pt (window title: XP chrome, unchanged)
+    Instruction, // Segoe UI Semibold 13 pt (page title, status headline)
+    Code,        // Segoe UI Semibold 24 pt (pairing code)
+    Small,       // Segoe UI 8 pt (subtitles, addresses, capability reasons)
     Count
 };
 
@@ -88,6 +91,9 @@ struct Palette {
     D2D1_COLOR_F surface, text, subtle, disabledText, link, linkHot, selection, selectionText;
     D2D1_COLOR_F paneTop, paneBottom, groupBody, groupBorder, groupTitle, heroTitle;
     D2D1_COLOR_F frame, focus, card;
+    // v2 flat kit (redesign-v2.md §4).
+    D2D1_COLOR_F accent, accentHot, accentDown, accentText; // Flat blue #1E6FE8 -> #1760D0, white text.
+    D2D1_COLOR_F pageBg, navBg, cardBorder, ctlFill, ctlBorder, ctlHotBorder, trackOff, trackOffBorder;
 };
 
 inline D2D1_COLOR_F Rgb(UINT32 rgb, float a = 1.f) { return D2D1::ColorF(rgb, a); }
@@ -103,11 +109,22 @@ struct Stop {
 
 struct ButtonState {
     bool hot = false, pressed = false, disabled = false, focused = false, isDefault = false;
+    // How pressed the flat components look, 0..1. The press itself is immediate (`pressed`); the release
+    // eases back to 0 (redesign-v2.md §12.5), so the window hands the fading value in here.
+    float press = 0;
 };
 
 enum class ButtonStyle { Normal, Green };
 enum class BadgeKind { None, Play, Pause, Error };
 enum class Chevron { None, Up, Down };
+
+// Flat v2 buttons: a blue primary, a white secondary with a grey border, and a borderless one.
+enum class FlatStyle { Primary, Secondary, Ghost };
+
+// Flat line icons, 1.5 px stroke (redesign-v2.md §4). Drawn, never bitmaps, so they stay crisp at any DPI
+// and follow the ink colour. The app's own mark is never drawn here: it comes from the generated icons
+// (§11), which the window loads with LoadIconBitmap.
+enum class Glyph { Home, Devices, Camera, Settings, About, Usb, Wifi, Phone, Refresh, Monitor, Pause, Play };
 
 class Painter {
 public:
@@ -158,6 +175,25 @@ public:
     void Badge(float cx, float cy, float radius, BadgeKind kind, float scale = 1.f);
     void FocusRect(const Box& b);
     void SunkenFrame(const Box& b);
+
+    // --- v2 flat components (redesign-v2.md §4) -----------------------------------------------------
+    void RoundRect(const Box& b, float radius, D2D1_COLOR_F fill);
+    void RoundFrame(const Box& b, float radius, D2D1_COLOR_F line, float width = 1.f);
+    // White card: 1 px #E3E8EF border, radius 10, soft shadow under it.
+    void Card(const Box& b, float radius = 10.f, float shadow = 1.f);
+    void FlatButton(const Box& b, const std::wstring& label, int underline, const ButtonState& s,
+                    FlatStyle style = FlatStyle::Primary, Font font = Font::BodyBold);
+    // The sidebar's selected row: a filled blue pill (white text and icon are drawn by the caller).
+    void NavPill(const Box& b, float opacity = 1.f);
+    // Combo box: white, rounded, with a chevron; `open` draws the pressed/open look.
+    void Combo(const Box& b, const std::wstring& text, const ButtonState& s, bool open);
+    void DropPanel(const Box& b);                                   // The open list's white panel.
+    void DropRow(const Box& b, bool selected, bool hot);            // One row's background.
+    void Switch(const Box& track, float on, const ButtonState& s);  // Toggle switch; `on` 0..1 animates.
+    void SliderRail(const Box& rail, float fraction, const ButtonState& s); // Rail + filled part + thumb.
+    void DarkPill(const Box& b, const std::wstring& text, Font font = Font::BodyBold); // Preview chips.
+    void Icon(Glyph g, const Box& b, D2D1_COLOR_F ink, float stroke = 1.5f);
+    void FocusRing(const Box& b, float radius); // Focus indication for the flat controls.
 
 private:
     struct FontSpec {

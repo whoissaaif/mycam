@@ -9,6 +9,14 @@
 
 namespace mycam::ui {
 
+// One timing system (redesign-v2.md §12): short, standard and page, all on the same ease-out curve, and
+// nothing over 300 ms. Reduced motion turns every duration into 0 (see SettingsWindow::Impl::Dur).
+constexpr float kShortMs = 120;     // Dropdown open, pressed-state release.
+constexpr float kToggleMs = 150;    // Toggle thumb and track.
+constexpr float kStandardMs = 200;  // Status crossfade, nav pill, preview crossfade.
+constexpr float kPageMs = 250;      // Page transition, badge pop.
+constexpr float kPageSlideDip = 8;  // How far a page slides while it fades.
+
 inline float Clamp01(float t) { return t < 0 ? 0.f : t > 1 ? 1.f : t; }
 inline float EaseOut(float t) { t = Clamp01(t); return 1 - (1 - t) * (1 - t) * (1 - t); }
 inline float EaseInOut(float t) {
@@ -37,6 +45,12 @@ struct Tween {
         durationMs = duration;
     }
     void Set(float value) { from = to = value; durationMs = 0; }
+    // Interruptible (§12): retargets from where the value is now instead of snapping. Does nothing when
+    // the tween is already heading there, so a repaint never restarts it.
+    void Retarget(float target, uint64_t now, float duration, float (*ease)(float) = EaseInOut) {
+        if (to == target) return;
+        Start(target, now, duration, Value(now, ease));
+    }
     float Progress(uint64_t now) const {
         return durationMs <= 0 ? 1.f : Clamp01(float(now - std::min(now, startMs)) / durationMs);
     }
