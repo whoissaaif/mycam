@@ -280,7 +280,7 @@ void WebServer::HandleRequest(Conn& c, const web::HttpRequest& r, const std::str
             if (o->deviceId != d->id) other = true;
             else own |= o->mode == Conn::Mode::Phone;
         }
-        const bool busy = other || (busy_ && !own);
+        const bool busy = other || (busy_ && !own && d->id != busyExcept_);
         SendResponse(c, 200, "OK", "application/json",
                      std::string("{\"ok\":true,\"busy\":") + (busy ? "true" : "false") + ",\"name\":" + JsonString(d->name) + "}");
         return;
@@ -354,7 +354,7 @@ void WebServer::HandleUpgrade(Conn& c, const web::HttpRequest& r) {
         Flush(*o);
         Close(*o, "replaced by a newer connection");
     }
-    if (other || (busy_ && !replacedSession)) {
+    if (other || (busy_ && !replacedSession && d->id != busyExcept_)) {
         SendResponse(c, 503, "Service Unavailable", "text/plain", "busy with another phone\n", "Retry-After: 5\r\n");
         return;
     }
@@ -498,11 +498,12 @@ void WebServer::Sweep(uint64_t now) {
 
 // --- The phone ---------------------------------------------------------------------------------------
 
-void WebServer::SetBusy(bool busy) {
+void WebServer::SetBusy(bool busy, const std::string& except) {
     busy_ = busy;
+    busyExcept_ = busy ? except : std::string();
     if (!busy) return;
     for (auto& c : conns_) {
-        if (c->dead || c->mode != Conn::Mode::PhonePending) continue;
+        if (c->dead || c->mode != Conn::Mode::PhonePending || (!except.empty() && c->deviceId == except)) continue;
         const web::Bytes bye = web::CloseFrame(kCloseBusy);
         web::Bytes enc;
         if (c->tls->Encrypt(bye.data(), bye.size(), &enc)) SendRaw(*c, enc.data(), enc.size());

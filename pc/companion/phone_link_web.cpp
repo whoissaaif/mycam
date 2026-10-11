@@ -10,6 +10,12 @@
 
 namespace mycam {
 
+namespace {
+// How long a paused page may be gone (the iPhone locked, Safari in the background) and still pick its session
+// up again. Meanwhile apps keep seeing the "Camera paused" picture.
+constexpr uint64_t kWebLingerMs = 5 * 60 * 1000;
+} // namespace
+
 void PhoneLink::PollWeb(uint32_t waitMs) {
     if (!web_) {
         if (waitMs) Sleep(waitMs);
@@ -35,20 +41,46 @@ void PhoneLink::WebScanOnce() {
     webSession_ = true;
     webDeviceId_ = id;
     BeginSession(true, name);
+    web_->SetBusy(true, id); // Other pages wait; this iPhone may reconnect (see kWebLingerMs).
     status_.web = true;
     status_.webLink.assign(link.begin(), link.end()); // ASCII.
     Publish();
     Log("session: %s connected over %s (web page)", name.c_str(), link.c_str());
 
-    uint64_t lastUsbCheck = GetTickCount64();
+    uint64_t lastUsbCheck = GetTickCount64(), lingerSince = 0;
+    webLingering_ = false;
     SessionLoop([&] {
         PollWeb(StatusWaitMs());
-        if (!web_->PhoneConnected()) {
-            Log("web: the page went away");
-            sessionError_ = true;
-            return;
-        }
         const uint64_t now = GetTickCount64();
+        if (!web_->PhoneConnected()) {
+            std::string id2, name2, link2;
+            // While this session runs, the server only lets its own device in: a page waiting now is this
+            // iPhone again (Safari reloaded the page, or it came back from the background).
+            if (web_->PhonePending() && web_->TakePhone(&id2, &name2, &link2)) {
+                Log("web: %s is back (over %s)", name2.c_str(), link2.c_str());
+                webLingering_ = false;
+                parser_.Reset();
+                gotHello_ = startSent_ = phoneStreaming_ = false;
+                waitKeyFrame_ = true;
+                status_.webLink.assign(link2.begin(), link2.end());
+                Publish();
+            } else if (!webLingering_) {
+                if (!phonePaused_) {
+                    Log("web: the page went away");
+                    sessionError_ = true;
+                    return;
+                }
+                // iOS drops the connection of a page in the background: it said "paused" first, so keep the
+                // session (and the paused picture) for a while in case it comes back.
+                Log("web: the paused page went away (iPhone locked, or Safari in the background); waiting for it");
+                webLingering_ = true;
+                lingerSince = now;
+            } else if (now - lingerSince > kWebLingerMs) {
+                Log("web: the page didn't come back");
+                sessionError_ = true;
+                return;
+            }
+        }
         if (now - lastUsbCheck > 2000) {
             lastUsbCheck = now;
             if (UsbPhoneArrived()) { // The cable wins, as with Android over Wi-Fi.
@@ -59,7 +91,7 @@ void PhoneLink::WebScanOnce() {
     });
     LeaveSession();
     web_->EndPhone();
-    webSession_ = false;
+    webSession_ = webLingering_ = false;
     webDeviceId_.clear();
     ResetAfterSession();
 }

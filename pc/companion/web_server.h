@@ -35,9 +35,10 @@ public:
     void Poll(uint32_t timeoutMs);
 
     // --- The phone (a page with an open /ws) ---------------------------------------------------------
-    // Another phone's session is running (USB or Android Wi-Fi): new pages get "busy" and retry, and one
-    // waiting to be picked up is told to try again later.
-    void SetBusy(bool busy);
+    // A phone's session is running: new pages get "busy" and retry, and one waiting to be picked up is told
+    // to try again later. `except` (a device id) may still connect: the web session's own iPhone, coming
+    // back after iOS dropped its connection.
+    void SetBusy(bool busy, const std::string& except = std::string());
     // A page opened /ws and waits for a session.
     bool PhonePending() const;
     // Makes the waiting page the session's phone: which device, its name, and how it is connected ("Wi-Fi"...).
@@ -92,6 +93,7 @@ private:
     web::TokenBook book_;
     std::vector<web::NetAddress> addresses_;
     bool busy_ = false;
+    std::string busyExcept_;
     bool pairing_ = false;
     uint32_t pairingIp_ = 0;
     uint32_t generation_ = 0;

@@ -210,6 +210,7 @@ private:
 
     std::unique_ptr<WebServer> web_;
     bool webSession_ = false;     // The current session's phone is a web page.
+    bool webLingering_ = false;   // ...whose connection iOS dropped while it was paused: waiting for it.
     std::string webDeviceId_;     // ...and which remembered device it is.
     uint32_t webGeneration_ = ~0u;
     std::atomic<int64_t> webPairRequest_{-1}; // -1 nothing, -2 stop, else start (IPv4).
