@@ -219,7 +219,7 @@ struct SettingsWindow::Impl {
     LinkStatus Status() const { return model->status(); }
     static bool Connected(const LinkStatus& s) { return s.state >= LinkState::Idle && s.camera.valid; }
 
-    bool PauseEnabled(const LinkStatus& s) const { return s.state >= LinkState::Idle && !s.lockPaused; }
+    bool PauseEnabled(const LinkStatus& s) const { return s.state >= LinkState::Idle && !s.lockPaused && !s.webAway; }
 
     bool Enabled(int id, const LinkStatus& s) const {
         const proto::CameraInfo& c = s.camera;

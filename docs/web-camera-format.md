@@ -89,7 +89,7 @@ Every packet starts with the 20-byte header:
 | Type | Name | What the page sends |
 |---|---|---|
 | 0 | HELLO | Version **3**, in reply to the PC's HELLO |
-| 1 | CONFIG | Width, height, sensor orientation **0**, facing, then SPS/PPS taken from the key frame. Sent before the first frame and before the key frame after any change (size, camera, bitrate) |
+| 1 | CONFIG | Width and height of the encoded pixels, the turn they need (see Rotation), facing, then SPS/PPS taken from the key frame. Sent before the first frame and before the key frame after any change (size, camera, bitrate) |
 | 2 | FRAME | One access unit, Annex-B, with flag bit 0 on key frames. Timestamps come from the page's monotonic clock and only ever go up |
 | 3 | ORIENT | Always **0** (see Rotation) |
 | 4 | STATE | Idle / streaming / error / paused, and facing |
@@ -144,11 +144,15 @@ The PC sends a WebSocket ping every 5 s and drops a link that has been silent fo
   - `latencyMode: "realtime"`, `hardwareAcceleration: "prefer-hardware"`, `avc: {format: "annexb"}`.
   - Starting bitrate: 4 / 8 / 20 Mbps for 720p / 1080p / 4K, ×1.5 at 60 fps and above.
   - A key frame every 2 s.
-- **Rotation (to confirm on the iPhone):** Safari delivers frames upright as displayed. Held upright,
-  the iPhone gives 1080×1920 (seen in Test 2). The page therefore sends sensor orientation 0 and ORIENT 0,
-  and turning the phone changes the picture size: the page then sends a new CONFIG. This matches the
-  Android app's behaviour (portrait when the phone is upright). **Still to check on the iPhone:** that
-  landscape gives 1920×1080 upright in the Windows Camera app.
+- **Rotation:** the first iPhone test showed portrait video **sideways** on the PC.
+  - The cause: Safari hands over the camera's own (landscape) pixels with only a rotation label
+    (`VideoFrame.rotation`), and the encoder ignores the label.
+  - So the page now encodes the frame's real pixel size (`visibleRect`) and sends the label as CONFIG's
+    sensor orientation. The PC turns the picture by it, as it does for Android phones. ORIENT stays 0.
+  - If a browser has no rotation label but the pixels lie the other way from the picture on screen, the
+    page assumes the usual phone sensor (back 90°, front 270°).
+  - Each change is logged ("picture: 1920x1080 turned 90° …"). **To confirm on the iPhone:** portrait and
+    landscape, back and front, are all upright in the Camera app.
 - **Back-pressure:**
   - If `ws.bufferedAmount` goes over about a quarter of a second of video (at least 256 KB), the page
     skips frames and makes the next one a key frame.
@@ -183,7 +187,7 @@ The PC sends a WebSocket ping every 5 s and drops a link that has been silent fo
     page -> PC     MCAM 03 ... 0000                             ORIENT 0
     page -> PC     MCAM 06 ... (21 bytes)                       CAMERA
     PC   -> page   MCMD 02 00 0000                              START (an app opened the camera)
-    page -> PC     MCAM 01 ... 0438 0780 0000 00 <SPS/PPS>      CONFIG 1080x1920 (phone upright)
+    page -> PC     MCAM 01 ... 0780 0438 005A 00 <SPS/PPS>      CONFIG 1920x1080 turned 90° (phone upright)
     page -> PC     MCAM 04 ... 01 00                            STATE streaming
     page -> PC     MCAM 02 01 ... <key frame>                   FRAME, key frame
     page -> PC     MCAM 02 00 ... <frame>                       FRAME ...

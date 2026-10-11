@@ -29,7 +29,13 @@ void PhoneLink::PollWeb(uint32_t waitMs) {
         std::lock_guard<std::mutex> lock(commandLock_);
         forget.swap(webForget_);
     }
-    for (const std::string& id : forget) web_->Forget(id);
+    for (const std::string& id : forget) {
+        web_->Forget(id);
+        if (webSession_ && id == webDeviceId_) { // Its session ends too, even while it waits to come back.
+            Log("web: the connected device was forgotten; ending its session");
+            sessionError_ = true;
+        }
+    }
     web_->Poll(waitMs);
     if (web_->Generation() != webGeneration_) Publish();
 }
@@ -59,6 +65,7 @@ void PhoneLink::WebScanOnce() {
             if (web_->PhonePending() && web_->TakePhone(&id2, &name2, &link2)) {
                 Log("web: %s is back (over %s)", name2.c_str(), link2.c_str());
                 webLingering_ = false;
+                status_.webAway = false;
                 parser_.Reset();
                 gotHello_ = startSent_ = phoneStreaming_ = false;
                 waitKeyFrame_ = true;
@@ -75,6 +82,8 @@ void PhoneLink::WebScanOnce() {
                 Log("web: the paused page went away (iPhone locked, or Safari in the background); waiting for it");
                 webLingering_ = true;
                 lingerSince = now;
+                status_.webAway = true;
+                Publish();
             } else if (now - lingerSince > kWebLingerMs) {
                 Log("web: the page didn't come back");
                 sessionError_ = true;
