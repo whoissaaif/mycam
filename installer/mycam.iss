@@ -70,6 +70,13 @@ Filename: "{sys}\regsvr32.exe"; Parameters: "/s ""{app}\MyCamVCam.dll"""; \
 ; Lets new phones get Windows' WinUSB driver later without a UAC prompt (a SYSTEM task users may only start).
 Filename: "{app}\MyCamCompanion.exe"; Parameters: "--register-task"; \
     StatusMsg: "Setting up phone drivers..."; Flags: runhidden waituntilterminated
+; The iPhone page (HTTPS on TCP 47900): allowed in on private networks only, so Windows never asks the user.
+; Deleted first, so an upgrade doesn't add a second copy.
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""MyCam iPhone camera"""; \
+    Flags: runhidden waituntilterminated
+Filename: "{sys}\netsh.exe"; \
+    Parameters: "advfirewall firewall add rule name=""MyCam iPhone camera"" dir=in action=allow program=""{app}\MyCamCompanion.exe"" protocol=TCP localport=47900 profile=private enable=yes"; \
+    StatusMsg: "Letting iPhones on your network reach MyCam..."; Flags: runhidden waituntilterminated
 Filename: "{app}\MyCamCompanion.exe"; Parameters: "--settings"; Description: "Open MyCam now"; \
     Flags: nowait postinstall skipifsilent runasoriginaluser
 
@@ -78,6 +85,7 @@ Filename: "{app}\MyCamCompanion.exe"; Parameters: "--quit"; RunOnceId: "QuitMyCa
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM MyCamCompanion.exe"; RunOnceId: "KillMyCam"; Flags: runhidden waituntilterminated
 Filename: "{sys}\regsvr32.exe"; Parameters: "/s /u ""{app}\MyCamVCam.dll"""; RunOnceId: "UnregisterMyCam"; Flags: runhidden waituntilterminated
 Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""MyCam phone driver"" /F"; RunOnceId: "DeleteDriverTask"; Flags: runhidden waituntilterminated
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""MyCam iPhone camera"""; RunOnceId: "DeleteFirewallRule"; Flags: runhidden waituntilterminated
 ; Windows' camera service may still have the DLL loaded; restart it so the file can be deleted.
 Filename: "{sys}\net.exe"; Parameters: "stop FrameServer /y"; RunOnceId: "StopFrameServer"; Flags: runhidden waituntilterminated
 
