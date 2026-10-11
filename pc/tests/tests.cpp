@@ -14,6 +14,7 @@
 #include "../companion/marquee.h"
 #include "../companion/protocol.h"
 #include "../companion/wifi_crypto.h"
+#include "../companion/web_proto.h"
 #include "../companion/capabilities.h"
 #include "../companion/discovery.h"
 #include "../companion/preview_convert.h"
@@ -787,6 +788,268 @@ void TestStatusText() {
     s.lockPaused = true;
     CHECK(DescribeStatus(s, true).icon == kIconPaused);
     CHECK(DescribeStatus(s, false).icon == kIconError);
+    // An iPhone's web page says how it reaches the PC.
+    s.lockPaused = false;
+    s.web = true;
+    s.webLink = L"USB hotspot";
+    s.state = LinkState::Streaming;
+    CHECK(DescribeStatus(s, true).facts == L"Back camera · 1920 × 1080 · USB hotspot");
+    s.state = LinkState::Idle;
+    CHECK(DescribeStatus(s, true).facts == L"Back camera · USB hotspot");
+    s.state = LinkState::Paused;
+    s.phoneName = L"iPhone";
+    s.webAway = true; // The page is locked or in the background: it, not the PC, can resume.
+    CHECK(DescribeStatus(s, true).hint.find(L"Open it again") != std::wstring::npos);
+}
+
+// --- iPhone web camera (web_proto.h) -------------------------------------------------------------------
+
+// A client (browser) frame: always masked.
+Bytes ClientFrame(bool fin, uint8_t opcode, const Bytes& payload, const uint8_t mask[4] = nullptr) {
+    static const uint8_t kMask[4] = {0x37, 0xFA, 0x21, 0x3D};
+    if (!mask) mask = kMask;
+    Bytes f = {uint8_t((fin ? 0x80 : 0) | opcode)};
+    const size_t n = payload.size();
+    if (n < 126) {
+        f.push_back(uint8_t(0x80 | n));
+    } else if (n < 65536) {
+        f.push_back(0x80 | 126);
+        f.push_back(uint8_t(n >> 8));
+        f.push_back(uint8_t(n));
+    } else {
+        f.push_back(0x80 | 127);
+        for (int i = 7; i >= 0; --i) f.push_back(uint8_t(uint64_t(n) >> (8 * i)));
+    }
+    f.insert(f.end(), mask, mask + 4);
+    for (size_t i = 0; i < n; ++i) f.push_back(uint8_t(payload[i] ^ mask[i & 3]));
+    return f;
+}
+
+struct WsMsg { uint8_t opcode; Bytes data; };
+
+bool FeedWs(web::WsParser& p, const Bytes& data, std::vector<WsMsg>* out, size_t chunk = 0) {
+    auto on = [&](uint8_t op, const uint8_t* d, size_t n) { out->push_back({op, Bytes(d, d + n)}); };
+    if (chunk == 0) return p.Feed(data.data(), data.size(), on);
+    for (size_t i = 0; i < data.size(); i += chunk) {
+        if (!p.Feed(data.data() + i, std::min(chunk, data.size() - i), on)) return false;
+    }
+    return true;
+}
+
+void TestWebSocketFrames() {
+    // RFC 6455 §5.7: a masked "Hello".
+    {
+        web::WsParser p;
+        std::vector<WsMsg> got;
+        CHECK(FeedWs(p, Hex("81 85 37 fa 21 3d 7f 9f 4d 51 58"), &got));
+        CHECK(got.size() == 1 && got[0].opcode == web::kText && got[0].data == Bytes({'H', 'e', 'l', 'l', 'o'}));
+    }
+    // Every length encoding, fed whole and one byte at a time.
+    for (size_t n : {size_t(0), size_t(125), size_t(126), size_t(300), size_t(65535), size_t(65536), size_t(200000)}) {
+        Bytes payload(n);
+        for (size_t i = 0; i < n; ++i) payload[i] = uint8_t(i * 7 + 3);
+        const Bytes frame = ClientFrame(true, web::kBinary, payload);
+        for (size_t chunk : {size_t(0), size_t(1), size_t(4093)}) {
+            if (chunk == 1 && n > 70000) continue; // Slow and adds nothing.
+            web::WsParser p;
+            std::vector<WsMsg> got;
+            CHECK(FeedWs(p, frame, &got, chunk));
+            CHECK(got.size() == 1 && got[0].opcode == web::kBinary && got[0].data == payload);
+        }
+    }
+    // Two messages in one read, then the start of a third.
+    {
+        web::WsParser p;
+        std::vector<WsMsg> got;
+        Bytes both = ClientFrame(true, web::kBinary, {1, 2, 3});
+        const Bytes second = ClientFrame(true, web::kBinary, {4, 5});
+        both.insert(both.end(), second.begin(), second.end());
+        const Bytes third = ClientFrame(true, web::kBinary, {6});
+        both.insert(both.end(), third.begin(), third.begin() + 3);
+        CHECK(FeedWs(p, both, &got) && got.size() == 2 && got[1].data == Bytes({4, 5}));
+        CHECK(FeedWs(p, Bytes(third.begin() + 3, third.end()), &got) && got.size() == 3 && got[2].data == Bytes({6}));
+    }
+    // A fragmented message with a ping in the middle: the ping comes out first, then the joined message.
+    {
+        web::WsParser p;
+        std::vector<WsMsg> got;
+        Bytes all = ClientFrame(false, web::kBinary, {1, 2});
+        for (const Bytes& f : {ClientFrame(true, web::kPing, {9}), ClientFrame(false, web::kContinuation, {3}),
+                               ClientFrame(true, web::kContinuation, {4, 5})})
+            all.insert(all.end(), f.begin(), f.end());
+        CHECK(FeedWs(p, all, &got, 3));
+        CHECK(got.size() == 2 && got[0].opcode == web::kPing && got[0].data == Bytes({9}));
+        CHECK(got[1].opcode == web::kBinary && got[1].data == Bytes({1, 2, 3, 4, 5}));
+    }
+    // Close and pong are passed on.
+    {
+        web::WsParser p;
+        std::vector<WsMsg> got;
+        CHECK(FeedWs(p, ClientFrame(true, web::kClose, {0x03, 0xE8}), &got) && got.size() == 1 &&
+              got[0].opcode == web::kClose && got[0].data == Bytes({0x03, 0xE8}));
+    }
+    // Protocol errors.
+    auto fails = [](const Bytes& data) {
+        web::WsParser p;
+        std::vector<WsMsg> got;
+        return !FeedWs(p, data, &got) && p.Error() != nullptr && got.empty();
+    };
+    CHECK(fails(Hex("82 03 01 02 03")));                                // Not masked.
+    CHECK(fails(ClientFrame(true, web::kContinuation, {1})));           // Continuation with nothing to continue.
+    CHECK(fails(ClientFrame(false, web::kPing, {1})));                  // Fragmented control frame.
+    CHECK(fails(ClientFrame(true, web::kPing, Bytes(126))));            // Control frame over 125 bytes.
+    CHECK(fails(ClientFrame(true, 3, {1})));                            // Reserved opcode.
+    {
+        Bytes rsv = ClientFrame(true, web::kBinary, {1});
+        rsv[0] |= 0x40;                                                  // RSV1 (compression) wasn't agreed.
+        CHECK(fails(rsv));
+    }
+    {
+        Bytes twoStarts = ClientFrame(false, web::kBinary, {1});
+        const Bytes again = ClientFrame(true, web::kBinary, {2});
+        twoStarts.insert(twoStarts.end(), again.begin(), again.end());
+        CHECK(fails(twoStarts));
+    }
+    {
+        // A header announcing more than one MyCam packet can hold is refused before the body arrives.
+        web::WsParser p;
+        std::vector<WsMsg> got;
+        CHECK(!FeedWs(p, Hex("82 FF 00 00 00 00 01 00 00 00"), &got) && p.TooBig());
+        CHECK(!p.Feed(nullptr, 0, [](uint8_t, const uint8_t*, size_t) {})); // Stays failed.
+        p.Reset();
+        CHECK(FeedWs(p, ClientFrame(true, web::kBinary, {7}), &got) && got.size() == 1);
+    }
+    // Server frames: unmasked, FIN, the shortest length encoding.
+    CHECK(web::Frame(web::kBinary, nullptr, 0) == Hex("82 00"));
+    {
+        const Bytes cmd = Hex("4D434D44 02 00 0000");
+        CHECK(web::Frame(web::kBinary, cmd.data(), cmd.size()) == Hex("82 08 4D434D44 02 00 0000"));
+        const Bytes b126(126, 0xAB), b65536(65536, 0xCD);
+        const Bytes f126 = web::Frame(web::kBinary, b126.data(), b126.size());
+        CHECK(f126.size() == 4 + 126 && f126[1] == 126 && f126[2] == 0 && f126[3] == 126);
+        const Bytes f64k = web::Frame(web::kBinary, b65536.data(), b65536.size());
+        CHECK(f64k.size() == 10 + 65536 && f64k[1] == 127 && f64k[7] == 1 && f64k[8] == 0 && f64k[9] == 0);
+    }
+    CHECK(web::CloseFrame(1000) == Hex("88 02 03 E8"));
+}
+
+void TestWebHandshake() {
+    // RFC 6455 §1.3.
+    CHECK(web::AcceptKey("dGhlIHNhbXBsZSBub25jZQ==") == "s3pPLMBiTxaQ9kYGzzhZRbK+xOo=");
+
+    const std::string upgrade =
+        "GET /ws?d=abc%2Ddef&x=1 HTTP/1.1\r\n"
+        "Host: 192.168.1.20:47900\r\n"
+        "Upgrade: websocket\r\n"
+        "Connection: keep-alive, Upgrade\r\n"
+        "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n"
+        "Sec-WebSocket-Version: 13\r\n"
+        "Origin: https://192.168.1.20:47900\r\n"
+        "\r\n";
+    const Bytes raw(upgrade.begin(), upgrade.end());
+    web::HttpRequest r;
+    size_t head = 0;
+    CHECK(web::ParseHttpRequest(raw.data(), raw.size() - 1, &r, &head) == web::HttpParse::Incomplete);
+    CHECK(web::ParseHttpRequest(raw.data(), raw.size(), &r, &head) == web::HttpParse::Done);
+    CHECK(head == raw.size() && r.method == "GET" && r.path == "/ws" && r.query == "d=abc%2Ddef&x=1");
+    CHECK(web::QueryParam(r.query, "d") == "abc-def" && web::QueryParam(r.query, "x") == "1");
+    CHECK(web::QueryParam(r.query, "t").empty());
+    CHECK(r.Header("host") == "192.168.1.20:47900" && r.Header("upgrade") == "websocket");
+    CHECK(web::IsWebSocketUpgrade(r));
+    web::HttpRequest bad = r;
+    bad.headers["connection"] = "keep-alive";
+    CHECK(!web::IsWebSocketUpgrade(bad));
+    bad = r;
+    bad.headers["sec-websocket-version"] = "8";
+    CHECK(!web::IsWebSocketUpgrade(bad));
+    bad = r;
+    bad.headers["sec-websocket-key"] = "short==";
+    CHECK(!web::IsWebSocketUpgrade(bad));
+    bad = r;
+    bad.method = "POST";
+    CHECK(!web::IsWebSocketUpgrade(bad));
+
+    // A POST with a body; the body is left for the caller.
+    const std::string post = "POST /pair HTTP/1.1\r\nContent-Type: application/json\r\nContent-Length: 11\r\n\r\n{\"t\":\"abc\"}";
+    const Bytes p(post.begin(), post.end());
+    CHECK(web::ParseHttpRequest(p.data(), p.size(), &r, &head) == web::HttpParse::Done);
+    CHECK(r.method == "POST" && r.path == "/pair" && r.contentLength == 11 && p.size() - head == 11);
+
+    auto parse = [&](const std::string& text) {
+        const Bytes b(text.begin(), text.end());
+        return web::ParseHttpRequest(b.data(), b.size(), &r, &head);
+    };
+    CHECK(parse("GET / HTTP/1.1\r\n\r\n") == web::HttpParse::Done && r.path == "/");
+    CHECK(parse("GARBAGE\r\n\r\n") == web::HttpParse::Bad);
+    CHECK(parse("GET nothing HTTP/1.1\r\n\r\n") == web::HttpParse::Bad);
+    CHECK(parse("GET / HTTP/1.1\r\nNoColon\r\n\r\n") == web::HttpParse::Bad);
+    CHECK(parse("POST /pair HTTP/1.1\r\nContent-Length: 99999\r\n\r\n") == web::HttpParse::Bad);
+    CHECK(parse("POST /pair HTTP/1.1\r\nContent-Length: -1\r\n\r\n") == web::HttpParse::Bad);
+    CHECK(parse("POST /pair HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n") == web::HttpParse::Bad);
+    CHECK(parse(std::string("GET / HTTP/1.1\r\nX: ") + std::string(9000, 'a')) == web::HttpParse::Bad);
+}
+
+void TestWebTokens() {
+    web::TokenBook book;
+    const Bytes r16(16, 0x11), r16b(16, 0x22), r32(32, 0x33), r8 = Hex("0102030405060708");
+    const std::string code = book.NewPairingCode(r16, 1000);
+    CHECK(code.size() == 22 && code.find_first_of("+/=") == std::string::npos); // 128 bits, URL-safe.
+    CHECK(book.HasPairingCode(1000) && !book.HasPairingCode(1000 + web::kPairingCodeMs));
+    CHECK(!book.UsePairingCode("wrong", 2000));
+    CHECK(!book.UsePairingCode(code + "x", 2000));
+    CHECK(!book.UsePairingCode(code, 1000 + web::kPairingCodeMs)); // Expired.
+    CHECK(book.UsePairingCode(code, 2000));
+    CHECK(!book.UsePairingCode(code, 2001));                      // Single use.
+    CHECK(!book.HasPairingCode(2001));
+    const std::string second = book.NewPairingCode(r16b, 3000);
+    CHECK(second != code && !book.UsePairingCode(code, 3001));     // The old code is gone.
+    book.ClearPairingCode();
+    CHECK(!book.UsePairingCode(second, 3002));
+
+    web::WebDevice added;
+    const std::string token = book.AddDevice("Dad's iPhone\n", r32, r8, 1760000000, &added);
+    CHECK(token.size() == 43 && added.id == "0102030405060708" && added.name == "Dad's iPhone");
+    CHECK(added.tokenHash.size() == 32 && std::string(added.tokenHash.begin(), added.tokenHash.end()) != token);
+    const web::WebDevice* found = book.FindDevice(token);
+    CHECK(found && found->id == added.id);
+    CHECK(!book.FindDevice(token.substr(1)) && !book.FindDevice(""));
+    // Restored from storage (hash only), it still matches.
+    web::TokenBook restored;
+    restored.SetDevices({added});
+    CHECK(restored.FindDevice(token) != nullptr);
+    CHECK(restored.Forget(added.id) && !restored.FindDevice(token) && !restored.Forget(added.id));
+
+    CHECK(web::CleanDeviceName("") == "iPhone");
+    CHECK(web::CleanDeviceName("  iPad\t") == "iPad");
+    CHECK(web::CleanDeviceName(std::string(60, 'x')).size() == 40);
+    CHECK(web::CleanDeviceName("Café ☕") == "Café ☕");
+    CHECK(web::CleanDeviceName(std::string("ab\xff") + "cd") == "ab"); // Stops at bad UTF-8.
+
+    CHECK(web::SameSecret("abc", "abc") && !web::SameSecret("abc", "abd") && !web::SameSecret("abc", "ab"));
+    const Bytes hello = {'h', 'i', '?'};
+    CHECK(web::Base64(hello.data(), 3) == "aGk/" && web::Base64Url(hello.data(), 3) == "aGk_");
+    CHECK(web::Base64(hello.data(), 2) == "aGk=" && web::Base64Url(hello.data(), 2) == "aGk");
+}
+
+void TestWebAddresses() {
+    using web::NetKind;
+    auto ip = [](int a, int b, int c, int d) { return uint32_t(a) << 24 | uint32_t(b) << 16 | uint32_t(c) << 8 | uint32_t(d); };
+    CHECK(web::ClassifyAdapter(71, L"Intel(R) Wi-Fi 6 AX201", ip(192, 168, 1, 20)) == NetKind::WiFi);
+    CHECK(web::ClassifyAdapter(6, L"Realtek PCIe GbE", ip(10, 0, 0, 5)) == NetKind::Ethernet);
+    CHECK(web::ClassifyAdapter(6, L"Apple Mobile Device Ethernet", ip(172, 20, 10, 2)) == NetKind::IPhoneUsb);
+    CHECK(web::ClassifyAdapter(6, L"Hyper-V Virtual Ethernet Adapter", ip(172, 28, 0, 1)) == NetKind::Skip);
+    CHECK(web::ClassifyAdapter(6, L"vEthernet (WSL)", ip(172, 29, 0, 1)) == NetKind::Skip);
+    CHECK(web::ClassifyAdapter(53, L"Cloudflare WARP Interface Tunnel", ip(172, 16, 0, 2)) == NetKind::Other);
+    CHECK(web::ClassifyAdapter(6, L"TAP-Windows Adapter V9", ip(10, 8, 0, 2)) == NetKind::Other);
+    CHECK(web::ClassifyAdapter(71, L"Wi-Fi", ip(169, 254, 3, 4)) == NetKind::Skip);
+    CHECK(web::ClassifyAdapter(24, L"Loopback", ip(127, 0, 0, 1)) == NetKind::Skip);
+
+    std::vector<web::NetAddress> list = {{1, "vpn", L"", NetKind::Other}, {2, "eth", L"", NetKind::Ethernet},
+                                         {3, "vm", L"", NetKind::Skip}, {4, "usb", L"", NetKind::IPhoneUsb},
+                                         {5, "wifi", L"", NetKind::WiFi}};
+    web::SortAddresses(&list);
+    CHECK(list.size() == 4 && list[0].text == "wifi" && list[1].text == "eth" && list[2].text == "usb" &&
+          list[3].text == "vpn");
 }
 
 } // namespace
@@ -826,6 +1089,10 @@ int main() {
     printf("wi-fi discovery list\n");      TestDiscovery();
     printf("preview convert\n");           TestPreviewConvert();
     printf("status text\n");               TestStatusText();
+    printf("web: websocket frames\n");     TestWebSocketFrames();
+    printf("web: http and handshake\n");   TestWebHandshake();
+    printf("web: tokens\n");               TestWebTokens();
+    printf("web: addresses\n");            TestWebAddresses();
 
     printf("%d checks, %d failed\n", g_checks, g_failures);
     return g_failures ? 1 : 0;

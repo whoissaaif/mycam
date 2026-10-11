@@ -52,6 +52,9 @@ if ($r.ExitCode -ne 0) { throw "Registering MyCamVCam.dll failed (regsvr32 exit 
 # Scheduled task that sets up new phones' USB driver without a UAC prompt.
 $r = Start-Process "$dest\MyCamCompanion.exe" -ArgumentList '--register-task' -Wait -PassThru
 if ($r.ExitCode -ne 0) { Write-Warning 'Could not register the phone driver task; new phones will ask for admin once.' }
+# The iPhone page (TCP 47900): allowed in on private networks only, as the installer does.
+& netsh.exe advfirewall firewall delete rule name="MyCam iPhone camera" | Out-Null
+& netsh.exe advfirewall firewall add rule name="MyCam iPhone camera" dir=in action=allow program="$dest\MyCamCompanion.exe" protocol=TCP localport=47900 profile=private enable=yes | Out-Null
 
 # --- 3. Autostart + launch ------------------------------------------------------------------------
 Set-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'MyCam' -Value "`"$dest\MyCamCompanion.exe`""

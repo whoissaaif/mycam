@@ -46,6 +46,21 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
   - [x] PC: Devices has a Connected Device section above Available Devices
 - [x] PC window opened as a transparent flash (first frame now drawn before ShowWindow)
 
+- [~] iPhone support through a web page (Aiyan; branch `aiyan-webtest`, docs/AIYAN-IPHONE.md) [9]: built, iPhone tests left
+  - [x] PC: HTTPS/WebSocket server (Schannel, port 47900), the page as a third transport, QR pairing and
+        remembered iPhones, firewall rule in the installer
+  - [x] Page: protocol, capability masks, back-pressure, wake lock + dim, pause/background, reconnect
+  - [~] iPhone 13: install → Connect an iPhone → scan → tap through the warning → Start → video in the
+        Camera app (works; dev install) and a browser call (to do), then through the real installer
+  - [~] Reconnect without scanning; Forget makes it scan again (Forget confirmed, also from the Devices page)
+  - [ ] Pause/resume from the PC and the page; lock → "paused" picture → unlock → resumes
+  - [x] Rotation: portrait, landscape and upside down upright on both cameras (iPhone 13)
+  - [ ] The PC's quality / frame-rate choices match the iPhone; 1080p60 works
+  - [ ] Delay measured and written into docs/web-camera-format.md; 1080p30 steady for 10 minutes
+  - [ ] Personal Hotspot over USB test (docs/iphone-wired.md)
+  - [ ] saif: Android USB and Android Wi-Fi unchanged
+  - [x] PC: Camera and Resolution dropdowns opened an invisible list (a closed dropdown laid out after the open one cleared its panel)
+
 ## Backlog
 
 - [~] Lower phone-side latency (capture→encoded 150–230 ms on the test phone) [3.4]: camera/encoder tweaks and a camera-vs-encoder split in the log built; measure on the phone
@@ -58,7 +73,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [ ] Uninstaller: remove UsbDk completely (service + UsbDk.sys stay behind after msiexec) [5.3]
 - [ ] Test a clean install on a different PC (Sandbox needs CPU virtualization enabled in firmware) [2.3]
 - [x] Decide public vs. private repo before sharing builds [8]: public since 1.4.0
-- [ ] iPhone support: iOS app + usbmux transport on the PC (future; needs a Mac, an iPhone, Apple Developer account) [9]
+- [ ] iPhone native app + usbmux transport on the PC (only if a Mac and the developer program become available) [9.2]
 - [ ] Windows 10 support: DirectShow camera for Windows 10, installer picks per Windows version (needs a Windows 10 PC to test) [10]
 - [ ] Wireless option: Wi-Fi transport with discovery, one-time pairing and encryption; cable stays the default [11]
 
@@ -86,7 +101,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 
 | Version | Date | What changed |
 |---|---|---|
-| **1.4.0** | 2026-10-11 | **Stable.** Wi-Fi mode (discovery, one-time pairing with a code, encrypted sessions) and the v2 shell on both apps. A phone can now start the pairing itself from Find Devices. PC: Devices page split into Connected / Available, Scan goes there, Resolution and Frame rate open with no phone, vsync-paced transitions, Minimise and Close drawn again, the owner's "Camera paused" picture. Pairing surfaces moved off the old beige/navy. |
+| **1.4.1** | 2026-10-11 | **iPhone support** through a page in Safari served by the PC (QR pairing, remembered iPhones, rotation from the motion sensors, firewall rule on private networks). Camera and Resolution dropdowns draw their list again. PC only: the phone app stays 1.4.0. |
+| 1.4.0 | 2026-10-11 | **Stable.** Wi-Fi mode (discovery, one-time pairing with a code, encrypted sessions) and the v2 shell on both apps. A phone can now start the pairing itself from Find Devices. PC: Devices page split into Connected / Available, Scan goes there, Resolution and Frame rate open with no phone, vsync-paced transitions, Minimise and Close drawn again, the owner's "Camera paused" picture. Pairing surfaces moved off the old beige/navy. |
 | 1.4.0-beta4 | 2026-10-11 | Windows XP (Luna) redesign of both apps, new camera logo, hills artwork, PC live preview, scan buttons, screen-reader support, Wi-Fi pairing dialog. |
 | 1.3.3 | 2026-10-10 | Hotfix: the 1.3.2 phone app crashed on launch (R8 packageScope); clearer frame-rate hint. |
 | 1.3.2 | 2026-10-10 | 30/60/120 fps per quality (high-speed capture), no-UAC phone setup, dim screen + heat warning, lower phone latency, 4K bitrate fixes. |
@@ -114,3 +130,6 @@ run `installer\build.ps1` and `gradlew assembleDebug`, commit, tag `vX.Y.Z`, pus
 | 2026-10-11 | A phone may ask a PC it can see to connect ("MYCAM+1" on the discovery socket), so a Wi-Fi pairing can be started from either screen (PROTOCOL.md "The phone asks for a session") |
 | 2026-10-11 | The paused camera picture is `design/assets/source/camera-paused-reference.png` itself, cropped to 16:9 — not a recreation of it, and with no wordmark over it |
 | 2026-10-11 | Repo is **public** again (it was private from 1.1.1). Everything pushed is world-readable, so the never-commit list is a hard rule. Commits are pushed as a matter of course; tagging and releasing still need an explicit ask. |
+| 2026-10-11 | iPhone support goes through a web page served by the companion (WebCodecs + `wss://`), not a native app. One MyCam packet per WebSocket message; no protocol change (docs/web-camera-format.md) |
+| 2026-10-11 | The QR code's one-time code is traded for a device token with `POST /pair` (HTTPS), not inside the WebSocket, so the "binary messages only" format stays as agreed. The PC stores only the token's SHA-256 |
+| 2026-10-11 | The iPhone page's server listens whenever the companion runs (so paired iPhones reconnect without scanning); `/ws` needs a valid device token; the firewall rule is private networks only |

@@ -98,6 +98,23 @@ TASKS.md.
 - **Testing Wi-Fi:** unplug the cable, because a plugged-in phone always takes over, and use wireless adb.
   adb on USB blocks MyCam's USB access.
 
+## iPhone web camera (branch `aiyan-webtest`; Aiyan's area, docs/AIYAN-IPHONE.md)
+
+- An iPhone uses a **page served by the companion**: HTTPS + WebSocket on TCP 47900. The page uses
+  WebCodecs H.264, and the format is in `docs/web-camera-format.md`. One MyCam packet per WebSocket
+  message; the protocol itself is unchanged.
+- **PC:** `web_server.cpp` (single-threaded and polled), `tls_server.cpp` (Schannel; self-signed
+  certificate in `CurrentUser\My`, 397 days), `web_proto.cpp` (pure, unit-tested), `phone_link_web.cpp`
+  (the third transport in `SessionLoop`). The page lives in `pc/companion/web/` (embedded through
+  `companion.rc`).
+- **Threads:** `WebServer::Poll()` runs only on the worker thread: from the idle loop, inside
+  `SessionLoop` (`PollWeb`), and in the Wi-Fi handshake wait. Keep it that way.
+- **Tokens:** the QR code's one-time code becomes a device token through `POST /pair`. Only the token's
+  hash is stored (`HKCU\Software\MyCam\WebDevices`). **Never log tokens or the QR address.**
+- **Tests:** `ctest` also runs `web_golden` (Node.js). For end-to-end checks without a phone, build with
+  `-DMYCAM_BUILD_TOOLS=ON`, then run `web_probe.exe` with `pc/tools/webtest/fake_page.js` or
+  `browser_check.js`. These register test devices in HKCU: delete them afterwards.
+
 ## Releasing
 
 - Test the **release** APK on a real phone before publishing: R8 only runs on release builds (1.3.2

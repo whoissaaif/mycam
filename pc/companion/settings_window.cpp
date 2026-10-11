@@ -21,6 +21,7 @@
 #include "ui_layout.h"
 #include "ui_motion.h"
 #include "xp_draw.h"
+#include "../third_party/qrcodegen/qrcodegen.hpp"
 
 namespace mycam {
 
@@ -81,6 +82,7 @@ struct DeviceRow {
     std::wstring name, where, status;
     uint32_t ipv4 = 0;
     bool usb = false, connected = false;
+    std::string webId;    // A remembered iPhone (web page): its device id, for Forget.
     int card = kNone;     // The card this row is laid out in (Connected or Available).
     bool firstInCard = false; // No divider above the first row of a card.
     Box glyphBox, nameBox, whereBox, transportBox;
@@ -190,6 +192,11 @@ struct SettingsWindow::Impl {
     // "Scan for phones": pressed at (so the marquee shows before the link picks the request up).
     uint64_t scanPressedAt = 0, usbScanAt = 0;
     uint32_t scansAtPress = 0;
+    // "Connect an iPhone": the address the QR code points at (0: the best one) and the code's modules.
+    uint32_t webIp = 0;
+    std::wstring qrUrl;
+    std::vector<uint8_t> qrModules;
+    int qrSize = 0;
 
     // Preview.
     PreviewSource preview;
@@ -213,7 +220,7 @@ struct SettingsWindow::Impl {
     LinkStatus Status() const { return model->status(); }
     static bool Connected(const LinkStatus& s) { return s.state >= LinkState::Idle && s.camera.valid; }
 
-    bool PauseEnabled(const LinkStatus& s) const { return s.state >= LinkState::Idle && !s.lockPaused; }
+    bool PauseEnabled(const LinkStatus& s) const { return s.state >= LinkState::Idle && !s.lockPaused && !s.webAway; }
 
     bool Enabled(int id, const LinkStatus& s) const {
         const proto::CameraInfo& c = s.camera;
@@ -291,6 +298,9 @@ struct SettingsWindow::Impl {
 
     void GoTo(Page next) {
         if (next == page) return;
+        // The QR code (and its one-time code) exists only while its page shows.
+        if (page == Page::IPhone && model->stopWebPairing) model->stopWebPairing();
+        if (next == Page::IPhone && model->startWebPairing) model->startWebPairing(webIp);
         if (page != Page::Pairing) returnPage = page;
         // The outgoing page keeps the layout it already had and fades out over it (§12).
         fadeItems = items;
@@ -406,7 +416,9 @@ struct SettingsWindow::Impl {
         }
         curVisible = wasVisible;
         curClip = wasClip;
-        dropPanel = open ? Box{x, panelTop, x + w, ry + 4} : Box{};
+        // Only the open list sets the panel (Layout clears it): a closed dropdown laid out after the open one
+        // must not wipe it, or the list is clickable but never drawn.
+        if (open) dropPanel = Box{x, panelTop, x + w, ry + 4};
     }
     Box dropPanel = {};
 
@@ -533,6 +545,7 @@ struct SettingsWindow::Impl {
         case Page::Camera: LayoutCamera(s, now, x, &y, w); break;
         case Page::Settings: LayoutSettings(s, x, &y, w); break;
         case Page::About: LayoutAbout(x, &y, w); break;
+        case Page::IPhone: LayoutIPhone(s, x, &y, w); break;
         default: LayoutPairing(s, now, x, &y, w); break;
         }
         contentH = y + scroll - content.t + kPad;
@@ -598,6 +611,15 @@ struct SettingsWindow::Impl {
         // Wi-Fi card.
         LayoutConnectCard(kCardWifi, Glyph::Wifi, L"Wi-Fi Connection", L"Both devices must be on the same Wi-Fi network.",
                           kScan, L"&Scan for Devices", x, y, w);
+        LayoutScanSentence(s, now, x, y, w);
+        *y += kGap;
+        // iPhone card: the web camera (a page in Safari), on the same Wi-Fi.
+        LayoutConnectCard(kCardWebHome, Glyph::Phone, L"iPhone or iPad",
+                          L"Use Safari on the same Wi-Fi: scan a QR code, nothing to install.", kConnectIPhone,
+                          L"Connect an &iPhone", x, y, w);
+    }
+
+    void LayoutScanSentence(const LinkStatus& s, uint64_t now, float x, float* y, float w) {
         if (Scanning(s, now) || s.scansDone) {
             *y += 6;
             const std::wstring sentence = Scanning(s, now) ? L"Looking for phones on this Wi-Fi…"
@@ -710,6 +732,19 @@ struct SettingsWindow::Impl {
             r.status = r.connected ? L"Connected" : L"Waiting for the MyCam app";
             rows.push_back(std::move(r));
         }
+        // iPhones (the web page): the one in use, and the remembered ones (they connect when their page opens).
+        for (const LinkStatus::WebDeviceRow& d : s.webDevices) {
+            if (int(rows.size()) >= kScanRowsMax) break;
+            DeviceRow r;
+            r.webId = d.id;
+            r.name = d.name;
+            r.connected = d.connected && s.state >= LinkState::Idle;
+            r.usb = d.connected && s.webLink == L"USB hotspot";
+            r.where = d.connected ? L"Safari · " + (s.webLink.empty() ? std::wstring(L"Wi-Fi") : s.webLink) : L"Safari";
+            r.status = r.connected ? (s.webAway ? L"Connected · page closed or locked" : L"Connected")
+                                   : L"Remembered: open MyCam on it to connect";
+            rows.push_back(std::move(r));
+        }
         for (const NearbyPhone& p : s.nearbyPhones) {
             if (int(rows.size()) >= kScanRowsMax) break;
             DeviceRow r;
@@ -754,10 +789,12 @@ struct SettingsWindow::Impl {
             r.card = cardId;
             r.firstInCard = slot == 0;
             const float ry = card.t + 1 + rowH * float(slot);
-            const bool canConnect = !r.connected && !r.usb && model->connectTo;
+            const bool canConnect = !r.connected && !r.usb && r.webId.empty() && model->connectTo;
+            const bool canForget = !r.webId.empty() && model->forgetWebDevice;
+            const Size forget = ButtonSize(L"Forget", 84);
             r.glyphBox = MakeBox(card.l + kCardPad, ry + (rowH - 24) / 2, 24, 24);
             const float nameL = r.glyphBox.r + 12;
-            const float nameR = card.r - kCardPad - (canConnect ? connect.w + 12 : 0) - 26;
+            const float nameR = card.r - kCardPad - (canConnect ? connect.w + 12 : canForget ? forget.w + 12 : 0) - 26;
             r.nameBox = {nameL, ry + (rowH - lineH - smallH - 2) / 2, nameR, ry + (rowH - lineH - smallH - 2) / 2 + lineH};
             r.whereBox = {nameL, r.nameBox.b + 1, nameR, r.nameBox.b + 1 + smallH};
             r.transportBox = MakeBox(nameR + 4, ry + (rowH - 18) / 2, 18, 18);
@@ -773,6 +810,13 @@ struct SettingsWindow::Impl {
                                     groupId);
                 c.e.name = L"Connect to " + r.name;
                 c.drawGroup = cardId;
+            }
+            if (canForget) { // A remembered iPhone: Forget, right here (it scans the QR code again next time).
+                Item& f = AddButton(ScanRowId(int(i), 2), L"Forget", FlatStyle::Secondary,
+                                    MakeBox(card.r - kCardPad - forget.w, ry + (rowH - forget.h) / 2, forget.w, forget.h),
+                                    groupId);
+                f.e.name = L"Forget " + r.name + L" (it scans the code again next time)";
+                f.drawGroup = cardId;
             }
         }
         *y = card.b + kGap;
@@ -790,7 +834,7 @@ struct SettingsWindow::Impl {
             .glyph = Glyph::Refresh;
         items.back().hasGlyph = true;
         float ty = *y + t.h + 2;
-        const std::wstring sub = L"Phones on this Wi-Fi, and the one on the cable";
+        const std::wstring sub = L"Phones on this Wi-Fi, the one on the cable, and your iPhones";
         const Size st = paint.Measure(Font::Small, sub, titleW);
         {
             Item& sb = Add(kPageSubtitle, Kind::Text, L"", MakeBox(x, ty, titleW, st.h), kNone);
@@ -1045,6 +1089,197 @@ struct SettingsWindow::Impl {
         *y = box.b;
     }
 
+    // --- Connect an iPhone (the web camera) ---------------------------------------------------------
+
+    static std::wstring WideAscii(const std::string& s) { return std::wstring(s.begin(), s.end()); }
+
+    std::wstring AddressLabel(const web::NetAddress& a) const {
+        const wchar_t* kind = a.kind == web::NetKind::WiFi       ? L"Wi-Fi"
+                            : a.kind == web::NetKind::Ethernet   ? L"Ethernet"
+                            : a.kind == web::NetKind::IPhoneUsb ? L"iPhone over USB"
+                                                                 : nullptr;
+        std::wstring label = WideAscii(a.text);
+        if (kind) label += std::wstring(L" · ") + kind;
+        if (!a.adapter.empty() && (!kind || a.adapter != kind)) label += L" (" + a.adapter + L")";
+        return label;
+    }
+
+    // The QR code's modules for the current address (it changes with each new one-time code).
+    void UpdateQr(const std::wstring& url) {
+        if (url == qrUrl) return;
+        qrUrl = url;
+        qrModules.clear();
+        qrSize = 0;
+        if (url.empty()) return;
+        try {
+            std::string text; // The address is ASCII.
+            for (wchar_t c : url) text += char(c);
+            const qrcodegen::QrCode qr = qrcodegen::QrCode::encodeText(text.c_str(), qrcodegen::QrCode::Ecc::MEDIUM);
+            qrSize = qr.getSize();
+            qrModules.resize(size_t(qrSize) * size_t(qrSize));
+            for (int yy = 0; yy < qrSize; ++yy)
+                for (int xx = 0; xx < qrSize; ++xx)
+                    qrModules[size_t(yy) * size_t(qrSize) + size_t(xx)] = qr.getModule(xx, yy) ? 1 : 0;
+        } catch (...) {
+            qrSize = 0;
+        }
+    }
+
+    void LayoutIPhone(const LinkStatus& s, float x, float* y, float w) {
+        PageHeader(L"Connect an iPhone", L"Use an iPhone or iPad as the camera, in Safari. Nothing to install.", x, y, w);
+        const float ix = x + kCardPad, iw = w - 2 * kCardPad;
+        UpdateQr(s.webUrl);
+        const web::NetAddress* current = nullptr;
+        for (const web::NetAddress& a : s.webAddresses) if (a.ipv4 == s.webAddress) current = &a;
+        {
+            const size_t ci = cards.size(), ii = items.size();
+            cards.push_back({kCardIPhone, MakeBox(x, *y, w, 10)});
+            Item& card = Add(kCardIPhone, Kind::Card, L"", MakeBox(x, *y, w, 10), kNone);
+            card.e.name = L"Scan this code with the iPhone";
+            float cy = *y + kCardPad;
+            if (!s.webReady || s.webAddresses.empty()) {
+                const std::wstring why =
+                    !s.webReady ? L"This isn’t available right now: MyCam couldn’t start its iPhone page on port 47900. "
+                                  L"Restart MyCam; the log says more."
+                                : L"This PC isn’t on a network an iPhone can reach. Connect it to Wi-Fi or Ethernet, "
+                                  L"then come back here.";
+                const Size t = paint.Measure(Font::Body, why, iw);
+                Item& n = Add(kWebUnavailable, Kind::Text, L"", MakeBox(ix, cy, iw, t.h), kCardIPhone);
+                n.e.name = n.label = why;
+                n.e.liveRegion = true;
+                cy += t.h;
+            } else {
+                const float side = std::floor(std::min(196.f, iw * 0.42f));
+                {
+                    Item& qr = Add(kWebQr, Kind::Image, L"", MakeBox(ix, cy, side, side), kCardIPhone);
+                    qr.e.name = current ? L"QR code for https://" + WideAscii(current->text) + L":47900" : L"QR code";
+                }
+                const float tx = ix + side + 18, tw = iw - side - 18;
+                float ty = cy;
+                const std::wstring steps =
+                    L"1.  On the iPhone, open the Camera app and point it at this code. Tap the link that appears.\n"
+                    L"2.  The first time, Safari says the connection isn’t private. Tap Show Details, then “visit this "
+                    L"website”.\n"
+                    L"3.  Tap Start and allow the camera. Then choose “MyCam” as the camera in any app on this PC.";
+                const Size st = paint.Measure(Font::Body, steps, tw);
+                {
+                    Item& t = Add(kWebSteps, Kind::Text, L"", MakeBox(tx, ty, tw, st.h), kCardIPhone);
+                    t.e.name = t.label = steps;
+                    ty += st.h + 10;
+                }
+                const std::wstring note = L"Each code works once, for 5 minutes; then a new one appears. The iPhone and "
+                                          L"this PC must be on the same network.";
+                const Size nt = paint.Measure(Font::Small, note, tw);
+                {
+                    Item& t = Add(kWebNote, Kind::Text, L"", MakeBox(tx, ty, tw, nt.h), kCardIPhone);
+                    t.e.name = t.label = note;
+                    ty += nt.h;
+                }
+                cy = std::max(cy + side, ty) + kGap;
+                if (current) {
+                    const std::wstring addr = L"Address: https://" + WideAscii(current->text) + L":47900";
+                    const Size at = paint.Measure(Font::Body, addr, iw);
+                    Item& a = Add(kWebAddress, Kind::Text, L"", MakeBox(ix, cy, iw, at.h), kCardIPhone);
+                    a.e.name = a.label = addr;
+                    cy += at.h;
+                }
+                // Several networks: let the user pick the one the iPhone is on.
+                if (s.webAddresses.size() > 1) {
+                    cy += kGap;
+                    std::vector<std::pair<int, std::wstring>> entries;
+                    int selected = kNone;
+                    for (size_t i = 0; i < s.webAddresses.size() && i < size_t(kWebAddrMax); ++i) {
+                        entries.push_back({kWebAddrBase + int(i), AddressLabel(s.webAddresses[i])});
+                        if (s.webAddresses[i].ipv4 == s.webAddress) selected = kWebAddrBase + int(i);
+                    }
+                    AddDropdown(kDdWebAddress, L"&Network the iPhone is on", current ? AddressLabel(*current) : L"—",
+                                entries, selected, kCardIPhone, ix, &cy, std::min(iw, 360.f), true);
+                }
+            }
+            cy += kCardPad;
+            const Box box = MakeBox(x, *y, w, cy - *y);
+            cards[ci].box = box;
+            items[ii].e.rect = box;
+            *y = box.b + kGap + 4;
+        }
+
+        // The iPhones that can reconnect without scanning.
+        const std::wstring heading = L"iPhones that can reconnect";
+        const Size ht = paint.Measure(Font::BodyBold, heading, w);
+        {
+            Item& h = Add(kWebDevicesTitle, Kind::Text, L"", MakeBox(x, *y, w, ht.h), kNone);
+            h.e.name = h.label = heading;
+            *y += ht.h + 6;
+        }
+        const size_t n = std::min(s.webDevices.size(), size_t(kWebDevMax));
+        if (n > 0) {
+            const float rowH = std::max(48.f, lineH + smallH + 22);
+            const Box card = BeginCard(kCardWebDevices, x, *y, w, rowH * float(n) + 2, heading);
+            Add(kWebDevicesList, Kind::Group, heading, card, kCardWebDevices);
+            const Size forget = ButtonSize(L"Forget", 84);
+            for (size_t i = 0; i < n; ++i) {
+                const LinkStatus::WebDeviceRow& d = s.webDevices[i];
+                const float ry = card.t + 1 + rowH * float(i);
+                wchar_t added[64] = L"";
+                if (d.addedUnix) {
+                    const __time64_t t = __time64_t(d.addedUnix);
+                    tm local = {};
+                    _localtime64_s(&local, &t);
+                    wcsftime(added, std::size(added), L"Added %#d %b %Y", &local);
+                }
+                Item& row = Add(WebDeviceRowId(int(i), 0), Kind::Text, L"",
+                                Box{card.l + kCardPad, ry, card.r - kCardPad - forget.w - 12, ry + rowH}, kWebDevicesList);
+                row.label = d.name;
+                row.sub = std::wstring(added) + (d.connected ? L" · Connected now" : L"");
+                row.e.name = d.name + L", " + row.sub;
+                row.drawGroup = kCardWebDevices;
+                Item& b = AddButton(WebDeviceRowId(int(i), 1), L"Forget", FlatStyle::Secondary,
+                                    MakeBox(card.r - kCardPad - forget.w, ry + (rowH - forget.h) / 2, forget.w, forget.h),
+                                    kWebDevicesList);
+                b.e.name = L"Forget " + d.name + L" (it scans the code again next time)";
+                b.drawGroup = kCardWebDevices;
+            }
+            *y = card.b + 6;
+        }
+        const std::wstring note = n == 0 ? L"None yet. An iPhone is remembered after it scans the code."
+                                         : L"They connect again when you open the MyCam page on them (or its Home Screen "
+                                           L"icon) and tap Start. Forget one to make it scan the code again.";
+        const Size nt = paint.Measure(Font::Small, note, w);
+        Item& nn = Add(kWebDevicesNote, Kind::Text, L"", MakeBox(x + 2, *y, w, nt.h), kNone);
+        nn.e.name = nn.label = note;
+        *y += nt.h;
+    }
+
+    void DrawQr(const Box& r) {
+        const xp::Palette& pal = paint.Colors();
+        paint.RoundRect(r, 6, Rgb(0xFFFFFF));
+        paint.RoundFrame(r, 6, pal.cardBorder);
+        if (qrSize <= 0) {
+            paint.Text(Font::Small, L"Making a code…", r, pal.subtle, Align::Center, -1, false, true);
+            return;
+        }
+        // Four modules of white around the code: the quiet zone scanners need.
+        const float module = std::floor(r.W() / float(qrSize + 8) * 4.f) / 4.f;
+        const float size = module * float(qrSize);
+        const float ox = std::round(r.l + (r.W() - size) / 2), oy = std::round(r.t + (r.H() - size) / 2);
+        ID2D1DeviceContext* dc = paint.Dc();
+        const D2D1_ANTIALIAS_MODE was = dc->GetAntialiasMode();
+        dc->SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
+        ID2D1SolidColorBrush* ink = paint.Brush(Rgb(0x000000));
+        for (int yy = 0; yy < qrSize; ++yy) {
+            for (int xx = 0; xx < qrSize;) { // One rectangle per run of dark modules.
+                if (!qrModules[size_t(yy) * size_t(qrSize) + size_t(xx)]) { ++xx; continue; }
+                int end = xx;
+                while (end < qrSize && qrModules[size_t(yy) * size_t(qrSize) + size_t(end)]) ++end;
+                dc->FillRectangle(D2D1::RectF(ox + module * float(xx), oy + module * float(yy), ox + module * float(end),
+                                              oy + module * float(yy + 1)),
+                                  ink);
+                xx = end;
+            }
+        }
+        dc->SetAntialiasMode(was);
+    }
+
     // --- Pairing (a page while the window is open; the dialog covers the window being closed) --------
 
     void LayoutPairing(const LinkStatus& s, uint64_t now, float x, float* y, float w) {
@@ -1218,7 +1453,10 @@ struct SettingsWindow::Impl {
         case kNavDevicesLink:
             GoTo(Page::Devices);
             return true;
-        case kDdCamera: case kDdQuality: case kDdFps:
+        case kConnectIPhone:
+            GoTo(Page::IPhone);
+            return true;
+        case kDdCamera: case kDdQuality: case kDdFps: case kDdWebAddress:
             if (openDrop == id) CloseDropdown();
             else {
                 openDrop = id;
@@ -1270,7 +1508,25 @@ struct SettingsWindow::Impl {
         case kCaptionMin: ShowWindow(hwnd, SW_MINIMIZE); return true;
         default: {
             int part = 0;
+            if (id >= kWebAddrBase && id < kWebAddrBase + kWebAddrMax) { // The network the QR code points at.
+                const size_t i = size_t(id - kWebAddrBase);
+                if (i < s.webAddresses.size() && model->startWebPairing) {
+                    webIp = s.webAddresses[i].ipv4;
+                    model->startWebPairing(webIp);
+                }
+                break;
+            }
+            const int webRow = WebDeviceRowIndex(id, &part);
+            if (webRow >= 0 && part == 1 && webRow < int(s.webDevices.size()) && model->forgetWebDevice) {
+                model->forgetWebDevice(s.webDevices[size_t(webRow)].id);
+                break;
+            }
             const int row = ScanRowIndex(id, &part);
+            if (row >= 0 && part == 2 && row < int(deviceRows.size()) && model->forgetWebDevice &&
+                !deviceRows[size_t(row)].webId.empty()) {
+                model->forgetWebDevice(deviceRows[size_t(row)].webId);
+                break;
+            }
             if (row >= 0 && part == 1 && row < int(deviceRows.size()) && model->connectTo) {
                 model->connectTo(deviceRows[size_t(row)].ipv4); // One Wi-Fi session (pairing as usual if new).
                 break;
@@ -1588,6 +1844,7 @@ struct SettingsWindow::Impl {
             break;
         case Kind::Image:
             if (e.id == kPreview) DrawPreview(dc, e.rect, s, now, true);
+            else if (e.id == kWebQr) DrawQr(e.rect);
             else if ((e.id == kAboutLogo || e.id == kPairArt) && appIcon48)
                 dc->DrawBitmap(appIcon48.Get(), D2D1::RectF(e.rect.l, e.rect.t, e.rect.r, e.rect.b), 1.f,
                                D2D1_BITMAP_INTERPOLATION_MODE_LINEAR);
@@ -1644,9 +1901,10 @@ struct SettingsWindow::Impl {
             break;
         case kPageSubtitle: case kAboutLicence: case kFpsReason: case kScanResult: case kUsbNote: case kControlsNote:
         case kNowMode: case kStatusSentence: case kConnectedNote: case kAvailableNote: case kCameraHint:
+        case kWebNote: case kWebDevicesNote:
             paint.Text(Font::Small, it.label, e.rect, pal.subtle);
             break;
-        case kConnectedTitle: case kAvailableTitle:
+        case kConnectedTitle: case kAvailableTitle: case kWebDevicesTitle:
             paint.Text(Font::BodyBold, it.label, e.rect, pal.text);
             break;
         default: {
@@ -1654,6 +1912,14 @@ struct SettingsWindow::Impl {
             const int row = ScanRowIndex(e.id, &part);
             if (row >= 0 && part == 0 && row < int(deviceRows.size())) {
                 DrawDeviceRow(deviceRows[size_t(row)], row);
+                break;
+            }
+            if (WebDeviceRowIndex(e.id, &part) >= 0 && part == 0) { // A remembered iPhone: its name, then when added.
+                const float lh = paint.LineHeight(Font::BodyBold), sh = paint.LineHeight(Font::Small);
+                const float top = e.rect.t + (e.rect.H() - lh - sh - 2) / 2;
+                paint.Text(Font::BodyBold, it.label, Box{e.rect.l, top, e.rect.r, top + lh}, pal.text, Align::Leading, -1, true);
+                paint.Text(Font::Small, it.sub, Box{e.rect.l, top + lh + 2, e.rect.r, top + lh + 2 + sh}, pal.subtle,
+                           Align::Leading, -1, true);
                 break;
             }
             paint.Text(Font::Body, it.label, e.rect, pal.text);
@@ -2137,6 +2403,7 @@ struct SettingsWindow::Impl {
         case WM_GETDLGCODE:
             return DLGC_WANTALLKEYS;
         case WM_DESTROY:
+            if (page == Page::IPhone && model->stopWebPairing) model->stopWebPairing(); // No QR code without its page.
             if (uia) uia->Disconnect(); // Kept until the next Create: this may run inside its own action.
             KillTimer(hwnd, kTimerAnim);
             KillTimer(hwnd, kTimerPreview);

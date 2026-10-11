@@ -51,11 +51,13 @@ enum Id : int {
     // Cards (v2 pages).
     kCardUsb = 110, kCardWifi = 111, kCardDevices = 112, kCardControls = 113, kCardSettings = 114,
     kCardAbout = 115, kCardStatus = 116, kCardPairing = 117, kCardConnected = 118,
+    kCardIPhone = 119, kCardWebDevices = 120, kCardWebHome = 121, // "Connect an iPhone" (web camera).
     // "Now" group / the Home page's status area.
     kStatusHeadline = 200, kStatusDetail = 201, kPause = 202, kLivePill = 203, kStatusProgress = 204,
     kShowPairing = 205, kScanNow = 206, // "Scan for phones" in Now (only while no phone is connected).
     kScanUsb = 207,                     // "Scan for USB Devices" (re-enumerate + reconnect).
     kPageTitle = 208, kPageSubtitle = 209, kUsbNote = 210, kNavDevicesLink = 211,
+    kConnectIPhone = 212, // Home: "Connect an iPhone" (opens the iPhone page).
     // Camera group.
     kBack = 300, kFront = 301, kCameraNote = 302,
     kDdCamera = 303, // Camera dropdown; its entries are kBack / kFront.
@@ -87,15 +89,23 @@ enum Id : int {
     kChipRes = 816, kChipFps = 817, kChipCam = 818,      // The three dark pills under the preview.
     // Pairing (the dialog, and the pairing page in the window).
     kPairTitle = 900, kPairCode = 901, kPairHint = 902, kPairProgress = 903, kPairCancel = 904, kPairArt = 905,
+    // "Connect an iPhone" page: the QR code, the steps, the address (and the network to use), and the
+    // remembered iPhones (rows: WebDeviceRowId).
+    kWebQr = 920, kWebSteps = 921, kWebAddress = 922, kDdWebAddress = 923, kWebNote = 924, kWebDevicesTitle = 925,
+    kWebDevicesNote = 926, kWebDevicesList = 927, kWebUnavailable = 928,
     // About page.
     kAboutLogo = 950, kAboutName = 951, kAboutVersion = 952, kAboutText = 953, kAboutLicence = 954,
     // Scan results: one block of ids per row (ScanRowId).
     kScanRowBase = 1000, kScanRowStride = 10, kScanRowsMax = 16,
+    // "Connect an iPhone": the network dropdown's entries, and the remembered iPhones (part 0 the row, part 1
+    // its Forget button).
+    kWebAddrBase = 3000, kWebAddrMax = 8,
+    kWebDevBase = 3100, kWebDevStride = 10, kWebDevMax = 16,
 };
 
 // The pages of the v2 shell (redesign-v2.md §2). Pairing has no nav item: the window shows it while a
 // phone is pairing and returns to the page the user was on when the code is gone.
-enum class Page : int { Home = 0, Devices = 1, Camera = 2, Settings = 3, About = 4, Pairing = 5, Count = 6 };
+enum class Page : int { Home = 0, Devices = 1, Camera = 2, Settings = 3, About = 4, Pairing = 5, IPhone = 6, Count = 7 };
 
 inline int NavIdOf(Page p) {
     switch (p) {
@@ -125,6 +135,14 @@ inline int ScanRowIndex(int id, int* part) {
     if (id < kScanRowBase || id >= kScanRowBase + kScanRowsMax * kScanRowStride) return -1;
     *part = (id - kScanRowBase) % kScanRowStride;
     return (id - kScanRowBase) / kScanRowStride;
+}
+
+// Remembered iPhone `index`: part 0 is its row (Text), part 1 its Forget button.
+inline int WebDeviceRowId(int index, int part) { return kWebDevBase + index * kWebDevStride + part; }
+inline int WebDeviceRowIndex(int id, int* part) {
+    if (id < kWebDevBase || id >= kWebDevBase + kWebDevMax * kWebDevStride) return -1;
+    *part = (id - kWebDevBase) % kWebDevStride;
+    return (id - kWebDevBase) / kWebDevStride;
 }
 
 // Radio sets (Element::radioSet). UIA: the Selection container for their Radios (and Navs).
