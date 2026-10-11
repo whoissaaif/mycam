@@ -124,7 +124,10 @@ void UpdateTray() {
     if (s.state == LinkState::NoDriver && g_shownStatus.state != LinkState::NoDriver) {
         Notify(view.headline.c_str(), view.detail);
     } else if (isConnected && !wasConnected) {
-        Notify(s.wireless ? L"Phone connected over Wi-Fi" : L"Phone connected", L"Choose “MyCam” as the camera in any app.");
+        // "iPhone connected over Wi-Fi" for a web page (its name, and how it reaches the PC).
+        const std::wstring title = s.web ? (s.phoneName.empty() ? L"iPhone" : s.phoneName) + L" connected over " + s.webLink
+                                 : s.wireless ? L"Phone connected over Wi-Fi" : L"Phone connected";
+        Notify(title.c_str(), L"Choose “MyCam” as the camera in any app.");
     } else if (!s.pairingCode.empty() && s.pairingCode != g_shownStatus.pairingCode) {
         Notify(view.headline.c_str(), view.detail); // "Pairing with …": clicking it opens the pairing dialog.
     } else if (s.state == LinkState::Waiting && g_shownStatus.state != LinkState::Waiting && !s.wireless) {
@@ -169,7 +172,7 @@ void ShowMenu(HWND hwnd) {
     SetMenuDefaultItem(menu, kMenuSettings, FALSE); // Bold; also what a left-click opens.
     const bool paused = s.state == LinkState::Paused;
     const bool connected = s.state >= LinkState::Idle;
-    AppendMenuW(menu, MF_STRING | (connected && !s.lockPaused ? 0 : MF_GRAYED), kMenuPause,
+    AppendMenuW(menu, MF_STRING | (connected && !s.lockPaused && !s.webAway ? 0 : MF_GRAYED), kMenuPause,
                 paused ? L"&Resume camera" : L"&Pause camera");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kMenuBack, L"&Back camera");
@@ -338,7 +341,7 @@ std::vector<NearbyPhone> DemoPhones(bool firstConnected) {
 
 // --demo=<state> (developer use, with or without --test-pattern): shows the window in a made-up link state
 // (ready, streaming, paused, pairing, waiting, error, scanning, scan-results, scan-none, scan-wifi) without
-// a phone, for checking the UI. The phone link doesn't run.
+// a phone, for checking the UI (also iphone: the "Connect an iPhone" page). The phone link doesn't run.
 bool DemoStatus(LinkStatus* s) {
     const wchar_t* arg = wcsstr(GetCommandLineW(), L"--demo=");
     if (!arg) return false;
@@ -367,6 +370,20 @@ bool DemoStatus(LinkStatus* s) {
         s->wireless = s->wirelessSearch = true;
         s->phoneName = L"Pixel 8 Pro (Saif's phone with a rather long name)";
         s->pairingCode = L"554 294";
+    } else if (state == L"iphone") { // "Connect an iPhone": a made-up QR code, two networks, two remembered iPhones.
+        s->state = LinkState::Idle;
+        c.width = 0;
+        s->wireless = s->web = true;
+        s->webLink = L"Wi-Fi";
+        s->phoneName = L"iPhone";
+        s->webReady = true;
+        s->webUrl = L"https://192.168.1.20:47900/?t=demo-not-a-real-code0";
+        web::NetAddress wifi, eth;
+        wifi.ipv4 = 0x1401A8C0; wifi.text = "192.168.1.20"; wifi.adapter = L"Wi-Fi"; wifi.kind = web::NetKind::WiFi;
+        eth.ipv4 = 0x0500000A; eth.text = "10.0.0.5"; eth.adapter = L"Ethernet 2"; eth.kind = web::NetKind::Ethernet;
+        s->webAddresses = {wifi, eth};
+        s->webAddress = wifi.ipv4;
+        s->webDevices = {{"a1", L"iPhone", 1760140800, true}, {"b2", L"iPad", 1759000000, false}};
     } else if (state == L"scan-wifi") { // Connected over Wi-Fi: the scan shows in the Wi-Fi group.
         s->state = LinkState::Idle;
         c.width = 0;
@@ -527,6 +544,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     model.showPairing = [] { if (g_pairing && g_settings) g_pairing->Show(g_settings->Hwnd()); };
     model.scanForPhones = [] { g_link->ScanForPhones(); };
     model.connectTo = [](uint32_t ip) { g_link->ConnectTo(ip); };
+    model.startWebPairing = [](uint32_t ip) { g_link->StartWebPairing(ip); };
+    model.stopWebPairing = [] { g_link->StopWebPairing(); };
+    model.forgetWebDevice = [](const std::string& id) { g_link->ForgetWebDevice(id); };
     model.testPattern = testPattern;
     LinkStatus demo;
     const bool demoMode = DemoStatus(&demo);

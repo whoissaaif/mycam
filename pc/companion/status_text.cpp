@@ -10,7 +10,8 @@ StatusView DescribeStatus(const LinkStatus& s, bool cameraRegistered) {
                 L"Windows 11 is required.", L"Run the MyCam installer again. Windows 11 is required."};
     }
     const std::wstring camera = s.facing == proto::kFacingFront ? L"Front camera" : L"Back camera";
-    const std::wstring link = s.wireless ? L"Wi-Fi" : L"USB";
+    // A web page (an iPhone in Safari) says how it reaches the PC: Wi-Fi, or the iPhone's USB hotspot.
+    const std::wstring link = s.web && !s.webLink.empty() ? s.webLink : s.wireless ? L"Wi-Fi" : L"USB";
     if (s.lockPaused && s.state != LinkState::NoDriver) {
         return {L"Paused", L"Windows is locked. MyCam turns the camera back on when you unlock.", kIconPaused,
                 L"Windows is locked", L"MyCam turns the camera back on when you unlock."};
@@ -44,12 +45,12 @@ StatusView DescribeStatus(const LinkStatus& s, bool cameraRegistered) {
         return {L"Phone found", L"Open MyCam on the phone, and tap OK if it asks.", kIconDisconnected,
                 L"Connecting over USB…", L"Open MyCam on the phone, and tap OK if it asks.", StatusProgress::Working};
     case LinkState::Idle:
-        return {L"Ready", camera + (s.wireless ? L" · Wi-Fi" : L"") + L". Choose “MyCam” as the camera in any app.", kIconReady,
+        return {L"Ready", camera + (s.wireless ? L" · " + link : L"") + L". Choose “MyCam” as the camera in any app.", kIconReady,
                 camera + L" · " + link, L"Choose “MyCam” as the camera in any app. The camera turns on only while an app uses it."};
     case LinkState::Streaming: {
         std::wstring detail = camera;
         if (s.width) detail += L" · " + std::to_wstring(s.width) + L" × " + std::to_wstring(s.height);
-        if (s.wireless) detail += L" · Wi-Fi";
+        if (s.wireless) detail += L" · " + link;
         std::wstring facts = camera;
         if (s.width) facts += L" · " + std::to_wstring(s.width) + L" × " + std::to_wstring(s.height);
         facts += L" · " + link;
@@ -59,6 +60,12 @@ StatusView DescribeStatus(const LinkStatus& s, bool cameraRegistered) {
         return {L"Camera problem", L"Check the phone. Another app may be using its camera.", kIconError,
                 camera + L" · " + link, L"Check the phone. Another app may be using its camera."};
     case LinkState::Paused:
+        if (s.web && s.webAway) {
+            const std::wstring phone = s.phoneName.empty() ? std::wstring(L"the iPhone") : s.phoneName;
+            return {L"Paused", L"Open MyCam again on " + phone + L" to resume. Apps see a “Camera paused” picture.",
+                    kIconPaused, camera + L" · " + link,
+                    L"The MyCam page on " + phone + L" is locked or in the background. Open it again to resume."};
+        }
         return {L"Paused", L"The camera is off. Apps see a “Camera paused” picture. Resume here or on the phone.", kIconPaused,
                 camera + L" · " + link, L"The camera is off. Apps see a “Camera paused” picture. Resume here or on the phone."};
     }

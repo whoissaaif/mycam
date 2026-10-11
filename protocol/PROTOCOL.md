@@ -99,6 +99,12 @@ either way (`RESUME`). While paused it reports `STATE(paused)`, keeps its camera
 The PC's automatic pause while Windows is locked is PC-only: the PC simply stops asking for video
 (`STOP`) and never sends `START` until unlock. It does not change the phone's pause state.
 
+## Web transport (iPhone page)
+
+The same packets and commands also run over a secure WebSocket, one packet or command per binary message,
+between the PC companion and a page it serves to iPhones. The packets are unchanged. Pairing (a QR code
+and device tokens over HTTPS) sits outside this protocol. See `docs/web-camera-format.md`.
+
 ## Wireless transport (1.4, beta)
 
 The same packets and commands can run over TCP instead of the USB accessory. The phone is the server and

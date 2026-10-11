@@ -17,6 +17,7 @@ Remove-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 
 Remove-Item 'HKCU:\Software\MyCam' -Recurse -ErrorAction SilentlyContinue
 if (Test-Path "$dest\MyCamVCam.dll") { & regsvr32.exe /s /u "$dest\MyCamVCam.dll" }
 & schtasks.exe /Delete /TN 'MyCam phone driver' /F 2>$null | Out-Null
+& netsh.exe advfirewall firewall delete rule name="MyCam iPhone camera" 2>$null | Out-Null
 Restart-Service FrameServer -Force -ErrorAction SilentlyContinue
 Remove-Item $dest -Recurse -Force -ErrorAction SilentlyContinue
 

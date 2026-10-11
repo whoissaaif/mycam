@@ -233,43 +233,65 @@ All of it is drawn from scratch by scripts in `design/tools/` (shared library `l
 
 ---
 
-## 9. iPhone support (L): ⏳ future
+## 9. iPhone support (L): 🟡 web camera built (branch `aiyan-webtest`), iPhone tests left
 
-Bring MyCam to iPhone, wired over USB to the same Windows 11 PC app. Planned for after the Android
-version is polished.
+Aiyan's part of the project ([docs/AIYAN-IPHONE.md](docs/AIYAN-IPHONE.md)).
 
-**How it would work**
-- iPhones have no Android Open Accessory equivalent. Instead, use Apple's own USB channel: Windows talks
-  to iPhones through Apple Mobile Device Support (installed with Apple's free **Apple Devices** app or
-  iTunes). The iPhone app listens on a TCP port; the PC companion connects to it over the cable through
-  that service, using libimobiledevice's `libusbmuxd` (LGPL-2.1). No jailbreak, no Wi-Fi.
-- iPhone app (Swift / SwiftUI): AVFoundation capture → VideoToolbox hardware H.264 → the existing MyCam
-  wire protocol (`protocol/PROTOCOL.md`), so the PC side decodes it unchanged.
-- PC companion: a new transport next to the USB accessory code (`phone_link.cpp`), picked by phone type.
+**Approach: a web page, not an app.** A native iOS app needs a Mac with Xcode and the $99/year developer
+program, so the iPhone uses Safari instead ([docs/iphone-web-plan.md](docs/iphone-web-plan.md)). The PC
+companion serves a page over HTTPS. The page:
+- captures the camera;
+- encodes H.264 on the phone's hardware (WebCodecs);
+- sends normal MyCam packets over a secure WebSocket, one per message
+  ([docs/web-camera-format.md](docs/web-camera-format.md)).
 
-**What carries over:** the virtual camera DLL, H.264 decoding, pause and lock-pause, status pictures,
-tray and settings window, installer, and the protocol and its tests. Roughly 60% of the PC side.
+On the PC, the page is a third transport in the one single-threaded `SessionLoop`, next to USB and Android
+Wi-Fi. Everything after the transport carries over unchanged: decoding, the virtual camera, pause and
+lock-pause, the status pictures, the controls. It also works on iPads, on Android phones without the
+app, and in desktop browsers.
 
-**Differences from Android (to explain to users)**
+### 9.1 Wireless (the web page): 🟡 built, iPhone tests left
+- [x] PC: HTTPS + WebSocket server in the companion (`web_server.cpp`):
+  - Schannel TLS with a self-signed certificate made once per user (`tls_server.cpp`);
+  - the page embedded in the exe;
+  - port 47900.
+- [x] PC: the page as a transport in `SessionLoop` (`phone_link_web.cpp`), with no new threads.
+  - A plugged-in phone takes over.
+  - Other pages wait while a phone is connected.
+  - A paused page that iOS disconnects keeps its session for 5 minutes.
+- [x] Pairing: QR code → one-time code (128 bits, 5 minutes) → `POST /pair` → device token (256 bits;
+  the PC stores only its hash). `/ws` refuses everything else.
+- [x] Settings: "Connect an iPhone" page with the QR code (Nayuki's qrcodegen, MIT), a choice of network,
+  and remembered iPhones with Forget. An iPhone card on Home.
+- [x] Installer: inbound firewall rule, TCP 47900, private networks only; removed on uninstall.
+- [x] Page (XP Luna look):
+  - Start, pause/resume, back/front camera, dim screen, wake lock;
+  - CAMERA frame-rate masks from the camera *and* the encoder;
+  - back-pressure with bitrate steps;
+  - STATE(paused) when iOS takes the camera, and reconnects by itself.
+- [x] Tests:
+  - WebSocket/HTTP/handshake/tokens in `mycam_tests`;
+  - `protocol.js` against golden.txt (`web_golden`, needs Node.js);
+  - end to end with `web_probe`, `fake_page.js`, and `browser_check.js` (the real page in headless Chrome
+    with a fake camera).
+- [ ] On the iPhone 13: the definition of done in AIYAN-IPHONE.md §5. This covers rotation, lock and
+  resume, 1080p30 for 10 minutes, 1080p60, the measured delay, and Forget.
 
-| | Android | iPhone |
+### 9.2 Wired: 🟡 foundation built, test left ([docs/iphone-wired.md](docs/iphone-wired.md))
+- [x] The PC recognises an iPhone's USB hotspot adapter, offers it in the network choice and reports
+  "USB hotspot".
+- [ ] Test Personal Hotspot over USB (Apple Devices app), and fill in the findings table.
+- [ ] Native app + usbmux: only if a Mac and the developer program become available. The old code on
+  branch `aiyan` is reference only (two threads, can deadlock).
+
+**Differences from Android (to tell users)**
+
+| | Android | iPhone (web page) |
 |---|---|---|
-| Starting | The app opens itself when plugged in | Open MyCam on the phone each time |
-| Phone locked or app in the background | Keeps streaming | Stops: iOS doesn't let apps use the camera in the background, so the app stays open and keeps the screen awake |
-| PC setup | MyCam installer | MyCam installer + Apple Devices app; "Trust This Computer" on the phone the first time |
-
-**Needs before starting**
-- A Mac with Xcode (iPhone apps can't be built on Windows; a cloud Mac is a fallback).
-- An iPhone for testing.
-- Apple Developer Program ($99/year) for TestFlight / App Store; without it, builds run only on your own
-  phone and expire after 7 days.
-
-**Work items**
-- [ ] iPhone app: capture, encoder, protocol, pause, front/back camera, Aero design in SwiftUI
-- [ ] PC: usbmux transport (detect iPhone, connect, reconnect), installer check for Apple Devices
-- [ ] Installer / docs: Apple Devices requirement and the first-time "Trust" prompt
-- [ ] Testing on real iPhones (lock, background, unplug/replug, both phone types on one PC)
-- [ ] App Store review and listing (privacy text for camera use)
+| Starting | The app opens itself when plugged in | Open the MyCam page (or its Home Screen icon) and tap Start |
+| Phone locked or Safari in the background | Keeps streaming | Pauses: apps see "Camera paused"; it resumes when the page is back in front |
+| Brightness and focus controls | Yes | No (Safari can't set them); zoom and torch where the camera has them |
+| PC setup | MyCam installer | MyCam installer; tap through Safari's certificate warning once |
 
 Continuity Camera (Apple's built-in iPhone webcam) only works with Macs, so it doesn't help on Windows.
 

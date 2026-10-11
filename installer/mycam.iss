@@ -5,7 +5,7 @@
 ;   ISCC /DSIGN "/Smycam=signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /a $f" mycam.iss
 
 #ifndef AppVersion
-  #define AppVersion "1.4.0"
+  #define AppVersion "1.4.1"
 #endif
 #ifndef BuildDir
   #define BuildDir "..\pc\build-release\Release"
@@ -45,7 +45,7 @@ SignedUninstaller=yes
 #endif
 
 [Messages]
-WelcomeLabel2=This will install MyCam {#AppVersion}, which turns your Android phone into a USB webcam.%n%nYour phone shows up as a camera called "MyCam" in Zoom, Teams, OBS, browsers and the Camera app.%n%nClose any app that is using MyCam before continuing.
+WelcomeLabel2=This will install MyCam {#AppVersion}, which turns your phone into a webcam: an Android phone over USB or Wi-Fi, or an iPhone through Safari.%n%nYour phone shows up as a camera called "MyCam" in Zoom, Teams, OBS, browsers and the Camera app.%n%nClose any app that is using MyCam before continuing.
 
 [Tasks]
 Name: "autostart"; Description: "Start MyCam when I sign in to Windows (recommended)"
@@ -70,6 +70,13 @@ Filename: "{sys}\regsvr32.exe"; Parameters: "/s ""{app}\MyCamVCam.dll"""; \
 ; Lets new phones get Windows' WinUSB driver later without a UAC prompt (a SYSTEM task users may only start).
 Filename: "{app}\MyCamCompanion.exe"; Parameters: "--register-task"; \
     StatusMsg: "Setting up phone drivers..."; Flags: runhidden waituntilterminated
+; The iPhone page (HTTPS on TCP 47900): allowed in on private networks only, so Windows never asks the user.
+; Deleted first, so an upgrade doesn't add a second copy.
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""MyCam iPhone camera"""; \
+    Flags: runhidden waituntilterminated
+Filename: "{sys}\netsh.exe"; \
+    Parameters: "advfirewall firewall add rule name=""MyCam iPhone camera"" dir=in action=allow program=""{app}\MyCamCompanion.exe"" protocol=TCP localport=47900 profile=private enable=yes"; \
+    StatusMsg: "Letting iPhones on your network reach MyCam..."; Flags: runhidden waituntilterminated
 Filename: "{app}\MyCamCompanion.exe"; Parameters: "--settings"; Description: "Open MyCam now"; \
     Flags: nowait postinstall skipifsilent runasoriginaluser
 
@@ -78,6 +85,7 @@ Filename: "{app}\MyCamCompanion.exe"; Parameters: "--quit"; RunOnceId: "QuitMyCa
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM MyCamCompanion.exe"; RunOnceId: "KillMyCam"; Flags: runhidden waituntilterminated
 Filename: "{sys}\regsvr32.exe"; Parameters: "/s /u ""{app}\MyCamVCam.dll"""; RunOnceId: "UnregisterMyCam"; Flags: runhidden waituntilterminated
 Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""MyCam phone driver"" /F"; RunOnceId: "DeleteDriverTask"; Flags: runhidden waituntilterminated
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""MyCam iPhone camera"""; RunOnceId: "DeleteFirewallRule"; Flags: runhidden waituntilterminated
 ; Windows' camera service may still have the DLL loaded; restart it so the file can be deleted.
 Filename: "{sys}\net.exe"; Parameters: "stop FrameServer /y"; RunOnceId: "StopFrameServer"; Flags: runhidden waituntilterminated
 
