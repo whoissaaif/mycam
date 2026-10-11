@@ -14,6 +14,7 @@
 #include "frame_writer.h"
 #include "protocol.h"
 #include "status_images.h"
+#include "web_server.h"
 
 struct libusb_context;
 struct libusb_device;
@@ -55,6 +56,17 @@ struct LinkStatus {
     bool scanning = false;                 // A scan window is running.
     uint32_t scansDone = 0;                // Scans finished since the companion started (0: never scanned).
     std::vector<NearbyPhone> nearbyPhones; // At most NearbyList::kMax, in the order they answered.
+    // The iPhone web camera (a page in Safari; docs/web-camera-format.md).
+    bool web = false;             // The current phone is a web page (wireless is set too).
+    std::wstring webLink;         // How that page reaches the PC: "Wi-Fi", "USB hotspot" or "network".
+    bool webReady = false;        // The page's server is listening on port 47900.
+    // "Connect an iPhone": the QR code's address while pairing. It holds the one-time code: never log it.
+    std::wstring webUrl;
+    uint64_t webCodeExpires = 0;  // GetTickCount64 time the code runs out (a new one follows by itself).
+    std::vector<web::NetAddress> webAddresses; // Addresses the QR code can point at, best first.
+    uint32_t webAddress = 0;      // The one it points at (IPv4, network order).
+    struct WebDeviceRow { std::string id; std::wstring name; uint64_t addedUnix = 0; bool connected = false; };
+    std::vector<WebDeviceRow> webDevices; // Pages that can reconnect without scanning, oldest first.
 };
 
 // Owns all USB traffic. Run() blocks on the calling (worker) thread until Quit() is called.
@@ -91,6 +103,14 @@ public:
     // Abandons a Wi-Fi pairing that is waiting for the phone's answer: the PC closes the socket (no
     // protocol message), and that phone isn't asked again for a while. No effect when not pairing.
     void CancelPairing() { cancelPairing_ = true; }
+    // "Connect an iPhone": show a QR code for `ipv4` (0: the best address) until StopWebPairing().
+    void StartWebPairing(uint32_t ipv4) { webPairRequest_ = int64_t(ipv4); }
+    void StopWebPairing() { webPairRequest_ = -2; }
+    // Forgets a remembered iPhone (it has to scan the QR code again) and closes its connection.
+    void ForgetWebDevice(const std::string& id) {
+        std::lock_guard<std::mutex> lock(commandLock_);
+        webForget_.push_back(id);
+    }
     // Pause / resume the camera (the phone stores the choice). Needs a connected phone.
     void RequestPause(bool pause) { pendingPause_ = pause ? 1 : 0; }
     // Windows locked / asleep: keep the phone camera off until unlocked. Independent of RequestPause.
@@ -134,6 +154,10 @@ private:
     bool ReceiveRecords(uintptr_t socket);               // Decrypts what arrived and feeds the parser.
     bool UsbPhoneArrived(); // During a Wi-Fi session: a phone was plugged in (the cable takes over).
     bool SendTcp(const uint8_t* data, size_t size);
+
+    // iPhone web camera: the page's server (web_server.h), polled from every loop on this thread.
+    void PollWeb(uint32_t waitMs);   // Serves pages and handles the window's requests; waits up to waitMs.
+    void WebScanOnce();              // Runs a web session if a page is waiting for one.
 
     bool SendCommand(uint8_t cmd, uint8_t arg = 0);
     void HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const uint8_t* payload, uint32_t length);
@@ -183,6 +207,13 @@ private:
     uint32_t sessionIp_ = 0;      // Peer of the current Wi-Fi session (0: none).
     bool nearbyDirty_ = false;    // nearby_ changed since the last Publish().
     NearbyList nearby_;           // What the window lists.
+
+    std::unique_ptr<WebServer> web_;
+    bool webSession_ = false;     // The current session's phone is a web page.
+    std::string webDeviceId_;     // ...and which remembered device it is.
+    uint32_t webGeneration_ = ~0u;
+    std::atomic<int64_t> webPairRequest_{-1}; // -1 nothing, -2 stop, else start (IPv4).
+    std::vector<std::string> webForget_;     // Guarded by commandLock_.
 
     libusb_context* ctx_ = nullptr;       // UsbDk backend: switches phones into accessory mode.
     libusb_context* winusbCtx_ = nullptr; // WinUSB backend: streams from accessory-mode phones (WinUSB-bound).

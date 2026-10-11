@@ -788,6 +788,14 @@ void TestStatusText() {
     s.lockPaused = true;
     CHECK(DescribeStatus(s, true).icon == kIconPaused);
     CHECK(DescribeStatus(s, false).icon == kIconError);
+    // An iPhone's web page says how it reaches the PC.
+    s.lockPaused = false;
+    s.web = true;
+    s.webLink = L"USB hotspot";
+    s.state = LinkState::Streaming;
+    CHECK(DescribeStatus(s, true).facts == L"Back camera · 1920 × 1080 · USB hotspot");
+    s.state = LinkState::Idle;
+    CHECK(DescribeStatus(s, true).facts == L"Back camera · USB hotspot");
 }
 
 // --- iPhone web camera (web_proto.h) -------------------------------------------------------------------

@@ -124,7 +124,10 @@ void UpdateTray() {
     if (s.state == LinkState::NoDriver && g_shownStatus.state != LinkState::NoDriver) {
         Notify(view.headline.c_str(), view.detail);
     } else if (isConnected && !wasConnected) {
-        Notify(s.wireless ? L"Phone connected over Wi-Fi" : L"Phone connected", L"Choose “MyCam” as the camera in any app.");
+        // "iPhone connected over Wi-Fi" for a web page (its name, and how it reaches the PC).
+        const std::wstring title = s.web ? (s.phoneName.empty() ? L"iPhone" : s.phoneName) + L" connected over " + s.webLink
+                                 : s.wireless ? L"Phone connected over Wi-Fi" : L"Phone connected";
+        Notify(title.c_str(), L"Choose “MyCam” as the camera in any app.");
     } else if (!s.pairingCode.empty() && s.pairingCode != g_shownStatus.pairingCode) {
         Notify(view.headline.c_str(), view.detail); // "Pairing with …": clicking it opens the pairing dialog.
     } else if (s.state == LinkState::Waiting && g_shownStatus.state != LinkState::Waiting && !s.wireless) {
