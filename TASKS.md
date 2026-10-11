@@ -50,15 +50,16 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
   - [x] PC: HTTPS/WebSocket server (Schannel, port 47900), the page as a third transport, QR pairing and
         remembered iPhones, firewall rule in the installer
   - [x] Page: protocol, capability masks, back-pressure, wake lock + dim, pause/background, reconnect
-  - [ ] iPhone 13: install → Connect an iPhone → scan → tap through the warning → Start → video in the
-        Camera app and a browser call
-  - [ ] Reconnect without scanning; Forget makes it scan again
+  - [~] iPhone 13: install → Connect an iPhone → scan → tap through the warning → Start → video in the
+        Camera app (works; dev install) and a browser call (to do), then through the real installer
+  - [~] Reconnect without scanning; Forget makes it scan again (Forget confirmed, also from the Devices page)
   - [ ] Pause/resume from the PC and the page; lock → "paused" picture → unlock → resumes
-  - [ ] Rotation: portrait and landscape both upright in the Camera app
+  - [x] Rotation: portrait, landscape and upside down upright on both cameras (iPhone 13)
   - [ ] The PC's quality / frame-rate choices match the iPhone; 1080p60 works
   - [ ] Delay measured and written into docs/web-camera-format.md; 1080p30 steady for 10 minutes
   - [ ] Personal Hotspot over USB test (docs/iphone-wired.md)
   - [ ] saif: Android USB and Android Wi-Fi unchanged
+  - [x] PC: Camera and Resolution dropdowns opened an invisible list (a closed dropdown laid out after the open one cleared its panel)
 
 ## Backlog
 
