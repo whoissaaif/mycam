@@ -264,17 +264,22 @@
     return (360 - screenAngle()) % 360;
   }
 
-  // Upside-down portrait, from the motion sensors: held upright, beta is about 90°; upside down, about -90°
-  // (gamma near 0 in both). With some margin either way, so it doesn't flicker near the edges.
+  // Upside-down portrait, from the motion sensors. beta and gamma swing wildly when the phone stands
+  // upright (gimbal lock), so they are turned into which way "up" points across the screen: upY = sin(beta)
+  // is 1 with the phone upright and -1 upside down, steady at any tilt. With a margin each way so it never
+  // flickers near the edge.
   let upsideDown = false;
-  let motionAsked = false;
   function onMotion(e) {
     if (e.beta === null || e.gamma === null) return;
+    const rad = Math.PI / 180;
+    const upY = Math.sin(e.beta * rad);
+    const upX = -Math.sin(e.gamma * rad) * Math.cos(e.beta * rad);
     const was = upsideDown;
-    if (!upsideDown && e.beta < -55 && Math.abs(e.gamma) < 35) upsideDown = true;
-    else if (upsideDown && (e.beta > -35 || Math.abs(e.gamma) > 55)) upsideDown = false;
+    if (!upsideDown && upY < -0.7 && Math.abs(upX) < 0.5) upsideDown = true;
+    else if (upsideDown && (upY > -0.4 || Math.abs(upX) > 0.7)) upsideDown = false;
     if (was !== upsideDown) sendOrient();
   }
+  let motionAsked = false;
   // iOS asks the user first ("Motion & Orientation Access"); it must be asked straight from a tap.
   function askForMotion() {
     if (motionAsked || !appleMobile || typeof DeviceOrientationEvent === "undefined") return;
