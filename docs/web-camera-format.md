@@ -106,19 +106,12 @@ PC actually uses it.
     page -> PC     MCAM 02 01 ... <keyframe>        FRAME, keyframe
     page -> PC     MCAM 02 00 ... <frame>           FRAME ...
 
-## Who does what (suggestion)
+## Who does what
 
-- **You (the page):**
-  - the packets and commands above;
-  - checking them against `golden.txt`;
-  - the rotation test;
-  - the back-pressure handling.
-- **Me (the PC):**
-  - the HTTPS/WebSocket server inside the companion, plugged into the existing single-threaded session loop
-    (please don't add threads there: the earlier two-thread version could deadlock);
-  - the certificate;
-  - QR code and token pairing;
-  - the firewall rule in the installer.
+**Updated 2026-10-11:** all of it is Aiyan's: the page *and* the PC side (the HTTPS/WebSocket server in the
+companion, the certificate, QR code and token pairing, the firewall rule). See `docs/AIYAN-IPHONE.md` for the
+full assignment. The PC server must plug into the existing single-threaded session loop; please don't add
+threads there, because the earlier two-thread version could deadlock.
 
 ## Next test
 
