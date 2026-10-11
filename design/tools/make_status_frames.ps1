@@ -1,7 +1,9 @@
 <#
   Renders the pictures the PC's MyCam camera shows when there is no live video, and the hills background
-  the phone ships. Everything is composited over design\assets\source\hills-photo.png (the owner's photo;
-  see that folder's README for its provenance), lightly blurred, with a frosted glass card on top.
+  the phone ships. The waiting picture and the phone backgrounds are composited over
+  design\assets\source\hills-photo.png (the owner's photo; see that folder's README for its provenance),
+  lightly blurred, with a frosted glass card on top. The paused picture is not composited at all: it is
+  design\assets\source\camera-paused-reference.png itself, cropped and scaled (owner decision, 2026-10-11).
     pc\companion\res\frame_paused.png    "CAMERA PAUSED"          (user pause, or Windows locked)
     pc\companion\res\frame_waiting.png   "WAITING FOR THE PHONE"  (no phone / camera starting / problem)
     app\src\main\res\drawable-nodpi\bg_hills.jpg       phone background (R.drawable.bg_hills)
@@ -57,21 +59,27 @@ function Draw-Wordmark([System.Drawing.Bitmap]$bmp) {
     $font.Dispose()
 }
 
-# --- frame_paused.png: the supplied composition (glass card, crossed-out camcorder, caps title) --------
+# --- frame_paused.png: the owner's picture itself ------------------------------------------------------
+# This one is not recomposed. design\assets\source\camera-paused-reference.png IS the paused screen (owner
+# decision, 2026-10-11): it is used exactly as supplied, only cropped from its 3:2 shape to the frame's
+# 16:9 and scaled to 1280 x 720. The crop is centred, which keeps the glass card where it was drawn. No
+# wordmark is added over it: "the exact image" means the exact image.
 function Paused-Frame() {
-    $scene = Photo-Scene $W $H -blur 3
-    $cardW = 560; $cardH = 282; $cardY = 190
-    $cardX = ($W - $cardW) / 2
-    Draw-FrostedCard $scene (RectF $cardX $cardY $cardW $cardH) 16 26
-
-    $glyphW = 190
-    Draw-CamcorderOff $scene ($W / 2) ($cardY + 99) $glyphW (C 235 255 255 255) 1.0
-
-    $title = Fit-Title $scene 'CAMERA PAUSED' 46 6 ($cardW - 96)
-    Draw-SpacedText $scene 'CAMERA PAUSED' $title $ink ($W / 2) ($cardY + 187) 6 2.4 215 | Out-Null
-    $title.Dispose()
-    Draw-Wordmark $scene
-    $scene
+    $path = Join-Path $root 'design\assets\source\camera-paused-reference.png'
+    $ms = New-Object System.IO.MemoryStream (, [System.IO.File]::ReadAllBytes($path))
+    $src = [System.Drawing.Bitmap]::FromStream($ms)
+    # Cover: scale so the shorter side fills, then take the middle.
+    $scale = [Math]::Max($W / [double]$src.Width, $H / [double]$src.Height)
+    $sw = [int][Math]::Ceiling($src.Width * $scale); $sh = [int][Math]::Ceiling($src.Height * $scale)
+    $bmp, $g = New-Canvas $W $H $false
+    $g.InterpolationMode = 'HighQualityBicubic'; $g.PixelOffsetMode = 'HighQuality'
+    $g.CompositingQuality = 'HighQuality'; $g.SmoothingMode = 'AntiAlias'
+    $ia = New-Object System.Drawing.Imaging.ImageAttributes
+    $ia.SetWrapMode([System.Drawing.Drawing2D.WrapMode]::TileFlipXY)   # no dark fringe along the edges
+    $dst = New-Object System.Drawing.Rectangle ([int][Math]::Round(-($sw - $W) / 2.0)), ([int][Math]::Round(-($sh - $H) / 2.0)), $sw, $sh
+    $g.DrawImage($src, $dst, 0, 0, $src.Width, $src.Height, [System.Drawing.GraphicsUnit]::Pixel, $ia)
+    $ia.Dispose(); $g.Dispose(); $src.Dispose(); $ms.Dispose()
+    $bmp
 }
 
 # --- frame_waiting.png: the same scene in a morning tint, with the empty XP progress track -------------

@@ -78,6 +78,8 @@ data class ScreenActions(
     val onAutoDim: (Boolean) -> Unit = {},
     val onDismissTimedOut: () -> Unit = {},
     val onScan: () -> Unit = {},
+    /** Asks a PC from the nearby list to connect to this phone (the pairing then starts on both). */
+    val onConnectPc: (String) -> Unit = {},
     val onPreview: (Boolean) -> Unit = {},
 )
 
@@ -245,7 +247,7 @@ fun WebcamScreen(
                             state, actions, applying != null, onFindDevices,
                             sweepLive = !liveSwept, onLiveSwept = { liveSwept = true },
                         )
-                        1 -> ScanPage(state, actions.onScan, onBack = { scanOpen = false })
+                        1 -> ScanPage(state, actions.onScan, actions.onConnectPc, onBack = { scanOpen = false })
                         2 -> CameraPage(state, previewOn, actions.onPreview, onFacing)
                         else -> SettingsPage(
                             state, applying != null, actions, onCommand, autoDim, previewOn, actions.onPreview,

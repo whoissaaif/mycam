@@ -8,15 +8,15 @@ holds the detail behind each item, and [ISSUES.md](ISSUES.md) records problems f
 
 ## Where things stand (2026-10-10)
 
-- **Latest release: v1.3.3** (private): https://github.com/whoissaaif/mycam/releases/tag/v1.3.3
-  (`MyCam-1.3.3.apk` + `MyCam-Setup-1.3.3.exe`). It's a hotfix: the 1.3.2 phone app crashed on launch. The
-  v1.3.2 release is marked "superseded" and its broken APK was removed.
+- **Latest release: v1.4.0**: https://github.com/whoissaaif/mycam/releases/tag/v1.4.0
+  (`MyCam-1.4.0.apk` + `MyCam-Setup-1.4.0.exe`). Stable: Wi-Fi mode leaves beta and both apps ship the v2
+  shell. Released from `xp-redesign` on 2026-10-11, tested live on the CMF Phone 1 over Wi-Fi.
 - **Branches:**
-  - `main` = 1.3.3, released and stable.
-  - `wireless` = **1.4.0-beta3**: Wi-Fi mode with one-time pairing and encryption, tested live. Not merged yet.
+  - `xp-redesign` = **1.4.0**, released and stable.
+  - `main` = 1.3.3 (the previous stable); `wireless` = 1.4.0-beta3, now superseded by `xp-redesign`.
   - `aiyan` = a contributor's iPhone transport work, reviewed but not merged (see section 14).
-- **Rollback points:** the tags `v1.3.3`, `v1.3.2`, and `pre-wireless` (main before any Wi-Fi work).
-- **Test devices now:** PC and phone both run 1.4.0-beta3. The phone is a CMF Phone 1 (A015, MediaTek, Android 16).
+- **Rollback points:** the tags `v1.4.0`, `v1.3.3`, `v1.3.2`, and `pre-wireless` (main before any Wi-Fi work).
+- **Test devices now:** PC and phone both run 1.4.0. The phone is a CMF Phone 1 (A015, MediaTek, Android 16).
 - **Working:**
   - **Streaming:** wired plug-and-play, front/back camera, and Wi-Fi (beta, paired + encrypted).
   - **Quality:** 720p/1080p/4K; 30/60/120 fps where each quality supports it.
@@ -72,7 +72,7 @@ offers to remove it on uninstall) and a per-monitor DPI manifest.
 - Aero redesign of the phone app: Selawik font, glass header, command links and a new launcher icon.
 
 ### 6. GitHub (1.1.1)
-Published to `whoissaaif/mycam` under MIT, then switched to **private**. Commits use the no-reply email, and
+Published to `whoissaaif/mycam` under MIT, then private from 1.1.1 until 1.4.0, and **public** again since. Commits use the no-reply email, and
 `inspo/` was kept out of history. The first release had both the exe and the apk. The README shows the demo
 GIF; the screenshots were removed.
 
@@ -233,4 +233,4 @@ Sandbox couldn't be used because CPU virtualization is off in the firmware.
    phones, battery saver.
 5. Windows 10 support (IMPROVEMENTS 10), once a Windows 10 PC is available.
 6. iPhone (IMPROVEMENTS 9 / Aiyan's branch), once his threading is fixed and an iOS app exists.
-7. Code signing, `design/STYLE.md`, full UsbDk removal on uninstall, and a public/private decision.
+7. Code signing, `design/STYLE.md`, full UsbDk removal on uninstall. The repo is public again as of 1.4.0.

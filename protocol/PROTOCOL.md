@@ -118,6 +118,18 @@ is forgotten.
 also while "Find phones on Wi-Fi" is off. It only lists the answers; with the search off, the PC connects
 only when the user picks a phone.
 
+**The phone asks for a session (1.4).** A phone that can see a PC in its own list may ask that PC to
+connect, so a pairing can be started from either screen:
+
+    phone -> PC:       MYCAM+1 <tcp port> <phone name>
+
+It goes unicast to the address and port the probe came from, which is the PC's discovery socket, so it only
+reaches a PC that is probing at that moment — exactly the PCs the phone lists. The PC treats it like
+"Connect" in its own list: it adds the phone to that list, clears any retry back-off for it, and connects
+and runs the handshake below, whether or not "Find phones on Wi-Fi" is on. A PC that already has a session
+ignores it. The phone resends it every 2 s for 10 s, because one datagram may be lost; the PC acts on the
+first and ignores the rest while it is connecting.
+
 **Session (TCP, port 47800).** The PC connects and runs the handshake below. After it, both directions
 carry the usual packets and commands (the same bytes as over USB) inside encrypted records, and the session
 continues exactly as over USB (`HELLO` every 2 s until answered, and so on).

@@ -23,11 +23,12 @@ import java.util.concurrent.ConcurrentHashMap
  * rule. Discovery and the TCP stream are described in protocol/PROTOCOL.md ("Wireless transport").
  *
  * Every accepted connection goes to [onClient]; the service asks the user before anything is streamed.
- * Every discovery probe goes to [onProbe] (IP address, PC name; on the discovery thread) for "Scan for PCs".
+ * Every discovery probe goes to [onProbe] (IP address, the port it came from, PC name; on the discovery
+ * thread) for "Scan for PCs". That port is where [askToConnect] sends its invitation.
  */
 class WirelessServer(
     private val context: Context,
-    private val onProbe: (ip: String, name: String) -> Unit,
+    private val onProbe: (ip: String, port: Int, name: String) -> Unit,
     private val onClient: (Socket, String) -> Unit,
 ) {
     @Volatile private var running = false
@@ -94,12 +95,37 @@ class WirelessServer(
                 val ip = packet.address.hostAddress ?: continue
                 val name = text.substringAfter(' ', "").trim().take(64).takeIf { it.isNotEmpty() }
                 name?.let { pcNames[ip] = it }
-                onProbe(ip, name ?: ip)
+                onProbe(ip, packet.port, name ?: ip)
                 socket.send(DatagramPacket(reply, reply.size, packet.address, packet.port))
             }
         } catch (e: IOException) {
             if (running) Log.w(TAG, "discovery ended: ${e.message}")
         }
+    }
+
+    /**
+     * Asks the PC at [ip]:[udpPort] to connect to this phone (PROTOCOL.md "The phone asks for a session"),
+     * so the user can start a pairing from the phone instead of the PC. [udpPort] is the port that PC's
+     * probe came from, so this only reaches a PC that is looking for phones right now.
+     *
+     * Called from the main thread (the user tapped a row), so the datagram goes out on a thread of its
+     * own: a send on the main looper is a NetworkOnMainThreadException, not a slow send. Fire and forget —
+     * the PC answers by opening a TCP session, and the caller resends a few times if it doesn't.
+     */
+    fun askToConnect(ip: String, udpPort: Int) {
+        val socket = discovery ?: return
+        if (udpPort <= 0 || udpPort > 65535) return
+        val message = "${Protocol.WIRELESS_CONNECT} ${Protocol.WIRELESS_TCP_PORT} ${deviceName(context)}"
+            .toByteArray(Charsets.UTF_8)
+        Thread({
+            try {
+                socket.send(DatagramPacket(message, message.size, InetAddress.getByName(ip), udpPort))
+            } catch (e: IOException) {
+                Log.w(TAG, "can't ask $ip:$udpPort to connect: ${e.message}")
+            } catch (e: SecurityException) {
+                Log.w(TAG, "can't ask $ip:$udpPort to connect: ${e.message}")
+            }
+        }, "wireless-invite").start()
     }
 
 

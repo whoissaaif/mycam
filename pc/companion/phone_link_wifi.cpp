@@ -175,6 +175,9 @@ constexpr uint64_t kForgetAfterMs = 6000;      // A phone that stopped answering
 constexpr uint64_t kRetryRefusedMs = 120000;   // The phone said no (or nobody answered): don't nag it.
 constexpr uint64_t kRetryLostMs = 2000;        // The connection dropped after working: try again soon.
 constexpr uint64_t kRetryUnreachableMs = 10000;
+// A phone may ask this PC to connect for a short while after a scan ends, so the discovery socket stays
+// open that long: the phone lists this PC for 6 s after its last probe, and taps take a moment.
+constexpr uint64_t kInviteGraceMs = 10000;
 
 std::string ComputerName() {
     wchar_t name[MAX_COMPUTERNAME_LENGTH + 1] = {};
@@ -279,6 +282,11 @@ void PhoneLink::BroadcastProbe() {
 
 // Answers: "MYCAM!1 <tcp port> <phone name>". Fills the scan list, and the auto-connect table while
 // "Find phones on Wi-Fi" is on.
+//
+// Also "MYCAM+1 <tcp port> <phone name>": that phone's user picked this PC in its own list and wants a
+// session now (PROTOCOL.md "The phone asks for a session"). It is treated exactly like Connect here, so a
+// pairing can be started from either screen. It is ignored during a session, and while a connect is already
+// queued, so the phone's resends don't pile up.
 void PhoneLink::ReadAnswers(uint64_t now) {
     if (udp_ == INVALID_SOCKET) return;
     char buf[512];
@@ -287,12 +295,28 @@ void PhoneLink::ReadAnswers(uint64_t now) {
         int fromLen = sizeof(from);
         int n = recvfrom(SOCKET(udp_), buf, sizeof(buf) - 1, 0, reinterpret_cast<sockaddr*>(&from), &fromLen);
         if (n <= 0) break;
+        const std::string text(buf, size_t(n));
         uint16_t port = 0;
         std::string name;
-        if (!ParseDiscoveryReply(std::string(buf, size_t(n)), &port, &name)) continue;
+        const bool invite = ParseDiscoveryConnectRequest(text, &port, &name);
+        if (!invite && !ParseDiscoveryReply(text, &port, &name)) continue;
         const uint32_t ip = from.sin_addr.s_addr;
         const std::string ipText = IpText(ip);
         if (nearby_.Seen(ip, ipText, port, name, now)) nearbyDirty_ = true;
+        if (invite) {
+            const std::string shown = name.empty() ? ipText : name;
+            // During a session the cable or the current phone owns the link; the phone gives up by itself.
+            if (sessionIp_ != 0 || handle_ != nullptr) {
+                Log("wifi: %s asked to connect, but a session is running", shown.c_str());
+                continue;
+            }
+            if (connectRequest_ != 0) continue; // Already queued (one of the phone's resends).
+            Log("wifi: %s (%s:%u) asked this PC to connect", shown.c_str(), ipText.c_str(), unsigned(port));
+            // The phone asked, so any back-off from an earlier refusal doesn't apply any more.
+            if (auto it = netPhones_.find(ip); it != netPhones_.end()) it->second.retryAfter = 0;
+            connectRequest_ = ip;
+            continue;
+        }
         if (!wireless_) continue;
         NetPhone& phone = netPhones_[ip];
         if (phone.lastSeen == 0) {
@@ -326,18 +350,19 @@ void PhoneLink::PollDiscovery(uint64_t now) {
             nearbyDirty_ = true;
         }
     }
-    if (scanUntil_) {
-        if (now - lastProbe_ >= kProbeEveryMs) {
-            lastProbe_ = now;
-            BroadcastProbe();
-        }
-        ReadAnswers(now);
-        if (now >= scanUntil_) {
-            scanUntil_ = 0;
-            ++scansDone_;
-            nearbyDirty_ = true;
-            Log("wifi: scan finished, %u phone(s) answered", unsigned(nearby_.Phones().size()));
-        }
+    if (scanUntil_ && now - lastProbe_ >= kProbeEveryMs) {
+        lastProbe_ = now;
+        BroadcastProbe();
+    }
+    // Read whenever the socket is open, not only during a scan: a phone's "connect to me" may arrive just
+    // after the window closed, and a phone that answered may be asking right now.
+    ReadAnswers(now);
+    if (scanUntil_ && now >= scanUntil_) {
+        scanUntil_ = 0;
+        scanEndedAt_ = now;
+        ++scansDone_;
+        nearbyDirty_ = true;
+        Log("wifi: scan finished, %u phone(s) answered", unsigned(nearby_.Phones().size()));
     }
     RefreshNearby();
 }
@@ -375,7 +400,8 @@ void PhoneLink::NetScanOnce() {
         return;
     }
     if (!wireless_) {
-        if (udp_ != INVALID_SOCKET && !scanUntil_) {
+        // The socket lingers after a scan so a phone that lists this PC can still ask it to connect.
+        if (udp_ != INVALID_SOCKET && !scanUntil_ && GetTickCount64() - scanEndedAt_ > kInviteGraceMs) {
             closesocket(SOCKET(udp_));
             udp_ = INVALID_SOCKET;
             netPhones_.clear();
