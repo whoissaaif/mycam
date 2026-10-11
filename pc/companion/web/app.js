@@ -227,9 +227,9 @@
   // PC, which turns the picture (protocol: CONFIG sensor orientation + ORIENT, as for Android phones).
   //  - A browser that labels its frames (WebCodecs VideoFrame.rotation) gives the turn itself: ORIENT 0.
   //  - Safari on iPhone/iPad (no label, tested on iOS 27): the frames are always the camera's own landscape
-  //    pixels, whichever way the phone is held. Like an Android camera, they need the sensor's turn (back 90°,
-  //    front 270°) plus how far the phone is turned, which comes from the screen angle. Safari never turns its
-  //    screen for an upside-down iPhone, so that position isn't followed.
+  //    pixels, whichever way the phone is held. Like an Android camera, they need the sensor's turn (90° for
+  //    both cameras) plus how far the phone is turned, which comes from the screen angle. Safari never turns
+  //    its screen for an upside-down iPhone, so that one comes from the motion sensors (if allowed).
   //  - Other browsers (laptop webcams): the frames are upright as they are.
   const appleMobile = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
                       (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
@@ -249,7 +249,7 @@
       rotation = (((Number(frame.rotation) || 0) % 360) + 360) % 360;
       how = "from the frame's rotation label";
     } else if (appleMobile && w > h) {
-      rotation = facing === P.FACING.FRONT ? 270 : 90;
+      rotation = 90; // Both iPhone cameras (front tested as well: 270 put it upside down in every position).
       how = "camera sensor, plus the phone's turn in ORIENT";
     }
     return { w, h, rotation,
@@ -260,7 +260,33 @@
   // ORIENT: how far the phone is turned clockwise from upright, when the PC must add it (see above).
   function deviceTurn() {
     if (labelled || !appleMobile) return 0;
+    if (upsideDown) return 180;
     return (360 - screenAngle()) % 360;
+  }
+
+  // Upside-down portrait, from the motion sensors: held upright, beta is about 90°; upside down, about -90°
+  // (gamma near 0 in both). With some margin either way, so it doesn't flicker near the edges.
+  let upsideDown = false;
+  let motionAsked = false;
+  function onMotion(e) {
+    if (e.beta === null || e.gamma === null) return;
+    const was = upsideDown;
+    if (!upsideDown && e.beta < -55 && Math.abs(e.gamma) < 35) upsideDown = true;
+    else if (upsideDown && (e.beta > -35 || Math.abs(e.gamma) > 55)) upsideDown = false;
+    if (was !== upsideDown) sendOrient();
+  }
+  // iOS asks the user first ("Motion & Orientation Access"); it must be asked straight from a tap.
+  function askForMotion() {
+    if (motionAsked || !appleMobile || typeof DeviceOrientationEvent === "undefined") return;
+    motionAsked = true;
+    const listen = () => window.addEventListener("deviceorientation", onMotion);
+    if (typeof DeviceOrientationEvent.requestPermission === "function") {
+      DeviceOrientationEvent.requestPermission()
+        .then((r) => { if (r === "granted") listen(); else sendLog("motion sensors not allowed: upside-down isn't followed"); })
+        .catch(() => { /* not asked from a tap: try again on the next Start */ motionAsked = false; });
+    } else {
+      listen();
+    }
   }
   let lastTurn = -1;
   function sendOrient() {
@@ -268,7 +294,7 @@
     if (t === lastTurn) return;
     lastTurn = t;
     send(P.orient(t));
-    if (helloDone) sendLog("phone turned: screen angle " + screenAngle() + "°, ORIENT " + t + "°");
+    if (helloDone) sendLog("phone turned: screen angle " + screenAngle() + "°" + (upsideDown ? ", upside down (motion sensors)" : "") + ", ORIENT " + t + "°");
   }
   const onTurn = () => { sendOrient(); setTimeout(sendOrient, 300); }; // Some iOS versions report late.
   if (screen.orientation) screen.orientation.addEventListener("change", onTurn);
@@ -659,6 +685,7 @@
   window.addEventListener("pageshow", (e) => { if (e.persisted && started) connect(); });
 
   async function onStart() {
+    askForMotion(); // First, while the tap still counts as the user's own.
     ui.start.disabled = true;
     started = true;
     await keepAwake();

@@ -147,20 +147,20 @@ The PC sends a WebSocket ping every 5 s and drops a link that has been silent fo
 - **Rotation** (from the iPhone 13 tests, iOS 27):
   - **What Safari gives:** the camera's own landscape pixels, 1920×1080, whichever way the phone is held,
     and its frames carry no rotation label (`VideoFrame.rotation` is undefined).
-  - **What the page sends:** like an Android camera, CONFIG carries the sensor's turn (back 90°, front 270°),
-    and ORIENT carries how far the phone is turned clockwise from upright. ORIENT comes from the screen
-    angle: `(360 − screen.orientation.angle) % 360`, so portrait 0, top to the left 270, top to the right 90.
+  - **What the page sends:** like an Android camera, CONFIG carries the sensor's turn, **90° for both the
+    back and the front camera** (270 for the front turned it upside down in every position). ORIENT carries
+    how far the phone is turned clockwise from upright.
+  - **Where ORIENT comes from:** the screen angle, `(360 − screen.orientation.angle) % 360`, so portrait 0,
+    top to the left 270, top to the right 90. Safari never turns its screen for an upside-down iPhone, so
+    that position (180) comes from the motion sensors: the page asks for "Motion & Orientation Access" when
+    Start is tapped. Without that permission, upside-down isn't followed.
   - **What the PC does:** it turns the picture by (sensor + ORIENT) for the back camera and
     (sensor − ORIENT) for the front, exactly as for Android.
   - **Turning the phone:** this only sends ORIENT; the encoder isn't restarted.
-  - **Results so far (back camera, before this change):** portrait and "top to the left" were right;
-    "top to the right" came out upside down and upside-down portrait sideways. The new rule fixes the
-    third.
-  - **Not handled:** an upside-down iPhone. Safari doesn't turn its screen for it, so the page can't tell.
-    It would need the motion sensors, which ask for permission.
+  - **Results:** back camera upright in portrait and both landscapes. The front-camera fix and upside-down
+    portrait are still to confirm.
   - **Other browsers:** frames that carry a rotation label are turned by that label (ORIENT 0). Laptop
     webcams are left as they are.
-  - **To confirm on the iPhone:** the front camera in all three positions.
 - **Back-pressure:**
   - If `ws.bufferedAmount` goes over about a quarter of a second of video (at least 256 KB), the page
     skips frames and makes the next one a key frame.
