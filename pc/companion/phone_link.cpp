@@ -62,13 +62,20 @@ void PhoneLink::Run() {
     if (ok && libusb_init_context(&winusbCtx_, nullptr, 0) != LIBUSB_SUCCESS) winusbCtx_ = nullptr;
     WSADATA wsa;
     WSAStartup(MAKEWORD(2, 2), &wsa);
+    // The iPhone page's server. Without it (no certificate, port taken) everything else still works.
+    web_ = std::make_unique<WebServer>();
+    web_->Start();
+    web_->SetPhoneHandler([this](const uint8_t* data, size_t size) {
+        if (webSession_) FeedBytes(data, size);
+    });
     status_.state = ok ? LinkState::Searching : LinkState::NoDriver;
     Publish();
 
     while (!quit_) {
         if (usbReady_) ScanOnce();         // Runs a whole USB session when a phone is plugged in.
         if (!quit_) NetScanOnce();          // Runs a whole Wi-Fi session when a phone answers (if enabled).
-        if (!usbReady_ && status_.state == LinkState::Searching && !wireless_) {
+        if (!quit_) WebScanOnce();          // Runs a whole web session when an iPhone's page is waiting.
+        if (!usbReady_ && status_.state == LinkState::Searching && !wireless_ && !(web_ && web_->Listening())) {
             status_.state = LinkState::NoDriver;
             Publish();
         }
@@ -78,9 +85,11 @@ void PhoneLink::Run() {
             WriteStatusFrame(GetTickCount64()); // "Waiting for the phone" while none is connected.
             PollDiscovery(GetTickCount64());     // "Scan for phones" answers arrive promptly.
             if (connectRequest_ != 0) break;     // Connect (from the scan list): NetScanOnce runs it now.
-            Sleep(StatusWaitMs());
+            PollWeb(StatusWaitMs());             // Serves the iPhone page meanwhile (or just waits).
+            if (web_ && web_->PhonePending()) break; // An iPhone's page wants a session: WebScanOnce runs it.
         }
     }
+    web_.reset();
     WSACleanup();
     if (winusbCtx_) libusb_exit(winusbCtx_);
     winusbCtx_ = nullptr;
@@ -347,6 +356,7 @@ void PhoneLink::BeginSession(bool wireless, const std::string& phoneName) {
     status_ = LinkStatus{};
     status_.state = LinkState::Waiting;
     status_.wireless = wireless;
+    if (web_) web_->SetBusy(true); // One phone at a time: pages that turn up now are told to wait.
     if (!phoneName.empty()) {
         int n = MultiByteToWideChar(CP_UTF8, 0, phoneName.c_str(), int(phoneName.size()), nullptr, 0);
         status_.phoneName.resize(n);
@@ -377,6 +387,7 @@ bool PhoneLink::SessionLoop(const std::function<void()>& pump) {
         SyncLockPaused();
         WriteStatusFrame(now);
         PollDiscovery(now); // A scan may run during a session: it only lists phones, it never connects.
+        PollWeb(0);         // The iPhone page stays reachable (it is told the PC is busy).
         if (reconnect_.exchange(false)) return true;
         if (!gotHello_) {
             if (now - lastHello > 2000) {
@@ -435,6 +446,7 @@ void PhoneLink::LeaveSession() {
 }
 
 void PhoneLink::ResetAfterSession() {
+    if (web_) web_->SetBusy(false);
     decoder_.Reset();
     phonePaused_ = phoneStreaming_ = false;
     writer_.SetPhoneState(kPhoneNone);
@@ -480,6 +492,11 @@ void PhoneLink::LogStats(uint64_t now) {
 bool PhoneLink::SendCommand(uint8_t cmd, uint8_t arg) {
     uint8_t packet[proto::kCommandSize];
     proto::MakeCommand(packet, proto::Command(cmd), arg);
+    if (webSession_) {
+        if (web_->SendToPhone(packet, sizeof(packet))) return true;
+        Log("send cmd %d to the web page failed", int(cmd));
+        return false;
+    }
     if (tcp_ != ~uintptr_t(0)) return SendTcp(packet, sizeof(packet));
     int sent = 0;
     int r = libusb_bulk_transfer(handle_, epOut_, packet, sizeof(packet), &sent, 1000);
@@ -624,6 +641,26 @@ void PhoneLink::Publish() {
     status_.scansDone = scansDone_;
     status_.nearbyPhones = nearby_.Phones();
     nearbyDirty_ = false;
+    if (web_) {
+        status_.webReady = web_->Listening();
+        const std::string url = web_->PairingUrl();
+        status_.webUrl.assign(url.begin(), url.end()); // ASCII.
+        status_.webCodeExpires = url.empty() ? 0 : web_->PairingExpires();
+        status_.webAddresses = web_->Addresses();
+        status_.webAddress = web_->PairingAddress();
+        status_.webDevices.clear();
+        for (const web::WebDevice& d : web_->Devices()) {
+            LinkStatus::WebDeviceRow row;
+            row.id = d.id;
+            const int n = MultiByteToWideChar(CP_UTF8, 0, d.name.c_str(), int(d.name.size()), nullptr, 0);
+            row.name.resize(size_t(n));
+            MultiByteToWideChar(CP_UTF8, 0, d.name.c_str(), int(d.name.size()), row.name.data(), n);
+            row.addedUnix = d.addedUnix;
+            row.connected = webSession_ && d.id == webDeviceId_;
+            status_.webDevices.push_back(std::move(row));
+        }
+        webGeneration_ = web_->Generation();
+    }
     if (onStatus_) onStatus_(status_);
 }
 

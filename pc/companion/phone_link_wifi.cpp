@@ -457,6 +457,7 @@ PhoneLink::WifiEnd PhoneLink::Handshake(uintptr_t socket, bool forcePair) {
         WriteStatusFrame(now);
         if (cancelPairing_.exchange(false) && !status_.pairingCode.empty()) cancelled = true;
         PollDiscovery(now);
+        PollWeb(0);
         return !quit_ && WifiAllowed() && !cancelled;
     };
     Bytes transcript;
