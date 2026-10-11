@@ -91,7 +91,7 @@ Every packet starts with the 20-byte header:
 | 0 | HELLO | Version **3**, in reply to the PC's HELLO |
 | 1 | CONFIG | Width and height of the encoded pixels, the turn they need (see Rotation), facing, then SPS/PPS taken from the key frame. Sent before the first frame and before the key frame after any change (size, camera, bitrate) |
 | 2 | FRAME | One access unit, Annex-B, with flag bit 0 on key frames. Timestamps come from the page's monotonic clock and only ever go up |
-| 3 | ORIENT | Always **0** (see Rotation) |
+| 3 | ORIENT | How far the phone is turned clockwise, 0/90/270 (see Rotation); 0 for browsers that label their frames |
 | 4 | STATE | Idle / streaming / error / paused, and facing |
 | 5 | LOG | The browser's user agent, the camera's limits and modes, bitrate changes, errors. Lines from before HELLO are kept and sent after it |
 | 6 | CAMERA | The 21-byte form (see below) |
@@ -144,15 +144,23 @@ The PC sends a WebSocket ping every 5 s and drops a link that has been silent fo
   - `latencyMode: "realtime"`, `hardwareAcceleration: "prefer-hardware"`, `avc: {format: "annexb"}`.
   - Starting bitrate: 4 / 8 / 20 Mbps for 720p / 1080p / 4K, ×1.5 at 60 fps and above.
   - A key frame every 2 s.
-- **Rotation:** the first iPhone test showed portrait video **sideways** on the PC.
-  - The cause: Safari hands over the camera's own (landscape) pixels with only a rotation label
-    (`VideoFrame.rotation`), and the encoder ignores the label.
-  - So the page now encodes the frame's real pixel size (`visibleRect`) and sends the label as CONFIG's
-    sensor orientation. The PC turns the picture by it, as it does for Android phones. ORIENT stays 0.
-  - If a browser has no rotation label but the pixels lie the other way from the picture on screen, the
-    page assumes the usual phone sensor (back 90°, front 270°).
-  - Each change is logged ("picture: 1920x1080 turned 90° …"). **To confirm on the iPhone:** portrait and
-    landscape, back and front, are all upright in the Camera app.
+- **Rotation** (from the iPhone 13 tests, iOS 27):
+  - **What Safari gives:** the camera's own landscape pixels, 1920×1080, whichever way the phone is held,
+    and its frames carry no rotation label (`VideoFrame.rotation` is undefined).
+  - **What the page sends:** like an Android camera, CONFIG carries the sensor's turn (back 90°, front 270°),
+    and ORIENT carries how far the phone is turned clockwise from upright. ORIENT comes from the screen
+    angle: `(360 − screen.orientation.angle) % 360`, so portrait 0, top to the left 270, top to the right 90.
+  - **What the PC does:** it turns the picture by (sensor + ORIENT) for the back camera and
+    (sensor − ORIENT) for the front, exactly as for Android.
+  - **Turning the phone:** this only sends ORIENT; the encoder isn't restarted.
+  - **Results so far (back camera, before this change):** portrait and "top to the left" were right;
+    "top to the right" came out upside down and upside-down portrait sideways. The new rule fixes the
+    third.
+  - **Not handled:** an upside-down iPhone. Safari doesn't turn its screen for it, so the page can't tell.
+    It would need the motion sensors, which ask for permission.
+  - **Other browsers:** frames that carry a rotation label are turned by that label (ORIENT 0). Laptop
+    webcams are left as they are.
+  - **To confirm on the iPhone:** the front camera in all three positions.
 - **Back-pressure:**
   - If `ws.bufferedAmount` goes over about a quarter of a second of video (at least 256 KB), the page
     skips frames and makes the next one a key frame.
