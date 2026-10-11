@@ -32,6 +32,22 @@ using Microsoft::WRL::ComPtr;
 using ui::Box;
 using ui::Size;
 
+// The clock every animation in the companion's windows runs on. GetTickCount64 only moves in steps of the
+// system timer tick (~15.6 ms), which is coarser than a frame: consecutive frames read the same value, so
+// a 200 ms tween plays as a handful of jumps instead of a slide. The performance counter is smooth.
+inline uint64_t NowMs() {
+    static const LONGLONG freq = [] {
+        LARGE_INTEGER f = {};
+        QueryPerformanceFrequency(&f);
+        return f.QuadPart;
+    }();
+    if (freq <= 0) return GetTickCount64();
+    LARGE_INTEGER c = {};
+    QueryPerformanceCounter(&c);
+    // Seconds and remainder separately: counter * 1000 could overflow on a very long uptime.
+    return uint64_t(c.QuadPart / freq) * 1000 + uint64_t((c.QuadPart % freq) * 1000 / freq);
+}
+
 // --- Surface ----------------------------------------------------------------------------------------
 
 class Surface {
@@ -48,6 +64,9 @@ public:
     ID2D1Factory1* Factory();
     ID2D1DeviceContext* Context() const { return dc_.Get(); }
     int Generation() const { return generation_; }
+    // The last Present found the window fully covered, so it returned at once instead of waiting for the
+    // vertical blank. An animation must then be paced by a timer, or it would spin.
+    bool Occluded() const { return occluded_; }
 
 private:
     bool CreateDevice();
@@ -66,6 +85,7 @@ private:
     UINT width_ = 0, height_ = 0;
     float dpiScale_ = 1;
     int generation_ = 0;
+    bool occluded_ = false;
 };
 
 // --- Text ---------------------------------------------------------------------------------------------
@@ -144,7 +164,7 @@ public:
     void Text(Font font, const std::wstring& text, const Box& box, D2D1_COLOR_F color, Align align = Align::Leading,
               int underline = -1, bool ellipsis = false, bool vcenter = false);
     IDWriteTextFormat* Format(Font font) const { return formats_[int(font)].Get(); }
-    void ClearTextCache() { measureCache_.clear(); }
+    void ClearTextCache() { measureCache_.clear(); layoutCache_.clear(); }
 
     // Primitives.
     void Fill(const Box& b, D2D1_COLOR_F c);
@@ -214,6 +234,9 @@ private:
     ComPtr<ID2D1SolidColorBrush> brush_;
     ComPtr<ID2D1DeviceContext> brushOwner_; // Held, so a new context after device loss can't reuse its address.
     std::map<std::tuple<int, int, std::wstring>, Size> measureCache_;
+    // Drawn text layouts, reused between frames. Making one per string per frame is the per-frame cost
+    // that shows up during a page transition, when two pages are drawn at once.
+    std::map<std::tuple<int, int, int, int, int, std::wstring>, ComPtr<IDWriteTextLayout>> layoutCache_;
 };
 
 // Loads an icon resource at an exact pixel size as a D2D bitmap.
