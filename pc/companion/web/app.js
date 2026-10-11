@@ -209,6 +209,7 @@
       first.close();
       configure(c, 0, g);
       sendLog("picture: " + g.text);
+      sendOrient(); // Whether the PC adds the phone's turn depends on the camera's frames.
     } catch (e) {
       sendLog("encoder setup failed: " + (e.message || e));
       stream.getTracks().forEach((t) => t.stop());
@@ -222,27 +223,57 @@
     schedule(c);
   }
 
-  // The pixels the encoder really gets, and how far they must turn to stand upright. Safari can hand over
-  // the camera's own sideways pixels with only a rotation label (WebCodecs VideoFrame.rotation), which the
-  // encoder ignores: so the label goes to the PC as CONFIG's sensor orientation, and the PC turns the picture
-  // (as it does for Android phones).
+  // Which way up the picture is. The encoder takes the pixels as they are, so the turn they need goes to the
+  // PC, which turns the picture (protocol: CONFIG sensor orientation + ORIENT, as for Android phones).
+  //  - A browser that labels its frames (WebCodecs VideoFrame.rotation) gives the turn itself: ORIENT 0.
+  //  - Safari on iPhone/iPad (no label, tested on iOS 27): the frames are always the camera's own landscape
+  //    pixels, whichever way the phone is held. Like an Android camera, they need the sensor's turn (back 90°,
+  //    front 270°) plus how far the phone is turned, which comes from the screen angle. Safari never turns its
+  //    screen for an upside-down iPhone, so that position isn't followed.
+  //  - Other browsers (laptop webcams): the frames are upright as they are.
+  const appleMobile = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+                      (/Macintosh/.test(navigator.userAgent) && navigator.maxTouchPoints > 1);
+  const screenAngle = () => {
+    const a = screen.orientation && typeof screen.orientation.angle === "number" ? screen.orientation.angle
+            : typeof window.orientation === "number" ? window.orientation : 0;
+    return ((a % 360) + 360) % 360; // Counter-clockwise: 90 = turned left (top of the phone to the left).
+  };
+  let labelled = false; // The current camera's frames carry their own rotation.
+
   function geometry(frame) {
     const r = frame.visibleRect;
     const w = r ? r.width : frame.codedWidth, h = r ? r.height : frame.codedHeight;
-    let rotation = (((Number(frame.rotation) || 0) % 360) + 360) % 360;
-    let guessed = false;
-    // A browser without the rotation label: if the pixels lie the other way from the picture on screen, they
-    // are the camera's own; turn them the usual way for a phone camera (back 90°, front 270°, as on Android).
-    const shownWide = ui.video.videoWidth > ui.video.videoHeight;
-    if (frame.rotation === undefined && ui.video.videoWidth && (w > h) !== shownWide) {
+    labelled = frame.rotation !== undefined && frame.rotation !== null;
+    let rotation = 0, how = "upright as they come";
+    if (labelled) {
+      rotation = (((Number(frame.rotation) || 0) % 360) + 360) % 360;
+      how = "from the frame's rotation label";
+    } else if (appleMobile && w > h) {
       rotation = facing === P.FACING.FRONT ? 270 : 90;
-      guessed = true;
+      how = "camera sensor, plus the phone's turn in ORIENT";
     }
-    return { w, h, rotation, flip: !!frame.flip,
-             text: w + "x" + h + " turned " + rotation + "°" + (guessed ? " (guessed)" : "") + (frame.flip ? " and flipped" : "") +
-                   " (display " + frame.displayWidth + "x" + frame.displayHeight + ", coded " + frame.codedWidth + "x" +
-                   frame.codedHeight + ", rotation " + (frame.rotation === undefined ? "not supported" : frame.rotation) + ")" };
+    return { w, h, rotation,
+             text: w + "x" + h + ", sensor turn " + rotation + "° (" + how + ")" + (frame.flip ? ", flipped" : "") +
+                   "; screen angle " + screenAngle() + "°" };
   }
+
+  // ORIENT: how far the phone is turned clockwise from upright, when the PC must add it (see above).
+  function deviceTurn() {
+    if (labelled || !appleMobile) return 0;
+    return (360 - screenAngle()) % 360;
+  }
+  let lastTurn = -1;
+  function sendOrient() {
+    const t = deviceTurn();
+    if (t === lastTurn) return;
+    lastTurn = t;
+    send(P.orient(t));
+    if (helloDone) sendLog("phone turned: screen angle " + screenAngle() + "°, ORIENT " + t + "°");
+  }
+  const onTurn = () => { sendOrient(); setTimeout(sendOrient, 300); }; // Some iOS versions report late.
+  if (screen.orientation) screen.orientation.addEventListener("change", onTurn);
+  window.addEventListener("orientationchange", onTurn);
+  window.addEventListener("resize", onTurn);
 
   function configure(c, bitrate, g) {
     c.w = g.w;
@@ -278,6 +309,7 @@
       if (c.stop) return;
       try { configure(c, c.bitrate, g); } catch (e) { sendLog("encoder reconfigure failed: " + (e.message || e)); }
       sendLog("picture is now " + g.text);
+      sendOrient();
       c.reconfiguring = false;
       sendCamera();
       schedule(c);
@@ -410,7 +442,8 @@
         if (userPaused || hiddenPaused) phoneState = P.STATE.PAUSED;
         send(P.hello());
         sendState();
-        send(P.orient(0));
+        lastTurn = -1;
+        sendOrient();
         sendCamera();
         sendLog("page: " + navigator.userAgent);
         earlyLogs.splice(0).forEach((t) => send(P.log(t)));
