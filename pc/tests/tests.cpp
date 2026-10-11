@@ -796,6 +796,10 @@ void TestStatusText() {
     CHECK(DescribeStatus(s, true).facts == L"Back camera · 1920 × 1080 · USB hotspot");
     s.state = LinkState::Idle;
     CHECK(DescribeStatus(s, true).facts == L"Back camera · USB hotspot");
+    s.state = LinkState::Paused;
+    s.phoneName = L"iPhone";
+    s.webAway = true; // The page is locked or in the background: it, not the PC, can resume.
+    CHECK(DescribeStatus(s, true).hint.find(L"Open it again") != std::wstring::npos);
 }
 
 // --- iPhone web camera (web_proto.h) -------------------------------------------------------------------

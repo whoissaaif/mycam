@@ -60,6 +60,12 @@ StatusView DescribeStatus(const LinkStatus& s, bool cameraRegistered) {
         return {L"Camera problem", L"Check the phone. Another app may be using its camera.", kIconError,
                 camera + L" · " + link, L"Check the phone. Another app may be using its camera."};
     case LinkState::Paused:
+        if (s.web && s.webAway) {
+            const std::wstring phone = s.phoneName.empty() ? std::wstring(L"the iPhone") : s.phoneName;
+            return {L"Paused", L"Open MyCam again on " + phone + L" to resume. Apps see a “Camera paused” picture.",
+                    kIconPaused, camera + L" · " + link,
+                    L"The MyCam page on " + phone + L" is locked or in the background. Open it again to resume."};
+        }
         return {L"Paused", L"The camera is off. Apps see a “Camera paused” picture. Resume here or on the phone.", kIconPaused,
                 camera + L" · " + link, L"The camera is off. Apps see a “Camera paused” picture. Resume here or on the phone."};
     }

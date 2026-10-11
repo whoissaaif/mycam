@@ -204,7 +204,11 @@
       stopCapture().then(() => { if (!hiddenPaused) setState(P.STATE.ERROR); });
     });
     try {
-      configure(c);
+      const first = new VideoFrame(ui.video, { timestamp: 0 });
+      const g = geometry(first);
+      first.close();
+      configure(c, 0, g);
+      sendLog("picture: " + g.text);
     } catch (e) {
       sendLog("encoder setup failed: " + (e.message || e));
       stream.getTracks().forEach((t) => t.stop());
@@ -218,9 +222,32 @@
     schedule(c);
   }
 
-  function configure(c, bitrate) {
-    c.w = ui.video.videoWidth;
-    c.h = ui.video.videoHeight;
+  // The pixels the encoder really gets, and how far they must turn to stand upright. Safari can hand over
+  // the camera's own sideways pixels with only a rotation label (WebCodecs VideoFrame.rotation), which the
+  // encoder ignores: so the label goes to the PC as CONFIG's sensor orientation, and the PC turns the picture
+  // (as it does for Android phones).
+  function geometry(frame) {
+    const r = frame.visibleRect;
+    const w = r ? r.width : frame.codedWidth, h = r ? r.height : frame.codedHeight;
+    let rotation = (((Number(frame.rotation) || 0) % 360) + 360) % 360;
+    let guessed = false;
+    // A browser without the rotation label: if the pixels lie the other way from the picture on screen, they
+    // are the camera's own; turn them the usual way for a phone camera (back 90°, front 270°, as on Android).
+    const shownWide = ui.video.videoWidth > ui.video.videoHeight;
+    if (frame.rotation === undefined && ui.video.videoWidth && (w > h) !== shownWide) {
+      rotation = facing === P.FACING.FRONT ? 270 : 90;
+      guessed = true;
+    }
+    return { w, h, rotation, flip: !!frame.flip,
+             text: w + "x" + h + " turned " + rotation + "°" + (guessed ? " (guessed)" : "") + (frame.flip ? " and flipped" : "") +
+                   " (display " + frame.displayWidth + "x" + frame.displayHeight + ", coded " + frame.codedWidth + "x" +
+                   frame.codedHeight + ", rotation " + (frame.rotation === undefined ? "not supported" : frame.rotation) + ")" };
+  }
+
+  function configure(c, bitrate, g) {
+    c.w = g.w;
+    c.h = g.h;
+    c.rotation = g.rotation;
     c.target = P.bitrateFor(c.w, c.h, c.fps);
     c.bitrate = bitrate || c.target;
     c.enc.configure({
@@ -240,14 +267,17 @@
   async function pump(c) {
     if (c.stop || c.reconfiguring) return;
     const now = performance.now();
-    // The picture changed size (the phone was turned): finish the old frames, configure again, and send a
-    // new CONFIG before the next key frame. Safari's frames are upright, so rotation stays 0.
-    if (ui.video.videoWidth !== c.w || ui.video.videoHeight !== c.h) {
+    const frame = new VideoFrame(ui.video, { timestamp: nowUs() });
+    const g = geometry(frame);
+    // The picture changed (the phone was turned): finish the old frames, configure again, and send a new
+    // CONFIG (size and rotation) before the next key frame.
+    if (g.w !== c.w || g.h !== c.h || g.rotation !== c.rotation) {
+      frame.close();
       c.reconfiguring = true;
       try { await c.enc.flush(); } catch (e) { /* ignore */ }
       if (c.stop) return;
-      try { configure(c, c.bitrate); } catch (e) { sendLog("encoder reconfigure failed: " + (e.message || e)); }
-      sendLog("picture is now " + c.w + "x" + c.h);
+      try { configure(c, c.bitrate, g); } catch (e) { sendLog("encoder reconfigure failed: " + (e.message || e)); }
+      sendLog("picture is now " + g.text);
       c.reconfiguring = false;
       sendCamera();
       schedule(c);
@@ -257,6 +287,7 @@
     // the next key frame and lower the bitrate; raise it again once the link keeps up.
     const budget = Math.max(256 * 1024, c.bitrate / 8 / 4); // About a quarter of a second of video.
     if (c.enc.encodeQueueSize > 2) { // The encoder is behind (starting up, say): skip this frame, nothing more.
+      frame.close();
       schedule(c);
       return;
     }
@@ -268,8 +299,9 @@
         c.lastDropAt = now;
         const lower = Math.max(1e6, Math.round(c.bitrate * 0.7));
         sendLog("link slower than the camera: bitrate " + (c.bitrate / 1e6).toFixed(1) + " -> " + (lower / 1e6).toFixed(1) + " Mbps");
-        try { configure(c, lower); } catch (e) { /* keep going */ }
+        try { configure(c, lower, g); } catch (e) { /* keep going */ }
       }
+      frame.close();
       schedule(c);
       return;
     }
@@ -278,9 +310,8 @@
       c.lastRaiseAt = now;
       const higher = Math.min(c.target, Math.round(c.bitrate * 1.15));
       sendLog("link keeps up: bitrate " + (c.bitrate / 1e6).toFixed(1) + " -> " + (higher / 1e6).toFixed(1) + " Mbps");
-      try { configure(c, higher); } catch (e) { /* keep going */ }
+      try { configure(c, higher, g); } catch (e) { /* keep going */ }
     }
-    const frame = new VideoFrame(ui.video, { timestamp: nowUs() });
     c.enc.encode(frame, { keyFrame: c.forceKey || c.frames % (c.fps * 2) === 0 }); // A key frame every 2 s.
     frame.close();
     c.forceKey = false;
@@ -319,7 +350,7 @@
     if (c.needConfig) {
       if (!key) return; // CONFIG goes out right before a key frame.
       const spsPps = P.extractSpsPps(data);
-      send(P.config(c.w, c.h, 0, facing, spsPps)); // Sensor orientation 0: Safari's frames are upright.
+      send(P.config(c.w, c.h, c.rotation, facing, spsPps)); // How far the PC turns the pixels (see geometry()).
       c.needConfig = false;
       if (phoneState !== P.STATE.STREAMING) {
         setState(P.STATE.STREAMING);

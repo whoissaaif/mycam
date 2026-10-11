@@ -59,6 +59,8 @@ struct LinkStatus {
     // The iPhone web camera (a page in Safari; docs/web-camera-format.md).
     bool web = false;             // The current phone is a web page (wireless is set too).
     std::wstring webLink;         // How that page reaches the PC: "Wi-Fi", "USB hotspot" or "network".
+    bool webAway = false;         // That page is paused and gone for now (iPhone locked, Safari in the
+                                  // background): it resumes when opened again; Resume on the PC can't.
     bool webReady = false;        // The page's server is listening on port 47900.
     // "Connect an iPhone": the QR code's address while pairing. It holds the one-time code: never log it.
     std::wstring webUrl;

@@ -172,7 +172,7 @@ void ShowMenu(HWND hwnd) {
     SetMenuDefaultItem(menu, kMenuSettings, FALSE); // Bold; also what a left-click opens.
     const bool paused = s.state == LinkState::Paused;
     const bool connected = s.state >= LinkState::Idle;
-    AppendMenuW(menu, MF_STRING | (connected && !s.lockPaused ? 0 : MF_GRAYED), kMenuPause,
+    AppendMenuW(menu, MF_STRING | (connected && !s.lockPaused && !s.webAway ? 0 : MF_GRAYED), kMenuPause,
                 paused ? L"&Resume camera" : L"&Pause camera");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, kMenuBack, L"&Back camera");
