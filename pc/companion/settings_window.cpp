@@ -82,6 +82,7 @@ struct DeviceRow {
     std::wstring name, where, status;
     uint32_t ipv4 = 0;
     bool usb = false, connected = false;
+    std::string webId;    // A remembered iPhone (web page): its device id, for Forget.
     int card = kNone;     // The card this row is laid out in (Connected or Available).
     bool firstInCard = false; // No divider above the first row of a card.
     Box glyphBox, nameBox, whereBox, transportBox;
@@ -729,6 +730,19 @@ struct SettingsWindow::Impl {
             r.status = r.connected ? L"Connected" : L"Waiting for the MyCam app";
             rows.push_back(std::move(r));
         }
+        // iPhones (the web page): the one in use, and the remembered ones (they connect when their page opens).
+        for (const LinkStatus::WebDeviceRow& d : s.webDevices) {
+            if (int(rows.size()) >= kScanRowsMax) break;
+            DeviceRow r;
+            r.webId = d.id;
+            r.name = d.name;
+            r.connected = d.connected && s.state >= LinkState::Idle;
+            r.usb = d.connected && s.webLink == L"USB hotspot";
+            r.where = d.connected ? L"Safari · " + (s.webLink.empty() ? std::wstring(L"Wi-Fi") : s.webLink) : L"Safari";
+            r.status = r.connected ? (s.webAway ? L"Connected · page closed or locked" : L"Connected")
+                                   : L"Remembered: open MyCam on it to connect";
+            rows.push_back(std::move(r));
+        }
         for (const NearbyPhone& p : s.nearbyPhones) {
             if (int(rows.size()) >= kScanRowsMax) break;
             DeviceRow r;
@@ -773,10 +787,12 @@ struct SettingsWindow::Impl {
             r.card = cardId;
             r.firstInCard = slot == 0;
             const float ry = card.t + 1 + rowH * float(slot);
-            const bool canConnect = !r.connected && !r.usb && model->connectTo;
+            const bool canConnect = !r.connected && !r.usb && r.webId.empty() && model->connectTo;
+            const bool canForget = !r.webId.empty() && model->forgetWebDevice;
+            const Size forget = ButtonSize(L"Forget", 84);
             r.glyphBox = MakeBox(card.l + kCardPad, ry + (rowH - 24) / 2, 24, 24);
             const float nameL = r.glyphBox.r + 12;
-            const float nameR = card.r - kCardPad - (canConnect ? connect.w + 12 : 0) - 26;
+            const float nameR = card.r - kCardPad - (canConnect ? connect.w + 12 : canForget ? forget.w + 12 : 0) - 26;
             r.nameBox = {nameL, ry + (rowH - lineH - smallH - 2) / 2, nameR, ry + (rowH - lineH - smallH - 2) / 2 + lineH};
             r.whereBox = {nameL, r.nameBox.b + 1, nameR, r.nameBox.b + 1 + smallH};
             r.transportBox = MakeBox(nameR + 4, ry + (rowH - 18) / 2, 18, 18);
@@ -792,6 +808,13 @@ struct SettingsWindow::Impl {
                                     groupId);
                 c.e.name = L"Connect to " + r.name;
                 c.drawGroup = cardId;
+            }
+            if (canForget) { // A remembered iPhone: Forget, right here (it scans the QR code again next time).
+                Item& f = AddButton(ScanRowId(int(i), 2), L"Forget", FlatStyle::Secondary,
+                                    MakeBox(card.r - kCardPad - forget.w, ry + (rowH - forget.h) / 2, forget.w, forget.h),
+                                    groupId);
+                f.e.name = L"Forget " + r.name + L" (it scans the code again next time)";
+                f.drawGroup = cardId;
             }
         }
         *y = card.b + kGap;
@@ -809,7 +832,7 @@ struct SettingsWindow::Impl {
             .glyph = Glyph::Refresh;
         items.back().hasGlyph = true;
         float ty = *y + t.h + 2;
-        const std::wstring sub = L"Phones on this Wi-Fi, and the one on the cable";
+        const std::wstring sub = L"Phones on this Wi-Fi, the one on the cable, and your iPhones";
         const Size st = paint.Measure(Font::Small, sub, titleW);
         {
             Item& sb = Add(kPageSubtitle, Kind::Text, L"", MakeBox(x, ty, titleW, st.h), kNone);
@@ -1497,6 +1520,11 @@ struct SettingsWindow::Impl {
                 break;
             }
             const int row = ScanRowIndex(id, &part);
+            if (row >= 0 && part == 2 && row < int(deviceRows.size()) && model->forgetWebDevice &&
+                !deviceRows[size_t(row)].webId.empty()) {
+                model->forgetWebDevice(deviceRows[size_t(row)].webId);
+                break;
+            }
             if (row >= 0 && part == 1 && row < int(deviceRows.size()) && model->connectTo) {
                 model->connectTo(deviceRows[size_t(row)].ipv4); // One Wi-Fi session (pairing as usual if new).
                 break;
