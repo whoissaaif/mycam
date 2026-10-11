@@ -37,6 +37,10 @@ struct SettingsModel {
     std::function<void()> cancelPairing;           // "Cancel pairing" (PhoneLink::CancelPairing)
     std::function<void()> scanForPhones;           // "Scan for phones" (PhoneLink::ScanForPhones)
     std::function<void(uint32_t)> connectTo;       // Connect, from the scan list (PhoneLink::ConnectTo, IPv4)
+    // "Connect an iPhone": a QR code while that page shows (PhoneLink::StartWebPairing / StopWebPairing).
+    std::function<void(uint32_t)> startWebPairing; // IPv4 the QR code points at (0: the best one).
+    std::function<void()> stopWebPairing;
+    std::function<void(const std::string&)> forgetWebDevice;
     bool testPattern = false;                      // --test-pattern: the preview shows the pattern as live
 };
 

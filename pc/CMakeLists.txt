@@ -45,6 +45,7 @@ add_executable(MyCamCompanion WIN32
     companion/web_server.cpp
     companion/tls_server.cpp
     companion/phone_link_web.cpp
+    third_party/qrcodegen/qrcodegen.cpp
     companion/decoder.cpp
     companion/frame_writer.cpp
     companion/packet_parser.cpp
