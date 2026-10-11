@@ -5,7 +5,7 @@
 ;   ISCC /DSIGN "/Smycam=signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /a $f" mycam.iss
 
 #ifndef AppVersion
-  #define AppVersion "1.4.0"
+  #define AppVersion "1.4.1"
 #endif
 #ifndef BuildDir
   #define BuildDir "..\pc\build-release\Release"
@@ -45,7 +45,7 @@ SignedUninstaller=yes
 #endif
 
 [Messages]
-WelcomeLabel2=This will install MyCam {#AppVersion}, which turns your Android phone into a USB webcam.%n%nYour phone shows up as a camera called "MyCam" in Zoom, Teams, OBS, browsers and the Camera app.%n%nClose any app that is using MyCam before continuing.
+WelcomeLabel2=This will install MyCam {#AppVersion}, which turns your phone into a webcam: an Android phone over USB or Wi-Fi, or an iPhone through Safari.%n%nYour phone shows up as a camera called "MyCam" in Zoom, Teams, OBS, browsers and the Camera app.%n%nClose any app that is using MyCam before continuing.
 
 [Tasks]
 Name: "autostart"; Description: "Start MyCam when I sign in to Windows (recommended)"
