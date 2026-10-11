@@ -8,7 +8,7 @@ holds the detail behind each item, and [ISSUES.md](ISSUES.md) records problems f
 
 ## Where things stand (2026-10-10)
 
-- **Latest release: v1.4.0** (private): https://github.com/whoissaaif/mycam/releases/tag/v1.4.0
+- **Latest release: v1.4.0**: https://github.com/whoissaaif/mycam/releases/tag/v1.4.0
   (`MyCam-1.4.0.apk` + `MyCam-Setup-1.4.0.exe`). Stable: Wi-Fi mode leaves beta and both apps ship the v2
   shell. Released from `xp-redesign` on 2026-10-11, tested live on the CMF Phone 1 over Wi-Fi.
 - **Branches:**
@@ -72,7 +72,7 @@ offers to remove it on uninstall) and a per-monitor DPI manifest.
 - Aero redesign of the phone app: Selawik font, glass header, command links and a new launcher icon.
 
 ### 6. GitHub (1.1.1)
-Published to `whoissaaif/mycam` under MIT, then switched to **private**. Commits use the no-reply email, and
+Published to `whoissaaif/mycam` under MIT, then private from 1.1.1 until 1.4.0, and **public** again since. Commits use the no-reply email, and
 `inspo/` was kept out of history. The first release had both the exe and the apk. The README shows the demo
 GIF; the screenshots were removed.
 
@@ -233,4 +233,4 @@ Sandbox couldn't be used because CPU virtualization is off in the firmware.
    phones, battery saver.
 5. Windows 10 support (IMPROVEMENTS 10), once a Windows 10 PC is available.
 6. iPhone (IMPROVEMENTS 9 / Aiyan's branch), once his threading is fixed and an iOS app exists.
-7. Code signing, `design/STYLE.md`, full UsbDk removal on uninstall, and a public/private decision.
+7. Code signing, `design/STYLE.md`, full UsbDk removal on uninstall. The repo is public again as of 1.4.0.

@@ -67,12 +67,18 @@ TASKS.md.
 
 ## Rules from the user
 
-- **Repo is private** (`github.com/whoissaaif/mycam`). Don't make it public without asking.
+- **Repo is public** (`github.com/whoissaaif/mycam`, MIT). It was private until 1.4.0. Everything committed
+  is world-readable the moment it is pushed, and so is every release asset, so the "never commit" list below
+  is a hard rule, not housekeeping. Don't make it private again without asking.
 - **Never commit `inspo/`** (it contains Microsoft artwork), `screenshots/`, `release/`, `keystore.properties`
   or `*.jks`. The release keystore lives at `%USERPROFILE%\.mycam\mycam-release.jks`. **The user types the key
   password themselves.** Never ask for it, store it or echo it.
 - Commits use the GitHub **no-reply email**, with author name `saif`. Don't expose the real email.
-- Don't push, tag or release unless asked. "Keep it local" means no pushing.
+- **Push every commit.** Committing and pushing go together: don't leave work sitting in the working tree
+  or in unpushed commits at the end of a task. The exception is "keep it local", which means commit but
+  don't push. Since the repo is public, read what you are about to commit before you commit it.
+- **Tagging and releasing still need an explicit ask.** Pushing a commit is routine; cutting `vX.Y.Z` and
+  publishing downloadable binaries is not.
 - Package / applicationId: `io.github.whoissaaif.mycam`. Changing it makes a new app on phones.
 - Keep phone behaviour that the user confirmed is correct: opening the phone's own camera app stops the stream.
 - Track work in TASKS.md (status + Releases + Decisions tables) and IMPROVEMENTS.md (section numbers

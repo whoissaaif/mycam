@@ -57,7 +57,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [ ] Test the release APK (not just debug) on a phone before every release: R8 only runs on release builds
 - [ ] Uninstaller: remove UsbDk completely (service + UsbDk.sys stay behind after msiexec) [5.3]
 - [ ] Test a clean install on a different PC (Sandbox needs CPU virtualization enabled in firmware) [2.3]
-- [ ] Decide public vs. private repo before sharing builds [8]
+- [x] Decide public vs. private repo before sharing builds [8]: public since 1.4.0
 - [ ] iPhone support: iOS app + usbmux transport on the PC (future; needs a Mac, an iPhone, Apple Developer account) [9]
 - [ ] Windows 10 support: DirectShow camera for Windows 10, installer picks per Windows version (needs a Windows 10 PC to test) [10]
 - [ ] Wireless option: Wi-Fi transport with discovery, one-time pairing and encryption; cable stays the default [11]
@@ -78,7 +78,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [x] Pause on phone and PC, "Camera paused" picture [1.1] (1.1.0)
 - [x] Auto-pause while Windows is locked or asleep [1.2] (1.1.0)
 - [x] Aero phone app and launcher icon [1.3] (1.1.0)
-- [x] Published to GitHub (private), email hidden, release v1.1.1 [8]
+- [x] Published to GitHub, email hidden, release v1.1.1 [8]
 
 ---
 
@@ -113,3 +113,4 @@ run `installer\build.ps1` and `gradlew assembleDebug`, commit, tag `vX.Y.Z`, pus
 | 2026-10-09 | Commits use the GitHub no-reply email |
 | 2026-10-11 | A phone may ask a PC it can see to connect ("MYCAM+1" on the discovery socket), so a Wi-Fi pairing can be started from either screen (PROTOCOL.md "The phone asks for a session") |
 | 2026-10-11 | The paused camera picture is `design/assets/source/camera-paused-reference.png` itself, cropped to 16:9 — not a recreation of it, and with no wordmark over it |
+| 2026-10-11 | Repo is **public** again (it was private from 1.1.1). Everything pushed is world-readable, so the never-commit list is a hard rule. Commits are pushed as a matter of course; tagging and releasing still need an explicit ask. |
