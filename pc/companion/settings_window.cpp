@@ -416,7 +416,9 @@ struct SettingsWindow::Impl {
         }
         curVisible = wasVisible;
         curClip = wasClip;
-        dropPanel = open ? Box{x, panelTop, x + w, ry + 4} : Box{};
+        // Only the open list sets the panel (Layout clears it): a closed dropdown laid out after the open one
+        // must not wipe it, or the list is clickable but never drawn.
+        if (open) dropPanel = Box{x, panelTop, x + w, ry + 4};
     }
     Box dropPanel = {};
 
