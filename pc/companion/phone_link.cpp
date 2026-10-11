@@ -493,6 +493,7 @@ bool PhoneLink::SendCommand(uint8_t cmd, uint8_t arg) {
     uint8_t packet[proto::kCommandSize];
     proto::MakeCommand(packet, proto::Command(cmd), arg);
     if (webSession_) {
+        if (webLingering_) return true; // Nobody to tell: the page gets HELLO (and the rest) when it is back.
         if (web_->SendToPhone(packet, sizeof(packet))) return true;
         Log("send cmd %d to the web page failed", int(cmd));
         return false;

@@ -55,7 +55,12 @@
 
   // --- Sending ------------------------------------------------------------------------------------
   const send = (buf) => { if (ws && ws.readyState === WebSocket.OPEN) ws.send(buf); };
-  const sendLog = (text) => send(P.log(text));
+  // Lines from before the PC said HELLO (the camera check at Start, say) wait for it, so they reach the log.
+  const earlyLogs = [];
+  const sendLog = (text) => {
+    if (helloDone && ws && ws.readyState === WebSocket.OPEN) send(P.log(text));
+    else if (earlyLogs.length < 20) earlyLogs.push(text);
+  };
   const sendState = () => send(P.state(phoneState, facing));
   function setState(s) {
     phoneState = s;
@@ -75,7 +80,7 @@
     if (masks[2]) flags |= P.CAM.HAS_4K;
     const z = c && c.zoom ? c.zoom : { min: 1, max: 1 };
     send(P.camera({
-      quality, fps,
+      quality: effectiveMode().q, fps, // The quality that really runs; the asked rate (the PC applies the mask).
       zoomX100: Math.round(zoom * 100), zoomMinX100: Math.round(z.min * 100), zoomMaxX100: Math.round(z.max * 100),
       ev: 0, evMin: 0, evMax: 0, evStepX100: 0, // Safari has no exposure control.
       flags,
@@ -120,12 +125,15 @@
       const [qw, qh] = P.QUALITY_SIZE[q];
       if (big < qw || small < qh) continue;
       for (const f of [30, 60, 120]) {
-        if (fpsMax + 0.5 < f) continue;
+        // 30 is the lowest rate the protocol knows, so it stands for "this size works"; 60 and 120 must be real.
+        if (f > 30 && fpsMax + 0.5 < f) continue;
         if (await encoderSupports(qw, qh, f)) masks[q] |= P.FPS_BIT[f];
       }
     }
+    // A camera smaller than 720p still works: it is offered as the lowest quality, at 30 fps.
+    if (!masks[0] && !masks[1] && !masks[2]) masks[0] = P.FPS_BIT[30];
     const zoom = tc.zoom && tc.zoom.max > tc.zoom.min ? { min: tc.zoom.min, max: tc.zoom.max } : null;
-    return { masks, zoom, torch: !!tc.torch, fpsMax };
+    return { masks, zoom, torch: !!tc.torch, fpsMax, maxW: big, maxH: small };
   }
 
   async function ensureCaps(which) {
@@ -133,8 +141,8 @@
     const r = await probe(which);
     if (r.error) throw r.error;
     caps[which] = r;
-    sendLog("camera " + (which ? "front" : "back") + ": modes 720p=" + r.masks[0] + " 1080p=" + r.masks[1] +
-            " 4K=" + r.masks[2] + " (bits 1=30 2=60 4=120), max " + r.fpsMax + " fps, zoom " +
+    sendLog("camera " + (which ? "front" : "back") + ": up to " + r.maxW + "x" + r.maxH + ", modes 720p=" + r.masks[0] +
+            " 1080p=" + r.masks[1] + " 4K=" + r.masks[2] + " (bits 1=30 2=60 4=120), max " + r.fpsMax + " fps, zoom " +
             (r.zoom ? r.zoom.min + "-" + r.zoom.max : "no") + ", torch " + (r.torch ? "yes" : "no"));
     return r;
   }
@@ -248,7 +256,11 @@
     // Back-pressure: never queue seconds of video. If the link is slower than the encoder, skip frames until
     // the next key frame and lower the bitrate; raise it again once the link keeps up.
     const budget = Math.max(256 * 1024, c.bitrate / 8 / 4); // About a quarter of a second of video.
-    if ((ws && ws.bufferedAmount > budget) || c.enc.encodeQueueSize > 2) {
+    if (c.enc.encodeQueueSize > 2) { // The encoder is behind (starting up, say): skip this frame, nothing more.
+      schedule(c);
+      return;
+    }
+    if (ws && ws.bufferedAmount > budget) {
       c.skipped++;
       c.forceKey = true;
       c.lastSkipAt = now;
@@ -369,6 +381,8 @@
         sendState();
         send(P.orient(0));
         sendCamera();
+        sendLog("page: " + navigator.userAgent);
+        earlyLogs.splice(0).forEach((t) => send(P.log(t)));
         break;
       case P.CMD.START:
         wantStream = true;
@@ -562,6 +576,7 @@
       return;
     }
     hiddenPaused = false;
+    if (!userPaused && phoneState === P.STATE.PAUSED) phoneState = P.STATE.IDLE; // The PC starts it again if wanted.
     if (!started) return;
     keepAwake();
     if (!ws) {
@@ -682,7 +697,13 @@
       pairing = true;
       render();
       try {
-        pairError = !(await pair(code));
+        // Already paired with this PC: keep that, rather than being listed twice.
+        let known = false;
+        if (deviceToken) {
+          const r = await fetch("/check", { method: "POST", body: new URLSearchParams({ d: deviceToken }), cache: "no-store" });
+          known = r.ok;
+        }
+        pairError = known ? false : !(await pair(code));
       } catch (e) {
         pairError = true;
       }
