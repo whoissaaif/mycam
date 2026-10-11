@@ -1,122 +1,221 @@
-# Web camera: WebSocket message format
+# Web camera: the iPhone page and its messages
 
-*For Aiyan, from saif. Reply to your Test 2 results. Status: proposal, open for your comments.*
+*Status: **agreed and built** (branch `aiyan-webtest`). It started as saif's proposal, answering Aiyan's
+Test 2 results. Assignment: [AIYAN-IPHONE.md](AIYAN-IPHONE.md). Background: [iphone-web-plan.md](iphone-web-plan.md).*
 
-## Your test results
+An iPhone (or iPad, or any browser with WebCodecs) becomes MyCam's camera through a page that the PC
+companion serves itself. Nothing is installed on the phone. The page:
+- captures the camera (`getUserMedia`);
+- encodes H.264 on the phone's hardware (WebCodecs `VideoEncoder`);
+- sends MyCam protocol packets over a secure WebSocket.
 
-Great results. They answer both unknowns from `iphone-web-plan.md`:
-- **The certificate:** `wss://` works with our self-made certificate after one tap-through, so nobody has
-  to install a certificate.
-- **The hardware encoder:** WebCodecs H.264 is fast enough. 1080p30 at 30 fps (7.6 Mbps), 1080p60 at 59 fps
-  (11.3 Mbps), no skipped frames, ~5 ms round trip.
+On the PC, the page is a third transport next to USB and Android Wi-Fi, in the same single-threaded
+`SessionLoop`.
 
-The web-page approach is viable on an iPhone 13 (iOS 27).
+## Test results that settled it (iPhone 13, iOS 27)
 
-## Proposal: reuse the MyCam protocol, one packet per WebSocket message
+- **Certificate:** `wss://` works with a self-signed certificate after one tap-through. No certificate
+  install is needed.
+- **Encoder:** WebCodecs H.264 runs in hardware. Every size and rate tested is supported: 720p, 1080p
+  and 4K, at 30 and 60 fps. Encoding takes about 15 ms per frame.
+- **Sending:** 1080p30 ran at 30 fps (7.6 Mbps) and 1080p60 at 59 fps (11.3 Mbps). The round trip was
+  about 5 ms and no frames were skipped.
 
-The protocol the Android app already uses over USB and Wi-Fi has everything on your list: timestamp,
-keyframe flag, frame size, rotation, SPS/PPS, plus state, pause and the PC's controls. If the page speaks it,
-the PC reads it with the code it already has. Decoding, the virtual camera, pause, the status pictures and
-the PC's controls then work with no new PC logic, and there's only one format to maintain.
+## The server (PC companion, `pc/companion/web_server.cpp`)
 
-Rules:
-- **Binary messages only.** Each WebSocket message carries exactly **one** complete packet or command.
-- **Big-endian** for every number (JavaScript's `DataView` default).
-- **Your sequence number goes.** WebSocket is ordered, and lost or late frames show up as gaps in the
-  timestamps.
-- **No extra encryption** inside the WebSocket: `wss://` (TLS) already encrypts everything. The Android
-  Wi-Fi link has its own AES layer only because it runs over plain TCP.
+HTTPS on **TCP 47900**, with TLS from Schannel. The installer adds an inbound firewall rule for
+`MyCamCompanion.exe` on that port, **private networks only**.
 
-Full spec: `protocol/PROTOCOL.md`, sections "Phone → PC packets", "PC → phone commands" and "Flow". Exact
-example bytes: `protocol/golden.txt`. Please make your JavaScript produce exactly those bytes.
+| Request | What it does |
+|---|---|
+| `GET /` (also `/app.js`, `/protocol.js`, `/style.css`, `/icon.png`) | The page, from the exe's resources (`companion.rc` 301–305) |
+| `POST /pair`, form `t=<code>&name=<device>` | Trades the QR code's one-time code for a device token. Returns `{"ok":true,"device":"<token>","name":"iPhone"}`, or 403 `{"error":"code"}` |
+| `POST /check`, form `d=<device token>` | Returns `{"ok":true,"busy":false,"name":"iPhone"}`, or 403 when the PC doesn't know (or forgot) the device |
+| `GET /ws?d=<device token>` (WebSocket upgrade) | The camera link. Refused (403) without a valid device token, or when the `Origin` isn't this server. Refused with 503 while another phone uses MyCam |
 
-## Page → PC: packets
+**Responses** carry `Cache-Control: no-store` and `Referrer-Policy: no-referrer`. The page also gets a
+strict Content Security Policy (only its own scripts and styles, and connections only to this PC).
 
-Every packet starts with this 20-byte header, then `length` bytes of payload:
+### Certificate
+
+- **Made once per user:** a self-signed RSA-2048 / SHA-256 certificate in `CurrentUser\My`.
+- **Name:** "MyCam web camera".
+- **Key:** not exportable.
+- **Names inside it:** localhost and the PC's IPv4 addresses at the time it was made.
+- **Lifetime:** 397 days, because iOS refuses TLS certificates that live longer. It is renewed 30 days
+  before it ends, which means one more tap-through.
+
+### Tokens
+
+| | Size | Lives | Where |
+|---|---|---|---|
+| Pairing code (in the QR code) | 128 bits, base64url | Once, for 5 minutes. A new one appears by itself while the "Connect an iPhone" page is open, and none exists when it's closed | PC memory only |
+| Device token | 256 bits, base64url | Until "Forget" | The page's `localStorage` (`mycam.device`). The PC keeps only its SHA-256, in `HKCU\Software\MyCam\WebDevices\<id>` (`TokenHash`, `Name`, `Added`) |
+
+- **First connection:** the QR code points at `https://<pc-ip>:47900/?t=<code>`. The page first removes
+  the code from the address bar (`history.replaceState`, so it doesn't stay in Safari's history). Then
+  it calls `POST /pair`, keeps the device token, and connects.
+- **Later connections:** opening `https://<pc-ip>:47900/` again (or the Home Screen icon) and tapping
+  Start reconnects without scanning.
+- **Never logged:** tokens never go to the log. The settings window shows the address without the code.
+
+### Pairing and the network
+
+- **Choosing the address:** the PC picks the address for the QR code. Wi-Fi comes first, then Ethernet,
+  then an iPhone's USB hotspot (Apple Mobile Device Ethernet), then anything else. VPNs and tunnels go last.
+- **Left out:** virtual switches (Hyper-V, WSL, VMware, VirtualBox, Docker) and link-local addresses.
+- **Several networks:** with more than one address, the user picks the one the iPhone is on.
+
+## Messages on `/ws`
+
+**Binary messages only**, each carrying exactly **one** complete MyCam packet (page → PC) or command
+(PC → page). The format is the normal MyCam protocol, big-endian: see `protocol/PROTOCOL.md`, "Phone → PC
+packets", "PC → phone commands" and "Flow". There is no extra encryption, because `wss://` already
+encrypts everything.
+
+### Page → PC packets
+
+Every packet starts with the 20-byte header:
 
 | Offset | Size | Field |
 |---|---|---|
-| 0 | 4 | magic `4D 43 41 4D` (`"MCAM"`) |
+| 0 | 4 | `MCAM` |
 | 4 | 1 | type |
-| 5 | 1 | flags: bit 0 = keyframe (FRAME only) |
-| 6 | 2 | reserved, must be 0 |
-| 8 | 8 | timestamp, µs, signed 64-bit (FRAME only, else 0) |
-| 16 | 4 | payload length (max 8 MiB) |
+| 5 | 1 | flags (bit 0 = key frame) |
+| 6 | 2 | reserved, 0 |
+| 8 | 8 | timestamp in µs |
+| 16 | 4 | payload length |
 
-| Type | Name | Payload | When the page sends it |
-|---|---|---|---|
-| 0 | HELLO | u16 protocol version = **3** | In reply to the PC's HELLO command |
-| 1 | CONFIG | u16 width, u16 height, u16 sensor orientation, u8 facing (0 back, 1 front), then SPS/PPS in Annex-B | Before the first frame, and again whenever size or camera changes |
-| 2 | FRAME | one encoded frame (access unit), Annex-B; flags bit 0 for keyframes | Every encoded frame |
-| 3 | ORIENT | u16 rotation, degrees clockwise (0/90/180/270) | After HELLO, and whenever the phone is turned |
-| 4 | STATE | u8 state (0 idle, 1 streaming, 2 error, 3 paused), u8 facing | After HELLO and whenever it changes |
-| 5 | LOG | UTF-8 text, written to the PC's `mycam.log` | Any time: very useful for debugging |
-| 6 | CAMERA | camera settings and abilities (see PROTOCOL.md) | Optional, can come later |
-
-## PC → page: commands
-
-Always 8 bytes: magic `4D 43 4D 44` (`"MCMD"`), u8 command, u8 argument, 2 reserved bytes (0).
-
-| Cmd | Name | What the page does |
+| Type | Name | What the page sends |
 |---|---|---|
-| 1 | HELLO | Reply HELLO, then STATE and ORIENT |
-| 2 | START | Start the camera and encoder; send CONFIG, STATE(streaming), then FRAMEs. If already streaming: resend CONFIG and make the next frame a keyframe |
-| 3 | STOP | Stop the camera (release the track), send STATE(idle) |
-| 4 | KEYFRAME | Resend CONFIG; encode the next frame with `{ keyFrame: true }` |
-| 5 | SET_FACING | arg 0 back / 1 front: switch `facingMode`, then resend CONFIG |
-| 6 / 7 | PAUSE / RESUME | Camera off / back on (if the PC still wants video); report STATE(paused) |
-| 8 | SET_QUALITY | arg 0 = 720p, 1 = 1080p, 2 = 4K: `applyConstraints` + reconfigure the encoder |
-| 9 | SET_FPS | arg 30 / 60 / 120: same; fall back to what the camera allows |
-| 10–13 | ZOOM / EXPOSURE / TORCH / FOCUS | Optional for now: do what the browser allows, ignore the rest |
+| 0 | HELLO | Version **3**, in reply to the PC's HELLO |
+| 1 | CONFIG | Width, height, sensor orientation **0**, facing, then SPS/PPS taken from the key frame. Sent before the first frame and before the key frame after any change (size, camera, bitrate) |
+| 2 | FRAME | One access unit, Annex-B, with flag bit 0 on key frames. Timestamps come from the page's monotonic clock and only ever go up |
+| 3 | ORIENT | Always **0** (see Rotation) |
+| 4 | STATE | Idle / streaming / error / paused, and facing |
+| 5 | LOG | The browser's user agent, the camera's limits and modes, bitrate changes, errors. Lines from before HELLO are kept and sent after it |
+| 6 | CAMERA | The 21-byte form (see below) |
 
-The PC does the asking: it sends HELLO every 2 s until the page answers, START when an app on the PC opens
-the camera, and STOP about 4 s after the last app closes it. So the camera is only on while something on the
-PC actually uses it.
+**CAMERA, as the page fills it in:**
+- **Frame-rate masks:** one per quality. A quality gets the 30 fps bit when the camera reaches that size
+  *and* `VideoEncoder.isConfigSupported()` accepts it (30 stands for "this size works", the lowest rate
+  the protocol has). The 60 / 120 bits need the camera's `frameRate.max` as well.
+- **Small cameras:** a camera below 720p is still offered as 720p at 30.
+- **Measured rate:** if the camera then delivers less than 75 % of the asked rate, that rate's bit is
+  cleared and CAMERA is sent again.
+- **Zoom and torch:** from `track.getCapabilities()` (the iPhone 13 has both).
+- **Brightness:** EV is 0/0/0, because Safari can't set exposure. The PC greys it out.
+- **Autofocus flag:** not set, because Safari doesn't expose focus control.
+- **Quality:** the one that really runs.
+- **Fps:** the one the PC asked for.
 
-## Details for the page
+### PC → page commands
 
-- **Encoder setup:** `codec: "avc1.640028"` (or whatever level your test used), `avc: { format: "annexb" }`,
-  `latencyMode: "realtime"`, `hardwareAcceleration: "prefer-hardware"`. Annex-B is what our decoder expects.
-- **SPS/PPS:** with Annex-B output, keyframes carry them inline. Copy the SPS and PPS NAL units (types 7 and
-  8) from the first keyframe into CONFIG. An empty SPS/PPS also works, because the PC can start from the
-  keyframe alone, but a filled CONFIG is cleaner.
-- **Timestamp:** use `EncodedVideoChunk.timestamp`. It's already in microseconds, so it goes straight into
-  header bytes 8–15 (write it with `setBigInt64`).
-- **Rotation, the one thing to test:**
-  - The PC turns the picture by (sensor orientation + ORIENT).
-  - If Safari already delivers upright frames, send sensor orientation **0** in CONFIG and keep ORIENT at 0.
-  - If the frames stay in the camera's own orientation when you turn the phone, send the turn as ORIENT
-    (from `screen.orientation.angle`).
-  - Please check both portrait and landscape and tell me which it is.
-- **Back-pressure:** if `ws.bufferedAmount` keeps growing, the link is slower than the encoder. Then skip
-  frames until the next keyframe and lower the bitrate, as the Android app does, instead of queueing seconds
-  of video.
-- **Pairing:** the QR code's one-time secret goes in the address: `wss://<pc>:<port>/ws?t=<token>`. The PC
-  refuses the upgrade without a valid token.
+8 bytes each: `MCMD`, the command, an argument, and 2 reserved bytes set to 0.
 
-## Example: what the first seconds look like
+| Cmd | The page |
+|---|---|
+| HELLO | Replies HELLO, STATE, ORIENT, CAMERA (and any early LOG lines) |
+| START | Starts the camera and encoder: CONFIG, STATE(streaming), FRAMEs. If already streaming: new CONFIG and a key frame. If paused: STATE(paused) |
+| STOP | Stops the camera (releases the track), sends STATE(idle) |
+| KEYFRAME | New CONFIG and a key frame |
+| SET_FACING | Switches between `environment` and `user`, restarts the camera if it runs |
+| PAUSE / RESUME | Camera off / back on (if the PC still wants video). The page stores the pause, so it survives reconnects |
+| SET_QUALITY / SET_FPS | Stored; the camera restarts with the best working mode at or below them |
+| SET_ZOOM / SET_TORCH | `applyConstraints({advanced: [{zoom}]})` / `[{torch}]` where the camera has them |
+| SET_EXPOSURE / SET_FOCUS | Ignored (Safari can't do them; the PC greys them out) |
 
-    PC   -> page   MCMD 01 00 0000                  HELLO
-    page -> PC     MCAM 00 ... 0003                 HELLO, version 3
-    page -> PC     MCAM 04 ... 00 00                STATE idle, back camera
-    page -> PC     MCAM 03 ... 0000                 ORIENT 0
-    PC   -> page   MCMD 02 00 0000                  START (an app opened the camera)
-    page -> PC     MCAM 01 ... 0780 0438 0000 00 <SPS/PPS>    CONFIG 1920x1080
-    page -> PC     MCAM 04 ... 01 00                STATE streaming
-    page -> PC     MCAM 02 01 ... <keyframe>        FRAME, keyframe
-    page -> PC     MCAM 02 00 ... <frame>           FRAME ...
+### Close codes (PC → page)
 
-## Who does what
+| Code | Meaning | The page |
+|---|---|---|
+| 1000 | Normal close | Reconnects |
+| 4001 | Another phone is using MyCam | Shows "Your PC is busy", retries every 3 s |
+| 4002 | The same device opened a newer connection | Stops (says it's open in another tab) |
+| 4003 | The PC forgot this device | Deletes its token and asks for the QR code again |
 
-**Updated 2026-10-11:** all of it is Aiyan's: the page *and* the PC side (the HTTPS/WebSocket server in the
-companion, the certificate, QR code and token pairing, the firewall rule). See `docs/AIYAN-IPHONE.md` for the
-full assignment. The PC server must plug into the existing single-threaded session loop; please don't add
-threads there, because the earlier two-thread version could deadlock.
+The PC sends a WebSocket ping every 5 s and drops a link that has been silent for 15 s.
 
-## Next test
+## Behaviour details
 
-Send real CONFIG and FRAME packets from the page. On the PC we feed them into the existing decoder and
-measure the full delay, from the camera to the picture in an app, using the log lines we already have.
+- **Encoder:**
+  - Baseline profile, at the level for the size and rate: `avc1.42001f`/`420020` for 720p,
+    `420028`/`42002a` for 1080p, `420033`/`420034` for 4K.
+  - `latencyMode: "realtime"`, `hardwareAcceleration: "prefer-hardware"`, `avc: {format: "annexb"}`.
+  - Starting bitrate: 4 / 8 / 20 Mbps for 720p / 1080p / 4K, ×1.5 at 60 fps and above.
+  - A key frame every 2 s.
+- **Rotation (to confirm on the iPhone):** Safari delivers frames upright as displayed. Held upright,
+  the iPhone gives 1080×1920 (seen in Test 2). The page therefore sends sensor orientation 0 and ORIENT 0,
+  and turning the phone changes the picture size: the page then sends a new CONFIG. This matches the
+  Android app's behaviour (portrait when the phone is upright). **Still to check on the iPhone:** that
+  landscape gives 1920×1080 upright in the Windows Camera app.
+- **Back-pressure:**
+  - If `ws.bufferedAmount` goes over about a quarter of a second of video (at least 256 KB), the page
+    skips frames and makes the next one a key frame.
+  - At most every 2 s, it also lowers the bitrate by 30 % (never below 1 Mbps).
+  - After 5 s without skipping, and with the buffer nearly empty, it raises the bitrate by 15 % at a time,
+    up to the starting rate.
+  - A busy encoder (`encodeQueueSize > 2`) only skips that frame.
+  - Bitrate changes go to the PC log.
+- **Screen:** the page holds a Screen Wake Lock (taken again whenever it is visible) and has a black
+  "Dim the screen" mode. There is no camera preview, as on Android: the `<video>` the frames are read from
+  is 2 px and transparent.
+- **Background and lock:**
+  - When the page is hidden, it sends STATE(paused) while the socket still works, then stops the camera.
+  - The PC shows the "Camera paused" picture.
+  - If iOS then drops the connection, the PC keeps that **paused session for 5 minutes**, still showing
+    the paused picture.
+  - When the page is visible again, it reconnects (with the same device token), the PC takes it straight
+    back into the session, and it starts again if an app still wants video.
+- **Reconnect:** a dropped link retries by itself (1, 2, 4… up to 10 s) while the page is visible. A
+  reloaded page takes over its own session directly.
+- **Busy:** pages that arrive while another phone (USB or Android Wi-Fi) has the session are told so and
+  wait. A plugged-in Android phone always takes over, as with Android over Wi-Fi.
 
-Open question for you: is anything missing for the page? For example, should the page report which
-resolutions and frame rates the camera allows (the CAMERA packet), so the PC only offers those?
+## Example: the first seconds
+
+    page -> PC     POST /pair  t=<code>&name=iPhone             -> {"device": "<token>"}
+    page -> PC     POST /check d=<token>                        -> {"ok": true, "busy": false}
+    page -> PC     GET /ws?d=<token>  (upgrade)                 -> 101
+    PC   -> page   MCMD 01 00 0000                              HELLO
+    page -> PC     MCAM 00 ... 0003                             HELLO, version 3
+    page -> PC     MCAM 04 ... 00 00                            STATE idle, back camera
+    page -> PC     MCAM 03 ... 0000                             ORIENT 0
+    page -> PC     MCAM 06 ... (21 bytes)                       CAMERA
+    PC   -> page   MCMD 02 00 0000                              START (an app opened the camera)
+    page -> PC     MCAM 01 ... 0438 0780 0000 00 <SPS/PPS>      CONFIG 1080x1920 (phone upright)
+    page -> PC     MCAM 04 ... 01 00                            STATE streaming
+    page -> PC     MCAM 02 01 ... <key frame>                   FRAME, key frame
+    page -> PC     MCAM 02 00 ... <frame>                       FRAME ...
+
+## How it is tested
+
+- **`ctest`:**
+  - `mycam_tests`: WebSocket frame parsing (masking, the three length forms, fragments, control frames,
+    limits), the upgrade handshake (RFC 6455's example), HTTP requests, tokens (one use, expiry, hashes)
+    and address ranking.
+  - `web_golden`: runs `pc/tools/webtest/golden_check.js`, which checks the page's `protocol.js` against
+    `protocol/golden.txt`. It needs Node.js and is skipped without it.
+- **End to end without a phone** (`-DMYCAM_BUILD_TOOLS=ON`): `pc/tools/web_probe.exe` runs the server
+  alone and plays the PC.
+  - `node pc/tools/webtest/fake_page.js "<address>"` checks the routes, pairing and refusals, then streams
+    fake frames.
+  - `node pc/tools/webtest/browser_check.js "<address>"` runs the real page in headless Chrome with a fake
+    camera (real WebCodecs encoding).
+- **On the iPhone:** see the checklist in [AIYAN-IPHONE.md](AIYAN-IPHONE.md) §5 and the results table in
+  TASKS.md.
+
+## Delay (camera to app)
+
+**Not measured yet: this needs the iPhone.** The measured parts so far are encode (about 15 ms) and the
+Wi-Fi round trip (about 5 ms). The PC's decode and copy took 3–12 ms on Android streams.
+
+Suggested method:
+1. Show a millisecond clock on the PC screen.
+2. Point the iPhone at it.
+3. Open the Windows Camera app next to it.
+4. Photograph both: the difference is the full delay.
+5. Repeat at 1080p30 and 1080p60.
+6. Write the results here.
+
+Target: about 250 ms or less.
