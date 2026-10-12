@@ -613,10 +613,10 @@ struct SettingsWindow::Impl {
                           kScan, L"&Scan for Devices", x, y, w);
         LayoutScanSentence(s, now, x, y, w);
         *y += kGap;
-        // iPhone card: the web camera (a page in Safari), on the same Wi-Fi.
-        LayoutConnectCard(kCardWebHome, Glyph::Phone, L"iPhone or iPad",
-                          L"Use Safari on the same Wi-Fi: scan a QR code, nothing to install.", kConnectIPhone,
-                          L"Connect an &iPhone", x, y, w);
+        // QR card: the code a phone scans to pair (today iPhones through Safari; Android once IMPROVEMENTS 12 lands).
+        LayoutConnectCard(kCardWebHome, Glyph::Phone, L"Generate QR",
+                          L"Scan it with an iPhone or iPad on the same Wi-Fi: nothing to install.", kConnectIPhone,
+                          L"Show &QR code", x, y, w);
     }
 
     void LayoutScanSentence(const LinkStatus& s, uint64_t now, float x, float* y, float w) {
