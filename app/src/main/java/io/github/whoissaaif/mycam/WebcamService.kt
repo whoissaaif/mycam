@@ -889,7 +889,22 @@ class WebcamService : Service() {
         updateNotification()
     }
 
+    /**
+     * The user swiped MyCam away from the recent apps: that means "quit", so the camera, the link and wireless
+     * mode all stop (onDestroy does the work; the PC sees the link end). The wireless choice stays saved, so
+     * opening MyCam again turns it back on, and plugging the cable in again starts as usual.
+     */
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        Log.i(TAG, "removed from recent apps: stopping")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) stopForeground(STOP_FOREGROUND_REMOVE)
+        else @Suppress("DEPRECATION") stopForeground(true)
+        foreground = false
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
+    }
+
     override fun onDestroy() {
+        getSystemService(NotificationManager::class.java).cancel(APPROVAL_NOTIFICATION_ID)
         unregisterReceiver(detachReceiver)
         PhonePreview.onTargetChanged = null
         PhonePreview.cameraStopped()
