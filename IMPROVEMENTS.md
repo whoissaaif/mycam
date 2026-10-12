@@ -376,93 +376,94 @@ side shares one single-threaded session loop with USB (no new threads). No pairi
 - [ ] Bitrate/latency tuning for Wi-Fi; default to 1080p30 when wireless
 - [ ] Testing: 2.4 vs 5 GHz, hotspot, Wi-Fi drop and reconnect, switching between cable and Wi-Fi
 
-## 12. QR pairing for Android (M): 🟡 built (2026-10-13), device tests left
+## 12. QR pairing for Android (M): 🟡 built and tested on the CMF Phone 1 (2026-10-13); iPhone and a second phone left
 
-Pairing over Wi-Fi today means turning on Wi-Fi mode, finding the PC, waiting for a 6-digit code,
-comparing it on two screens and tapping Allow. It also depends on UDP broadcasts, which many routers drop.
-The PC already shows a QR code for iPhones, so Android phones should scan **the same code**: scan once, and
-the phone is paired and connected. The wire format is in PROTOCOL.md "QR pairing". This section covers the
-design and the work.
+Pairing over Wi-Fi used to mean turning on Wi-Fi mode, finding the PC, waiting for a 6-digit code,
+comparing it on two screens and tapping Allow. The PC already shows a QR code for iPhones, so Android
+phones scan **the same code**: scan once, and the phone is paired and connected. The wire format is in
+PROTOCOL.md "QR pairing". This section covers the design and the work.
 
-**Decisions (2026-10-12, owner):**
-- **One QR code for both kinds of phone:** Safari for iPhones, MyCam's own scanner for Android.
-- **Scanner:** ZXing `core`, bundled (about 0.5 MB), on our own Camera2 code. It doesn't need Google Play
-  services, so it works on every phone.
-- **The 6-digit pairing stays as the fallback** ("Can't scan?" → Find devices). From now on it needs Allow
-  on the PC as well as on the phone. Before, a device on the network posing as a phone could approve its
-  own pairing in milliseconds and then send video into the MyCam camera.
-- **Paired phones still reconnect through discovery by themselves.** `/app/connect` also lets the phone
-  reconnect directly.
+**Decisions (owner):**
+- **2026-10-12:**
+  - **One QR code for both kinds of phone:** Safari for iPhones, MyCam's own scanner for Android.
+  - **Scanner:** ZXing `core`, bundled (about 0.5 MB), on our own Camera2 code. It doesn't need Google
+    Play services, so it works on every phone.
+  - **The 6-digit pairing stays as the fallback** (Find Devices). It now needs Allow on the PC as well as on
+    the phone. Before, a device on the network posing as a phone could approve its own pairing in
+    milliseconds and then send video into the MyCam camera.
+  - **Paired phones reconnect through discovery by themselves.**
+- **2026-10-13:**
+  - **No confirmation code and no Allow after a scan:** the scan is the consent, and it goes straight to
+    connected.
+  - **Nothing connects into the PC, so there's no "set the network to Private" step.** The first version
+    paired over HTTPS to the PC's port 47900, which Windows blocks on Public networks. Now the PC only
+    sends: it probes while the QR code shows, the phone answers with an invite proving it holds the code,
+    and the PC connects out to the phone with the code mixed into the handshake's keys. iPhones still need
+    the PC to accept connections (Safari connects to it), so they keep the Private requirement.
+  - **Confirmation on both screens after any pairing** (QR code, 6-digit code, iPhone): "Paired with …",
+    then the Camera page.
 
-**Why the key exchange is safe without a code comparison:**
-- The QR code carries the PC's certificate fingerprint, so the phone's HTTPS connection is pinned to that PC.
-- The one-time code proves the phone saw the PC's screen in the last 5 minutes.
-- `K` then travels inside that pinned TLS connection.
+**Why it is safe without comparing codes:**
+- The one-time code (128 bits) only exists on the PC's screen and in the scanning phone.
+- It goes into the pairing key: `K = HKDF(z | code, …)`. Someone in between who never saw the screen can't
+  produce a valid FINISHED.
+- The invite's proof only lets the PC decide whether to connect. The handshake is the real check.
 - From then on it is the ordinary paired handshake, with no new cryptography in the session itself.
 
 **Phone flow:**
-1. On the Connect page, **Scan QR Code** opens a full-screen scanner (portrait while it shows). It asks for camera permission if needed. While a stream is live the row is disabled
-   with "Stop the stream to scan" (the camera is in use).
-2. The scanner finds a code with `t` and `f` and gives a short vibration. It closes straight away and
-   shows "Connecting to <PC>…" for the second the next step takes. **No code is shown and nothing asks for
-   confirmation, on the phone or the PC (owner, 2026-10-13):** scanning is the consent, and it goes straight
-   to connected.
-3. The phone turns wireless mode on if it's off, calls `/app/pair`, stores `K`, then calls
-   `/app/connect`. The PC connects within about a second and the stream page shows the PC as connected.
-   Scanning a PC the phone is already paired with simply pairs again (a new `K` replaces the old one on
-   both sides), so there is one path and nothing to go stale.
-4. Errors, in plain words, with **Scan again** and **Close**:
-   - Wrong certificate: "This isn't the PC in the QR code".
-   - Code used or expired: "Scan the new code the PC shows".
-   - The PC can't be reached: "Same Wi-Fi? Is the PC's network set to Private?".
-   - Paired, but the PC is busy with another phone, or never connected within 10 s.
-   - Code without `f` (scanner screen): "Update MyCam on the PC".
+1. On the Connect page, **Scan QR Code** opens a full-screen scanner (portrait while it shows). It asks for
+   camera permission if needed, and it's disabled while a stream is live (the camera is in use).
+2. A MyCam code (`t` + `pc`) gives a short vibration and closes the scanner. The Connect page shows
+   "Looking for the PC…", then "Connecting to <PC>…".
+3. Wireless mode turns on. When the PC's probe arrives, the phone sends the invite, and resends it every
+   2 s. The PC connects in QR mode; the phone stores `K`.
+4. It's connected: the app moves to the **Camera** tab and shows **"Paired with <PC>"** with OK.
+5. Errors, in plain words, with **Scan again** and **Close**:
+   - No probe within 20 s: "Can't find the PC on this network…".
+   - `MYCAM-1 code`: "That code was already used or ran out…".
+   - `MYCAM-1 busy`: "The PC is busy with another phone…".
+   - Heard but never connected: "Found <PC>, but it didn't connect…".
    - Not a MyCam code: say nothing and keep scanning.
-5. The phone remembers the PC's last address with its pairing, for a later direct `/app/connect`.
+   - A code without `pc` (scanner screen): "Update MyCam on the PC".
+   - Scanning a PC this phone is already connected to over Wi-Fi does nothing.
 
 **PC flow:**
-- On Home, the QR card is called **"Generate QR"** (done 2026-10-13; its button is "Show QR code").
-- The "Connect an iPhone" page is now **"Connect a phone"**, with the same QR code and steps for each kind
-  of phone. A QR pairing needs no balloon of its own: the usual "Phone connected over Wi-Fi" one follows.
-- The 6-digit pairing dialog and the window's pairing page have **Allow** and **Don't allow** ("Don't allow"
-  has the keyboard focus first, so a stray Enter never allows). The window's Cancel button had never been
-  wired up (`model.cancelPairing` was unset); it works now.
+- On Home, the QR card is called **"Generate QR"** ("Show QR code"). The page is **"Connect a phone"**,
+  with steps for both kinds of phone.
+- While the code shows, the PC probes every 2 s (broadcast plus unicast to its /24) and answers invites.
+  The code is used up after a pairing, and a new one appears.
+- After any new pairing: the window goes to the **Camera** page and a **"Paired with <phone>"** pop-up
+  appears (OK, or it closes by itself after 8 s). A Wi-Fi pairing also turns **Find phones on Wi-Fi** on, so
+  the phone reconnects by itself next time.
+- 6-digit pairing: **Allow** and **Don't allow** in the dialog and on the window's pairing page ("Don't
+  allow" has the keyboard focus first). The page's Cancel button had never been wired up; it is now.
 
 **Work items:**
-- [x] PC `tls_server`: the certificate's SHA-256 fingerprint (`Credentials::Fingerprint`).
-- [x] PC `web_server` / `web_proto`: `f` in the QR URL, `/app/pair` and `/app/connect`; `FromHex`,
-      `FromBase64Url` and `CertFingerprint` are pure and unit-tested.
-- [x] PC `PhoneLink`: `AppPair` / `AppConnect` and a direct connect (`direct_`, run from the idle loop).
-- [x] PC: Allow / Don't allow on code pairing; a phone refused here is never auto-connected again
-      (`WifiEnd::RefusedHere`) until the companion restarts.
-- [x] PC UI: "Generate QR" on Home, "Connect a phone" page, pairing dialog and page buttons.
-- [x] Phone: the scanner (`ui/QrScanner.kt`: Camera2 → `ImageReader` YUV → ZXing on the camera thread).
-      No torch: a QR code on a screen glows by itself, and a torch only adds glare.
-- [x] Phone: pinned HTTPS (`QrPairing.kt`), `/app/pair`, `/app/connect`, the PC's address remembered
-      (`PairedPcs.setAddress`), status and errors on the Connect page.
+- [x] PC: the QR URL carries `pc`; probes while the QR code shows; `MYCAM#1` invites (`ParseDiscoveryQrRequest`,
+      `wifi::QrInviteProof`) with `MYCAM-1` refusals; QR mode in `Handshake` (`wifi::QrPairKey`); the code is
+      used up afterwards.
+- [x] PC: Allow / Don't allow on code pairing; a phone refused here isn't auto-connected again until restart.
+- [x] PC UI: "Generate QR", "Connect a phone", the "Paired" pop-up (`PairingDialog::ShowPaired`), the Camera
+      page after pairing (`SettingsWindow::ShowCamera`), Find phones on Wi-Fi turned on.
+- [x] Phone: the scanner (`ui/QrScanner.kt`), the invite flow (`WebcamService.startQrPair` / `qrTick`), QR mode
+      in `WifiHandshake`, `PairedDialog` and the Camera tab after pairing.
 - [x] Golden vectors `qr.*` (JDK), checked by `QrPairingTest` and `mycam_tests`.
-- [ ] Phone: use the remembered address to reconnect directly (a "Connect" on a paired PC in Settings).
+- [x] Removed the first version's HTTPS routes (`/app/pair`, `/app/connect`), the certificate pinning and
+      the `f` field. They were never released.
 - [ ] Page (`app.js`): on Android, offer "Open in the MyCam app" (an `intent:` link plus a `mycam://` intent
-      filter in the app) or "Use this page instead". The page already drops `f` with the rest of the query.
-- [~] Tests on devices. **Passed 2026-10-13** (CMF Phone 1, release APK, PC on Ethernet):
-      - Scan to connected in about 1.5 s; the PC logs QR pair, connect request and encrypted link within
-        100 ms.
-      - 1080p30 over the QR-paired link into the MyCam camera (ffmpeg: 241 frames in 8 s).
-      - PC network on Public: "Can't reach the PC… set to Private", and nothing reaches the PC.
-      - Scanning again while connected: re-pairs quietly. Two bugs found and fixed: the phone said "busy
-        with another phone", and the card would have stuck on "Connecting…".
-      - 6-digit fallback: the PC had forgotten the phone, so it paired again with a code. "Don't allow" on
-        the PC means no key stored and the phone's link drops. Allow on both stores the key and connects.
-      - Swiping MyCam from recent apps stops the service, the link and the notification.
+      filter) or "Use this page instead".
+- [~] Tests on devices. **Passed 2026-10-13** (CMF Phone 1, release APK, PC on Ethernet set to **Public**):
+      - Scan to encrypted session in 16–93 ms on the PC.
+      - "Paired" on both screens; the Camera page and tab.
+      - Find phones on Wi-Fi turned back on by the pairing.
+      - The 6-digit fallback with Allow / Don't allow on the PC (earlier build).
+      - Swiping MyCam away stops everything.
 
       **Still to test:**
-      - A second Android phone.
       - An iPhone scanning the same code.
-      - An expired code.
-- [x] Release APK (R8) on a phone: ZXing and the pinned TLS client work under minification.
-- Known, minor:
-  - In a code pairing where the phone allows first, the phone says "Wi-Fi: connected" while the PC is still
-    deciding, and keeps a key if the PC then refuses. That key is cleaned up by the forgot-me path next time.
+      - A second Android phone.
+      - An expired or used code (`MYCAM-1 code`).
+      - A network that drops broadcasts.
 
 ---
 

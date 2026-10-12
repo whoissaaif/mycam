@@ -68,13 +68,7 @@ void PhoneLink::Run() {
     web_->SetPhoneHandler([this](const uint8_t* data, size_t size) {
         if (webSession_) FeedBytes(data, size);
     });
-    web_->SetAppHandlers(
-        [this](const web::Bytes& phoneId, const std::string& name, WebServer::AppPairReply* reply) {
-            return AppPair(phoneId, name, reply);
-        },
-        [this](const web::Bytes& phoneId, uint16_t port, const web::Bytes& proof, uint32_t ipv4) {
-            return AppConnect(phoneId, port, proof, ipv4);
-        });
+    web_->SetPcId(PcIdHex()); // In the QR code, for the Android app (PROTOCOL.md "QR pairing").
     status_.state = ok ? LinkState::Searching : LinkState::NoDriver;
     Publish();
 
@@ -91,7 +85,7 @@ void PhoneLink::Run() {
             SyncLockPaused();
             WriteStatusFrame(GetTickCount64()); // "Waiting for the phone" while none is connected.
             PollDiscovery(GetTickCount64());     // "Scan for phones" answers arrive promptly.
-            if (connectRequest_ != 0 || direct_.ip) break; // Connect (scan list or the app): NetScanOnce runs it.
+            if (connectRequest_ != 0 || qrRequest_.ip) break; // Connect (scan list or a QR scan): NetScanOnce runs it.
             PollWeb(StatusWaitMs());             // Serves the iPhone page meanwhile (or just waits).
             if (web_ && web_->PhonePending()) break; // An iPhone's page wants a session: WebScanOnce runs it.
         }
@@ -649,6 +643,9 @@ void PhoneLink::Publish() {
     status_.scansDone = scansDone_;
     status_.nearbyPhones = nearby_.Phones();
     nearbyDirty_ = false;
+    status_.pairedCount = pairedCount_;
+    status_.pairedName = pairedName_;
+    status_.pairedWifi = pairedWifi_;
     if (web_) {
         status_.webReady = web_->Listening();
         const std::string url = web_->PairingUrl();

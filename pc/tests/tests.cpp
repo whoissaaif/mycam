@@ -1052,18 +1052,22 @@ void TestWebAddresses() {
           list[3].text == "vpn");
 }
 
-// QR pairing (PROTOCOL.md "QR pairing"): the fingerprint in the QR code, the connect proof and the decoders the
-// /app routes use. Golden "qr.*" (JDK). qr.fingerprint and qr.key_text are text, so they're spelled out here.
+// QR pairing (PROTOCOL.md "QR pairing"): the key the scanned code goes into, the invite's proof and its
+// parsing, and the base64url decoding of the code. Golden "qr.*" (JDK); qr.code_text is text, spelled out here.
 void TestQrPairing(std::map<std::string, Bytes>& golden) {
-    const Bytes der = golden["qr.cert_der"];
-    CHECK(web::CertFingerprint(der.data(), der.size()) == "_eq5rPNxA2K9JljNyaKej5x1f8-YEWA6jER80dkVEQg");
-    const Bytes key = golden["qr.key"], phoneId = golden["qr.phone_id"], port = golden["qr.port"];
-    CHECK(port.size() == 2);
-    CHECK(wifi::ConnectProof(key, phoneId, uint16_t(port[0] << 8 | port[1])) == golden["qr.connect_proof"]);
-    CHECK(web::Base64Url(key.data(), key.size()) == "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8");
+    const Bytes code = golden["qr.code"], port = golden["qr.port"];
+    CHECK(code.size() == 16 && port.size() == 2);
+    CHECK(wifi::QrPairKey(golden["wifi.ecdh"], code, golden["wifi.npc"], golden["wifi.nph"]) == golden["qr.pair_key"]);
+    const uint16_t tcpPort = uint16_t(port[0] << 8 | port[1]);
+    const Bytes proofBytes = golden["qr.invite_proof"];
+    std::string proofHex;
+    for (uint8_t b : proofBytes) { char two[3]; snprintf(two, sizeof(two), "%02x", b); proofHex += two; }
+    CHECK(wifi::QrInviteProof(code, tcpPort) == proofHex);
+    CHECK(wifi::QrInviteProof(code, uint16_t(tcpPort + 1)) != proofHex); // The port is part of it.
 
     web::Bytes out;
-    CHECK(web::FromBase64Url("QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8", &out) && out == key);
+    CHECK(web::FromBase64Url("YGFiY2RlZmdoaWprbG1ubw", &out) && out == code); // golden "qr.code_text"
+    CHECK(web::Base64Url(code.data(), code.size()) == "YGFiY2RlZmdoaWprbG1ubw");
     CHECK(web::FromBase64Url("", &out) && out.empty());
     CHECK(web::FromBase64Url("_-8", &out) && out == (web::Bytes{0xFF, 0xEF})); // The two URL-safe characters.
     for (size_t n = 0; n < 40; ++n) { // Round trips at every length (all three tail cases).
@@ -1076,10 +1080,18 @@ void TestQrPairing(std::map<std::string, Bytes>& golden) {
     CHECK(!web::FromBase64Url("Q", &out));     // A lone character can't be a whole byte.
     CHECK(!web::FromBase64Url("QR", &out));    // Leftover bits set: not how anyone encodes "A".
 
-    CHECK(web::FromHex("303132333435363738393a3b3c3d3e3f", &out) && out == phoneId);
-    CHECK(web::FromHex("303132333435363738393A3B3C3D3E3F", &out) && out == phoneId);
-    CHECK(!web::FromHex("303", &out));
-    CHECK(!web::FromHex("3g", &out));
+    // The phone's invite: "MYCAM#1 <port> <proof> <name>".
+    uint16_t p = 0;
+    std::string proof, name;
+    CHECK(ParseDiscoveryQrRequest("MYCAM#1 47800 " + proofHex + " CMF by Nothing Phone 1", &p, &proof, &name));
+    CHECK(p == 47800 && proof == proofHex && name == "CMF by Nothing Phone 1");
+    std::string upper = proofHex;
+    for (char& c : upper) c = char(toupper(c));
+    CHECK(ParseDiscoveryQrRequest("MYCAM#1 47800 " + upper, &p, &proof, &name) && proof == proofHex && name.empty());
+    CHECK(!ParseDiscoveryQrRequest("MYCAM#1 47800 1234 Phone", &p, &proof, &name));                // Proof too short.
+    CHECK(!ParseDiscoveryQrRequest("MYCAM#1 47800 " + proofHex.substr(0, 31) + "z Phone", &p, &proof, &name)); // Not hex.
+    CHECK(!ParseDiscoveryQrRequest("MYCAM+1 47800 " + proofHex + " Phone", &p, &proof, &name));     // A different message.
+    CHECK(!ParseDiscoveryConnectRequest("MYCAM#1 47800 " + proofHex, &p, &name));
 }
 
 } // namespace

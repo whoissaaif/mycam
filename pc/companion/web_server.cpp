@@ -4,7 +4,6 @@
 //   GET  /, /app.js, /protocol.js, /style.css   the page, from the exe's resources (companion.rc)
 //   POST /pair    t=<one-time code>&name=<device>  -> {"device": "<device token>", "name": "..."}
 //   POST /check   d=<device token>                 -> {"ok": true, "busy": false, "name": "..."}
-//   POST /app/pair, /app/connect                    the Android app pairs with the same QR code (PROTOCOL.md "QR pairing")
 //   GET  /ws?d=<device token>                      WebSocket: one MyCam packet or command per message
 // Tokens never reach the log.
 
@@ -102,7 +101,6 @@ struct WebServer::Conn {
     web::WsParser ws;
     web::Bytes early;       // Messages from a waiting page, framed back to back (MyCam packets need no more).
     std::string deviceId, deviceName, peer;
-    uint32_t peerIp = 0;    // Network order. /app/connect connects back to it.
     uint32_t localIp = 0;
     uint64_t opened = 0, lastIn = 0;
     bool closeAfterSend = false;
@@ -128,7 +126,6 @@ bool WebServer::Start() {
         cred_.reset();
         return false;
     }
-    fingerprint_ = cred_->Fingerprint();
     SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (s == INVALID_SOCKET) return false;
     BOOL exclusive = TRUE; // Nobody else may take the port from under us.
@@ -204,7 +201,6 @@ void WebServer::Accept() {
         c->s = s;
         c->tls = std::make_unique<tls::Session>(cred_.get());
         c->peer = IpText(from.sin_addr.s_addr);
-        c->peerIp = from.sin_addr.s_addr;
         sockaddr_in local = {};
         int localLen = sizeof(local);
         if (getsockname(s, reinterpret_cast<sockaddr*>(&local), &localLen) == 0) c->localIp = local.sin_addr.s_addr;
@@ -271,8 +267,6 @@ void WebServer::HandleHttp(Conn& c) {
 void WebServer::HandleRequest(Conn& c, const web::HttpRequest& r, const std::string& body) {
     if (r.path == "/ws") { HandleUpgrade(c, r); return; }
     if (r.method == "POST" && r.path == "/pair") { HandlePair(c, r, body); return; }
-    if (r.method == "POST" && r.path == "/app/pair") { HandleAppPair(c, body); return; }
-    if (r.method == "POST" && r.path == "/app/connect") { HandleAppConnect(c, body); return; }
     if (r.method == "POST" && r.path == "/check") {
         const web::WebDevice* d = book_.FindDevice(web::QueryParam(body, "d"));
         if (!d) {
@@ -322,64 +316,12 @@ void WebServer::HandlePair(Conn& c, const web::HttpRequest&, const std::string& 
     const std::string token =
         book_.AddDevice(web::QueryParam(body, "name"), wifi::Random(32), wifi::Random(8), uint64_t(_time64(nullptr)), &d);
     SaveDevice(d);
+    newlyPairedId_ = d.id;
     Log("web: paired %s at %s", d.name.c_str(), c.peer.c_str());
     if (pairing_) MakeCode(); // Ready for the next device.
     ++generation_;
     SendResponse(c, 200, "OK", "application/json",
                  "{\"ok\":true,\"device\":" + JsonString(token) + ",\"name\":" + JsonString(d.name) + "}");
-}
-
-// The Android app scanned the QR code (PROTOCOL.md "QR pairing"): the same one-time code as /pair, but the
-// answer is a Wi-Fi pairing key, so the app pairs natively and the PC then connects to it as to any paired
-// phone. The app reached us over TLS pinned to the fingerprint in the QR code, so the key goes back here.
-void WebServer::HandleAppPair(Conn& c, const std::string& body) {
-    web::Bytes phoneId;
-    if (!web::FromHex(web::QueryParam(body, "phone"), &phoneId) || phoneId.size() != 16) {
-        SendResponse(c, 400, "Bad Request", "application/json", "{\"ok\":false,\"error\":\"request\"}");
-        return;
-    }
-    if (!book_.UsePairingCode(web::QueryParam(body, "t"), GetTickCount64())) {
-        Log("web: refused to pair the app at %s: the code is wrong, used or expired", c.peer.c_str());
-        SendResponse(c, 403, "Forbidden", "application/json", "{\"ok\":false,\"error\":\"code\"}");
-        return;
-    }
-    if (pairing_) MakeCode(); // Used up: the QR code shows a new one.
-    ++generation_;
-    AppPairReply reply;
-    const std::string name = web::CleanDeviceName(web::QueryParam(body, "name"));
-    if (!onAppPair_ || !onAppPair_(phoneId, name.empty() ? "Android phone" : name, &reply)) {
-        SendResponse(c, 500, "Internal Server Error", "application/json", "{\"ok\":false,\"error\":\"pc\"}");
-        return;
-    }
-    Log("web: the app at %s paired by QR code", c.peer.c_str());
-    SendResponse(c, 200, "OK", "application/json",
-                 "{\"ok\":true,\"pc\":" + JsonString(reply.pcId) + ",\"name\":" + JsonString(reply.pcName) +
-                     ",\"key\":" + JsonString(reply.key) + "}");
-}
-
-// A paired Android app asks the PC to connect to it now (after /app/pair, or later from its last address).
-void WebServer::HandleAppConnect(Conn& c, const std::string& body) {
-    web::Bytes phoneId, proof;
-    const std::string portText = web::QueryParam(body, "port");
-    const unsigned long port = portText.size() >= 1 && portText.size() <= 5 &&
-                                       portText.find_first_not_of("0123456789") == std::string::npos
-                                   ? std::stoul(portText)
-                                   : 0;
-    if (!web::FromHex(web::QueryParam(body, "phone"), &phoneId) || phoneId.size() != 16 ||
-        !web::FromBase64Url(web::QueryParam(body, "proof"), &proof) || proof.size() != 32 || port == 0 || port > 65535) {
-        SendResponse(c, 400, "Bad Request", "application/json", "{\"ok\":false,\"error\":\"request\"}");
-        return;
-    }
-    const AppConnect result = onAppConnect_ ? onAppConnect_(phoneId, uint16_t(port), proof, c.peerIp) : AppConnect::Unknown;
-    if (result == AppConnect::Ok) {
-        SendResponse(c, 200, "OK", "application/json", "{\"ok\":true}");
-    } else if (result == AppConnect::Busy) {
-        SendResponse(c, 503, "Service Unavailable", "application/json", "{\"ok\":false,\"error\":\"busy\"}",
-                     "Retry-After: 5\r\n");
-    } else {
-        Log("web: refused a connect request from %s: no pairing for it", c.peer.c_str());
-        SendResponse(c, 403, "Forbidden", "application/json", "{\"ok\":false,\"error\":\"unknown\"}");
-    }
 }
 
 void WebServer::HandleUpgrade(Conn& c, const web::HttpRequest& r) {
@@ -682,7 +624,23 @@ void WebServer::StopPairing() {
 std::string WebServer::PairingUrl() const {
     if (!pairing_ || !pairingIp_ || listen_ == INVALID_SOCKET || book_.PairingCode().empty()) return "";
     return "https://" + IpText(pairingIp_) + ":" + std::to_string(web::kPort) + "/?t=" + book_.PairingCode() +
-           "&f=" + fingerprint_;
+           (pcId_.empty() ? "" : "&pc=" + pcId_);
+}
+
+std::string WebServer::CurrentPairingCode() const {
+    return pairing_ && book_.HasPairingCode(GetTickCount64()) ? book_.PairingCode() : std::string();
+}
+
+void WebServer::PairingCodeUsed() {
+    if (!pairing_) return;
+    MakeCode();
+    ++generation_;
+}
+
+std::string WebServer::TakeNewlyPaired(const std::string& deviceId) {
+    if (deviceId.empty() || deviceId != newlyPairedId_) return "";
+    newlyPairedId_.clear();
+    return deviceId;
 }
 
 // --- Remembered devices: HKCU\Software\MyCam\WebDevices\<id> = TokenHash, Name, Added ----------------------

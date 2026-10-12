@@ -52,6 +52,7 @@ void PhoneLink::WebScanOnce() {
     status_.webLink.assign(link.begin(), link.end()); // ASCII.
     Publish();
     Log("session: %s connected over %s (web page)", name.c_str(), link.c_str());
+    if (!web_->TakeNewlyPaired(id).empty()) NotePaired(name, false); // It scanned the QR code just now.
 
     uint64_t lastUsbCheck = GetTickCount64(), lingerSince = 0;
     webLingering_ = false;

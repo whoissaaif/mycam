@@ -2577,6 +2577,12 @@ void SettingsWindow::ShowPairing() {
     impl_->Invalidate();
 }
 
+void SettingsWindow::ShowCamera() {
+    if (!impl_ || !impl_->hwnd) return; // Only when open: a pairing started from the phone doesn't open it.
+    impl_->GoTo(ui::Page::Camera);
+    impl_->Invalidate();
+}
+
 HWND SettingsWindow::Hwnd() const { return impl_ ? impl_->hwnd : nullptr; }
 
 std::vector<ui::Element> SettingsWindow::Elements() const {

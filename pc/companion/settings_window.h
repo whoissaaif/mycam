@@ -54,6 +54,7 @@ public:
     void ShowPairing();        // Opens the window on the pairing page (tray balloon, headline click).
     void Refresh();            // Status or settings changed elsewhere; repaint if open.
     void StartScan();          // Tray "Scan for phones": opens the window and starts a scan.
+    void ShowCamera();         // A phone just paired: the Camera page, if the window is open.
     HWND Hwnd() const;         // nullptr while closed.
 
     // --- Element model (for keyboard navigation and a UI Automation provider) ----------------------

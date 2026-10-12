@@ -72,19 +72,6 @@ std::string Hex(const uint8_t* data, size_t size) {
     return out;
 }
 
-bool FromHex(const std::string& s, Bytes* out) {
-    if (s.size() % 2) return false;
-    Bytes b;
-    b.reserve(s.size() / 2);
-    for (size_t i = 0; i < s.size(); i += 2) {
-        if (!std::isxdigit(static_cast<unsigned char>(s[i])) || !std::isxdigit(static_cast<unsigned char>(s[i + 1])))
-            return false;
-        b.push_back(uint8_t(std::stoi(s.substr(i, 2), nullptr, 16)));
-    }
-    *out = std::move(b);
-    return true;
-}
-
 bool FromBase64Url(const std::string& s, Bytes* out) {
     if (s.size() % 4 == 1) return false; // No byte count leaves one character over.
     auto value = [](char c) -> int {
@@ -111,11 +98,6 @@ bool FromBase64Url(const std::string& s, Bytes* out) {
     if (acc & ((1u << bits) - 1)) return false; // Leftover bits must be zero (one spelling per value).
     *out = std::move(b);
     return true;
-}
-
-std::string CertFingerprint(const uint8_t* der, size_t size) {
-    const Bytes digest = Sha256(std::string(reinterpret_cast<const char*>(der), size));
-    return Base64Url(digest.data(), digest.size());
 }
 
 std::string UrlDecode(const std::string& s) {

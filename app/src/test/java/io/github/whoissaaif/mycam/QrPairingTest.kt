@@ -9,7 +9,7 @@ import java.io.File
 
 /**
  * Checks QR pairing (PROTOCOL.md "QR pairing") against protocol/golden.txt "qr.*" (made with the JDK); the PC's
- * tests check the same vectors. qr.fingerprint and qr.key_text are text, the rest hex.
+ * tests check the same vectors. qr.code_text is text, the rest hex.
  */
 class QrPairingTest {
     private val golden: Map<String, String> by lazy {
@@ -23,22 +23,24 @@ class QrPairingTest {
     private fun hex(s: String) = s.replace(" ", "").chunked(2).map { it.toInt(16).toByte() }.toByteArray()
 
     @Test
-    fun fingerprintAndProofMatchGolden() {
-        assertEquals(golden.getValue("qr.fingerprint"), QrPairing.fingerprint(g("qr.cert_der")))
+    fun keyAndInviteMatchGolden() {
+        val code = g("qr.code")
+        assertArrayEquals(g("qr.pair_key"), WifiCrypto.qrPairKey(g("wifi.ecdh"), code, g("wifi.npc"), g("wifi.nph")))
         val port = g("qr.port").let { (it[0].toInt() and 0xFF shl 8) or (it[1].toInt() and 0xFF) }
         assertEquals(47800, port)
-        assertArrayEquals(g("qr.connect_proof"), QrPairing.connectProof(g("qr.key"), g("qr.phone_id"), port))
-        assertEquals(golden.getValue("qr.key_text"), QrPairing.encodeBase64Url(g("qr.key")))
-        assertArrayEquals(g("qr.key"), QrPairing.decodeBase64Url(golden.getValue("qr.key_text")))
+        assertEquals(golden.getValue("qr.invite_proof").lowercase(), QrPairing.inviteProof(code, port))
+        assertTrue(QrPairing.inviteProof(code, port + 1) != QrPairing.inviteProof(code, port)) // The port counts.
+        assertEquals(
+            "MYCAM#1 47800 ${golden.getValue("qr.invite_proof").lowercase()} CMF by Nothing Phone 1",
+            QrPairing.invite(code, port, "CMF by Nothing Phone 1"),
+        )
+        assertArrayEquals(code, QrPairing.decodeBase64Url(golden.getValue("qr.code_text")))
     }
 
     @Test
-    fun base64UrlRoundTripsAndRefusesOtherSpellings() {
-        for (n in 0 until 40) {
-            val b = ByteArray(n) { (it * 37 + 11).toByte() }
-            assertArrayEquals(b, QrPairing.decodeBase64Url(QrPairing.encodeBase64Url(b)))
-        }
+    fun base64UrlRefusesOtherSpellings() {
         assertArrayEquals(byteArrayOf(0xFF.toByte(), 0xEF.toByte()), QrPairing.decodeBase64Url("_-8"))
+        assertArrayEquals(ByteArray(0), QrPairing.decodeBase64Url(""))
         assertNull(QrPairing.decodeBase64Url("QUJD="))
         assertNull(QrPairing.decodeBase64Url("QUJD+"))
         assertNull(QrPairing.decodeBase64Url("Q"))
@@ -47,34 +49,37 @@ class QrPairingTest {
 
     @Test
     fun readsTheSameQrCodeIphonesScan() {
-        val f = golden.getValue("qr.fingerprint")
-        val ok = QrPairing.parse("https://192.168.1.20:47900/?t=AbC-_x12&f=$f")
+        val t = golden.getValue("qr.code_text")
+        val pc = golden.getValue("qr.pc_id").lowercase()
+        val ok = QrPairing.parse("https://192.168.1.20:47900/?t=$t&pc=$pc")
         assertTrue(ok is QrPairing.Scan.Ok)
         val code = (ok as QrPairing.Scan.Ok).code
         assertEquals("192.168.1.20", code.host)
-        assertEquals("AbC-_x12", code.code)
-        assertArrayEquals(QrPairing.decodeBase64Url(f), code.fingerprint)
-        // Field order doesn't matter, and no path is the same as "/".
-        assertTrue(QrPairing.parse("https://10.0.0.5:47900?f=$f&t=x") is QrPairing.Scan.Ok)
+        assertArrayEquals(g("qr.code"), code.code)
+        assertArrayEquals(g("qr.pc_id"), code.pcId)
+        // Field order and case don't matter, and no path is the same as "/".
+        assertTrue(QrPairing.parse("https://10.0.0.5:47900?pc=${pc.uppercase()}&t=$t") is QrPairing.Scan.Ok)
 
-        // A companion before 1.5: no fingerprint, so MyCam on the PC needs updating.
-        assertEquals(QrPairing.Scan.OldPc, QrPairing.parse("https://192.168.1.20:47900/?t=AbC"))
-        assertEquals(QrPairing.Scan.OldPc, QrPairing.parse("https://192.168.1.20:47900/?t=AbC&f=short"))
+        // A companion before 1.5: a code but no PC id, so MyCam on the PC needs updating.
+        assertEquals(QrPairing.Scan.OldPc, QrPairing.parse("https://192.168.1.20:47900/?t=$t"))
+        assertEquals(QrPairing.Scan.OldPc, QrPairing.parse("https://192.168.1.20:47900/?t=$t&pc=abcd"))
         // Anything else isn't ours.
-        assertEquals(QrPairing.Scan.NotMyCam, QrPairing.parse("https://example.com/?t=a&f=$f"))
-        assertEquals(QrPairing.Scan.NotMyCam, QrPairing.parse("http://192.168.1.20:47900/?t=a&f=$f"))
-        assertEquals(QrPairing.Scan.NotMyCam, QrPairing.parse("https://192.168.1.20:47900/other?t=a&f=$f"))
-        assertEquals(QrPairing.Scan.NotMyCam, QrPairing.parse("https://192.168.1.20:47900/?f=$f"))
+        assertEquals(QrPairing.Scan.NotMyCam, QrPairing.parse("https://example.com/?t=$t&pc=$pc"))
+        assertEquals(QrPairing.Scan.NotMyCam, QrPairing.parse("http://192.168.1.20:47900/?t=$t&pc=$pc"))
+        assertEquals(QrPairing.Scan.NotMyCam, QrPairing.parse("https://192.168.1.20:47900/other?t=$t&pc=$pc"))
+        assertEquals(QrPairing.Scan.NotMyCam, QrPairing.parse("https://192.168.1.20:47900/?pc=$pc"))
+        assertEquals(QrPairing.Scan.NotMyCam, QrPairing.parse("https://192.168.1.20:47900/?t=short&pc=$pc"))
         assertEquals(QrPairing.Scan.NotMyCam, QrPairing.parse("WIFI:S:home;T:WPA;P:secret;;"))
         assertEquals(QrPairing.Scan.NotMyCam, QrPairing.parse("not a url at all %%%"))
     }
 
     @Test
     fun hexBothWays() {
-        val id = g("qr.phone_id")
-        assertEquals("303132333435363738393a3b3c3d3e3f", QrPairing.hex(id))
-        assertArrayEquals(id, QrPairing.unhex("303132333435363738393a3b3c3d3e3f"))
-        assertNull(QrPairing.unhex("303"))
+        val id = g("qr.pc_id")
+        assertEquals("707172737475767778797a7b7c7d7e7f", QrPairing.hex(id))
+        assertArrayEquals(id, QrPairing.unhex("707172737475767778797a7b7c7d7e7f"))
+        assertNull(QrPairing.unhex("707"))
         assertNull(QrPairing.unhex("zz"))
+        assertNull(QrPairing.unhex("+1")) // toInt(16) would take it; a hex digit check doesn't.
     }
 }
