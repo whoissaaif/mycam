@@ -105,7 +105,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 
 | Version | Date | What changed |
 |---|---|---|
-| **1.4.1** | 2026-10-11 | **iPhone support** through a page in Safari served by the PC (QR pairing, remembered iPhones, rotation from the motion sensors, firewall rule on private networks). Camera and Resolution dropdowns draw their list again. PC only: the phone app stays 1.4.0. |
+| **1.4.2** | 2026-10-13 | **QR pairing for Android** (branch `qr-pairing`): scan the PC's QR code (the same one iPhones use) and it pairs and connects, with no code to compare and no "set the network to Private" step. "Paired with …" on both screens, then the camera. The 6-digit fallback now needs Allow on the PC too (closes the rogue-phone hole). The phone app stops when swiped away from recent apps. PC Home: "Generate QR". |
+| 1.4.1 | 2026-10-11 | **iPhone support** through a page in Safari served by the PC (QR pairing, remembered iPhones, rotation from the motion sensors, firewall rule on private networks). Camera and Resolution dropdowns draw their list again. PC only: the phone app stays 1.4.0. |
 | 1.4.0 | 2026-10-11 | **Stable.** Wi-Fi mode (discovery, one-time pairing with a code, encrypted sessions) and the v2 shell on both apps. A phone can now start the pairing itself from Find Devices. PC: Devices page split into Connected / Available, Scan goes there, Resolution and Frame rate open with no phone, vsync-paced transitions, Minimise and Close drawn again, the owner's "Camera paused" picture. Pairing surfaces moved off the old beige/navy. |
 | 1.4.0-beta4 | 2026-10-11 | Windows XP (Luna) redesign of both apps, new camera logo, hills artwork, PC live preview, scan buttons, screen-reader support, Wi-Fi pairing dialog. |
 | 1.3.3 | 2026-10-10 | Hotfix: the 1.3.2 phone app crashed on launch (R8 packageScope); clearer frame-rate hint. |
