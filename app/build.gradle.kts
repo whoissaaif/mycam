@@ -67,8 +67,6 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    // QR pairing (IMPROVEMENTS.md 12): the scanner decodes with ZXing, bundled, so no Google Play services needed.
-    implementation(libs.zxing.core)
     testImplementation(libs.junit)
     testImplementation(platform(libs.androidx.compose.bom))
     testImplementation(libs.androidx.compose.ui.test.junit4)

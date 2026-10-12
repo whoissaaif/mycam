@@ -97,8 +97,6 @@ void Notify(const wchar_t* title, const std::wstring& text) {
     Shell_NotifyIconW(NIM_MODIFY, &g_tray);
 }
 
-void SetWireless(bool on);
-
 void UpdateTray() {
     const LinkStatus s = CurrentStatus();
     const StatusView view = DescribeStatus(s, g_vcamOk);
@@ -119,24 +117,13 @@ void UpdateTray() {
         if (!s.pairingCode.empty() && s.pairingCode != g_shownStatus.pairingCode) g_pairing->Show(g_settings ? g_settings->Hwnd() : nullptr);
         else g_pairing->Refresh();
     }
-    // A new pairing worked (QR code, 6-digit code or iPhone): say so, and show the camera. A Wi-Fi phone also
-    // turns on "Find phones on Wi-Fi", so it reconnects by itself next time.
-    const bool justPaired = s.pairedCount != g_shownStatus.pairedCount && s.pairedCount != 0;
-    if (justPaired) {
-        if (s.pairedWifi && !g_wireless) SetWireless(true);
-        if (g_settings) g_settings->ShowCamera();
-        if (g_pairing) {
-            const HWND owner = g_settings && g_settings->Hwnd() && IsWindowVisible(g_settings->Hwnd()) ? g_settings->Hwnd() : nullptr;
-            g_pairing->ShowPaired(s.pairedName, owner);
-        }
-    }
 
     // Balloon only on meaningful transitions.
     bool wasConnected = g_shownStatus.state >= LinkState::Idle;
     bool isConnected = s.state >= LinkState::Idle;
     if (s.state == LinkState::NoDriver && g_shownStatus.state != LinkState::NoDriver) {
         Notify(view.headline.c_str(), view.detail);
-    } else if (isConnected && !wasConnected && !(g_pairing && g_pairing->IsOpen())) { // Not over "Paired".
+    } else if (isConnected && !wasConnected) {
         // "iPhone connected over Wi-Fi" for a web page (its name, and how it reaches the PC).
         const std::wstring title = s.web ? (s.phoneName.empty() ? L"iPhone" : s.phoneName) + L" connected over " + s.webLink
                                  : s.wireless ? L"Phone connected over Wi-Fi" : L"Phone connected";
@@ -533,7 +520,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     g_link = &link;
 
     const bool testPattern = wcsstr(GetCommandLineW(), L"--test-pattern") != nullptr;
-    PairingDialog pairing({CurrentStatus, [] { g_link->AllowPairing(); }, [] { g_link->CancelPairing(); }});
+    PairingDialog pairing({CurrentStatus, [] { g_link->CancelPairing(); }});
     g_pairing = &pairing;
 
     SettingsModel model;
@@ -555,8 +542,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     model.setWireless = SetWireless;
     model.forgetPhones = ForgetPairedPhones; // They pair again (with a code) next time.
     model.showPairing = [] { if (g_pairing && g_settings) g_pairing->Show(g_settings->Hwnd()); };
-    model.allowPairing = [] { g_link->AllowPairing(); };
-    model.cancelPairing = [] { g_link->CancelPairing(); };
     model.scanForPhones = [] { g_link->ScanForPhones(); };
     model.connectTo = [](uint32_t ip) { g_link->ConnectTo(ip); };
     model.startWebPairing = [](uint32_t ip) { g_link->StartWebPairing(ip); };

@@ -186,39 +186,6 @@ private fun PairingBody(pcName: String, code: String, deadline: Long, onAnswer: 
     }
 }
 
-/**
- * "Paired with <PC>" after a new pairing (QR code or 6-digit code): the PC is connected, so the screen
- * behind it has already moved to the Camera tab. OK closes it.
- */
-@Composable
-fun PairedDialog(pcName: String?, onClose: () -> Unit) {
-    var lastName by remember { mutableStateOf("") }
-    if (pcName != null) lastName = pcName
-    val visible = pcName != null
-    BackHandler(enabled = visible, onBack = onClose)
-    ModalLayer(visible) {
-        val title = stringResource(R.string.paired_title)
-        XpDialogFrame(title = title, onClose = onClose, modifier = Modifier.semantics { paneTitle = title }) {
-            MonitorIllustration(Modifier.fillMaxWidth().height(96.dp))
-            Spacer(Modifier.height(12.dp))
-            Text(
-                stringResource(R.string.paired_with, lastName), style = MaterialTheme.typography.titleLarge,
-                color = V2.Text, textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
-            )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                stringResource(R.string.paired_detail), style = MaterialTheme.typography.bodyMedium, color = V2.Subtle,
-                textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
-            )
-            Spacer(Modifier.height(16.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                PrimaryButton(stringResource(R.string.paired_ok), onClick = onClose)
-            }
-        }
-    }
-}
-
 /** The licence text of the shipped fonts (About > Licences). */
 @Composable
 fun LicenceDialog(visible: Boolean, onClose: () -> Unit) {

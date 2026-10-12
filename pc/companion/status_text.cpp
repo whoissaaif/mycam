@@ -34,9 +34,9 @@ StatusView DescribeStatus(const LinkStatus& s, bool cameraRegistered) {
             const std::wstring phone = s.phoneName.empty() ? std::wstring(L"the phone") : s.phoneName;
             if (!s.pairingCode.empty()) {
                 return {L"Pairing with " + phone + L"…",
-                        L"Code " + s.pairingCode + L". If the phone shows the same code, allow it here and on the phone.",
+                        L"Code " + s.pairingCode + L". If the phone shows the same code, tap Allow on it.",
                         kIconDisconnected, L"Code " + s.pairingCode,
-                        L"Allow it here and on the phone if both show the same code. Paired phones connect without asking.",
+                        L"Tap Allow on the phone if it shows the same code. Paired phones connect without asking.",
                         StatusProgress::Pairing};
             }
             return {L"Phone found on Wi-Fi", L"Connecting to " + phone + L"…", kIconDisconnected,

@@ -63,14 +63,3 @@ wifi.finished_pc    = B2877BD27D9F4F84C59CE813F1A4CEC35606484780E12223C94DCFCD9F
 wifi.finished_phone = D7C3C92F194B3DD8C6DCAEBD92538C67BECAD857BFA1AA923A3A5B9A111A4775
 wifi.record_pc_0    = 0000001AE7D84B5171D64DE66745B4C3269C9E0EE19E6F18A9B0BDC3857C
 wifi.record_phone_7 = 00000010AAC183A1EA5730A70FA1E03E4B9AADDB
-
-# QR pairing (1.5): see PROTOCOL.md "QR pairing". Generated with the JDK. qr.code is the one-time code's 16
-# bytes (qr.code_text is how the QR code spells it: base64url, read as text). With wifi.ecdh, wifi.npc and
-# wifi.nph: qr.pair_key = HKDF(ikm = ecdh | code, salt = Npc | Nph, info = "MyCam qr pair v1", 32).
-# qr.invite_proof = the first 16 bytes of HMAC-SHA256(code, "MyCam qr invite v1" | qr.port).
-qr.code           = 606162636465666768696A6B6C6D6E6F
-qr.code_text      = YGFiY2RlZmdoaWprbG1ubw
-qr.pc_id          = 707172737475767778797A7B7C7D7E7F
-qr.port           = BAB8
-qr.pair_key       = 3D4454FAEC511CDB2208563866692AD20C54748D10C22A4250ECD395124A219E
-qr.invite_proof   = FEC2D6C0FAFAD044CF44C32D8E2BF69A

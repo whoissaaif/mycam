@@ -85,14 +85,7 @@ class WebcamService : Service() {
         val scanning: Boolean = false,
         /** A scan has finished since wireless mode was turned on (the UI can say "No PC found"). */
         val scanned: Boolean = false,
-        /** QR pairing after a scan (PROTOCOL.md "QR pairing"); null when nothing is going on. */
-        val qr: QrStatus? = null,
-        /** The PC a new pairing (QR code or 6-digit code) just connected to: "Paired with <name>" until OK. */
-        val justPaired: String? = null,
     )
-
-    /** "Connecting to [pcName]…" while [failure] is null (the name arrives once paired), else why it didn't work. */
-    data class QrStatus(val pcName: String? = null, val failure: QrPairing.Failure? = null)
 
     private lateinit var cameraThread: HandlerThread
     private lateinit var camera: Handler
@@ -128,40 +121,6 @@ class WebcamService : Service() {
         }
     }
     private val endScan = Runnable { _state.update { it.copy(scanning = false, scanned = true) } }
-
-    /**
-     * QR pairing in progress (PROTOCOL.md "QR pairing"): the scanned code, until when to keep trying, and
-     * whether that PC's probe has been heard. Set and cleared on the main thread; the handshake thread reads
-     * the code (it is immutable).
-     */
-    private class QrPending(val code: QrPairing.Code, val until: Long) {
-        var heard = false
-        var pcName: String? = null
-    }
-    @Volatile private var qrPending: QrPending? = null
-
-    /** Every 2 s while a QR pairing waits: invite the PC once its probe has been heard, or give up in time. */
-    private val qrTick = object : Runnable {
-        override fun run() {
-            val p = qrPending ?: return
-            val now = SystemClock.elapsedRealtime()
-            if (linked) { finishQr(null); return }
-            if (now > p.until) {
-                finishQr(if (p.heard) QrPairing.Failure.NoSession else QrPairing.Failure.NoPc)
-                return
-            }
-            val pc = nearby.find(p.code.host, now)
-            if (pc != null && pc.port > 0 && !handshaking) {
-                if (!p.heard || p.pcName != pc.name) {
-                    p.heard = true
-                    p.pcName = pc.name
-                    _state.update { it.copy(qr = QrStatus(pc.name)) }
-                }
-                wireless?.qrInvite(pc.ip, pc.port, p.code.code)
-            }
-            main.postDelayed(this, QR_RESEND_MS)
-        }
-    }
 
     /**
      * "Connect to me" asked of one nearby PC: its IP, the probes left to send and the resend timer. One
@@ -290,13 +249,6 @@ class WebcamService : Service() {
                 if (wirelessOn) startScan()
                 return START_NOT_STICKY
             }
-            ACTION_QR_PAIR -> {
-                // A scanned MyCam code: Wi-Fi mode on (the PC connects to it), then pair and connect.
-                val text = intent.getStringExtra(EXTRA_QR) ?: return START_NOT_STICKY
-                if (!wirelessOn) setWireless(true)
-                if (wirelessOn) startQrPair(text)
-                return START_NOT_STICKY
-            }
             ACTION_CONNECT_PC -> {
                 intent.getStringExtra(EXTRA_PC_IP)?.let { askPcToConnect(it) }
                 return START_NOT_STICKY
@@ -335,7 +287,6 @@ class WebcamService : Service() {
                 this,
                 onProbe = { ip, port, name -> main.post { onProbe(ip, port, name) } },
                 onClient = { sock, name -> main.post { offerPc(sock, name) } },
-                onRefusal = { ip, reason -> main.post { onQrRefused(ip, reason) } },
             ).also { it.start() }
             _state.update {
                 it.copy(wirelessOn = true, wirelessAddress = WirelessServer.localAddress(this), pairedPcs = pairedPcs.list())
@@ -348,12 +299,8 @@ class WebcamService : Service() {
             main.removeCallbacks(endScan)
             main.removeCallbacks(expireNearby)
             stopInviting()
-            qrPending = null // A QR pairing needs wireless mode.
-            main.removeCallbacks(qrTick)
             nearby.clear()
-            _state.update {
-                it.copy(wirelessOn = false, wirelessAddress = null, nearbyPcs = emptyList(), scanning = false, scanned = false, qr = null)
-            }
+            _state.update { it.copy(wirelessOn = false, wirelessAddress = null, nearbyPcs = emptyList(), scanning = false, scanned = false) }
             if (socket != null) {
                 val id = linkId
                 camera.post { onLinkLost(id) }
@@ -396,44 +343,6 @@ class WebcamService : Service() {
         resendInvite.run()
     }
 
-    /**
-     * Main thread. The user scanned the PC's QR code (PROTOCOL.md "QR pairing"). The PC probes while its code
-     * shows; once its probe is heard, this phone answers with an invite that proves it holds the code, and
-     * the PC connects ([offerPc]) with the code in the handshake's keys. No code to compare and nothing to
-     * allow: the scan was the consent. [startLink] ends it; [finishQr] says why if it didn't work.
-     */
-    private fun startQrPair(text: String) {
-        val code = (QrPairing.parse(text) as? QrPairing.Scan.Ok)?.code ?: return
-        // Already connected to that PC over Wi-Fi (it was scanned again): nothing to do.
-        if (linked && _state.value.wireless && _state.value.wirelessPcIp == code.host) {
-            _state.update { it.copy(qr = null) }
-            return
-        }
-        qrPending = QrPending(code, SystemClock.elapsedRealtime() + QR_TIMEOUT_MS)
-        _state.update { it.copy(qr = QrStatus()) }
-        main.removeCallbacks(qrTick)
-        qrTick.run()
-    }
-
-    /** Main thread. The QR pairing is over: connected (null), or why not. */
-    private fun finishQr(failure: QrPairing.Failure?) {
-        val p = qrPending
-        qrPending = null
-        main.removeCallbacks(qrTick)
-        _state.update { it.copy(qr = if (failure == null) null else QrStatus(p?.pcName, failure)) }
-    }
-
-    /** Main thread. The PC we invited said no: our code isn't its current one, or another phone has it. */
-    private fun onQrRefused(ip: String, reason: String) {
-        val p = qrPending ?: return
-        if (p.code.host != ip || handshaking || linked) return
-        finishQr(if (reason == "busy") QrPairing.Failure.Busy else QrPairing.Failure.CodeUsed)
-    }
-
-    /** Handshake thread. The code scanned from that PC's screen, while a QR pairing with it is going on. */
-    private fun qrCodeFor(pcId: ByteArray): ByteArray? =
-        qrPending?.takeIf { it.code.pcId.contentEquals(pcId) && SystemClock.elapsedRealtime() < it.until }?.code?.code
-
     /** Main thread. Stops asking a PC to connect (it did, it never answered, or wireless mode went off). */
     private fun stopInviting() {
         main.removeCallbacks(resendInvite)
@@ -450,13 +359,6 @@ class WebcamService : Service() {
         if (wasEmpty) {
             main.removeCallbacks(expireNearby)
             main.postDelayed(expireNearby, 1_000)
-        }
-        // The PC whose QR code was scanned is probing: invite it now rather than at the next tick.
-        qrPending?.let { p ->
-            if (p.code.host == ip && !p.heard) {
-                main.removeCallbacks(qrTick)
-                qrTick.run()
-            }
         }
     }
 
@@ -481,9 +383,7 @@ class WebcamService : Service() {
         stopInviting() // A PC turned up: whether or not it is the one we asked, the asking is over.
         val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         Thread({
-            val result = WifiHandshake(
-                sock, pairedPcs, PairedPcs.phoneId(prefs), WirelessServer.deviceName(this), ::askUser, ::qrCodeFor,
-            ).run()
+            val result = WifiHandshake(sock, pairedPcs, PairedPcs.phoneId(prefs), WirelessServer.deviceName(this), ::askUser).run()
             main.post {
                 handshaking = false
                 if (result != null && wirelessOn && !linked) openSocket(sock, result)
@@ -588,8 +488,7 @@ class WebcamService : Service() {
         socket = sock
         startLink(secure.output, secure.input, wirelessPc = secure.pcName)
         _state.update { it.copy(wirelessPcIp = sock.inetAddress?.hostAddress) }
-        // A new pairing (QR code or 6-digit code): the screen says so and shows the camera.
-        if (secure.newlyPaired) _state.update { it.copy(pairedPcs = pairedPcs.list(), justPaired = secure.pcName) }
+        if (secure.newlyPaired) _state.update { it.copy(pairedPcs = pairedPcs.list()) }
         wifiLock = getSystemService(WifiManager::class.java)?.createWifiLock(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) WifiManager.WIFI_MODE_FULL_LOW_LATENCY
             else @Suppress("DEPRECATION") WifiManager.WIFI_MODE_FULL_HIGH_PERF,
@@ -676,9 +575,7 @@ class WebcamService : Service() {
         val id = ++linkId
         output = out
         linked = true
-        qrPending = null // A QR pairing ends here: connected.
-        main.removeCallbacks(qrTick)
-        _state.update { it.copy(connected = true, error = null, wireless = wirelessPc != null, wirelessPc = wirelessPc, qr = null) }
+        _state.update { it.copy(connected = true, error = null, wireless = wirelessPc != null, wirelessPc = wirelessPc) }
         orientationListener?.takeIf { it.canDetectOrientation() }?.enable()
         acquireWakeLock()
         updateNotification()
@@ -992,21 +889,7 @@ class WebcamService : Service() {
         updateNotification()
     }
 
-    /**
-     * The user swiped MyCam away from the recent apps: that means "quit", so the camera, the link and wireless
-     * mode all stop (onDestroy does the work; the PC sees the link end). The wireless choice stays saved, so
-     * opening MyCam again turns it back on, and plugging the cable in again starts as usual.
-     */
-    override fun onTaskRemoved(rootIntent: Intent?) {
-        Log.i(TAG, "removed from recent apps: stopping")
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        foreground = false
-        stopSelf()
-        super.onTaskRemoved(rootIntent)
-    }
-
     override fun onDestroy() {
-        getSystemService(NotificationManager::class.java).cancel(APPROVAL_NOTIFICATION_ID)
         unregisterReceiver(detachReceiver)
         PhonePreview.onTargetChanged = null
         PhonePreview.cameraStopped()
@@ -1025,7 +908,6 @@ class WebcamService : Service() {
         main.removeCallbacks(endScan)
         main.removeCallbacks(expireNearby)
         main.removeCallbacks(resendInvite)
-        main.removeCallbacks(qrTick)
         pendingAnswer?.invoke(false) // Unblocks a pairing that is waiting for the user.
         pendingAnswer = null
         closeLink()
@@ -1062,12 +944,6 @@ class WebcamService : Service() {
         const val ACTION_CONNECT_PC = "io.github.whoissaaif.mycam.CONNECT_PC"
         /** With ACTION_CONNECT_PC: the IP address of the PC to ask, as the nearby list shows it. */
         const val EXTRA_PC_IP = "pc_ip"
-        /** A scanned MyCam QR code (EXTRA_QR, the text): turn wireless mode on, pair and connect. */
-        const val ACTION_QR_PAIR = "io.github.whoissaaif.mycam.QR_PAIR"
-        const val EXTRA_QR = "qr"
-        /** How long a QR pairing keeps trying (hearing the PC, then its connection), and the invite resend. */
-        private const val QR_TIMEOUT_MS = 20_000L
-        private const val QR_RESEND_MS = 2_000L
         const val ACTION_FORGET_PCS ="io.github.whoissaaif.mycam.FORGET_PCS"
         /** With ACTION_FORGET_PCS: forget only this PC (PairedPc.id); without it, forget them all. */
         const val EXTRA_PC_ID = "pc_id"
@@ -1123,16 +999,6 @@ class WebcamService : Service() {
         /** Shows the paired PCs before the service runs (Settings > Paired PCs). */
         fun showPairedPcs(pcs: List<PairedPc>) {
             _state.update { it.copy(pairedPcs = pcs) }
-        }
-
-        /** The user closed the QR pairing message. */
-        fun dismissQr() {
-            _state.update { it.copy(qr = null) }
-        }
-
-        /** The user closed "Paired with ...". */
-        fun dismissJustPaired() {
-            _state.update { it.copy(justPaired = null) }
         }
 
         /** The user closed the "Pairing timed out" dialog. */

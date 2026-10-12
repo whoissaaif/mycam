@@ -148,13 +148,8 @@ phone again. A working session dropped: 2 s. The phone couldn't be reached: 10 s
 
 ## Wireless security (1.4)
 
-Every Wi-Fi session is authenticated and encrypted. A new PC must be **paired** once, in one of two ways:
-
-- **QR code (1.5, the main way):** the phone scans the code the PC shows. See "QR pairing" below.
-- **Code comparison (the fallback):** both screens show the same 6-digit code, and the user allows it on
-  the phone and, since 1.5, on the PC too.
-
-A paired PC connects without asking.
+Every Wi-Fi session is authenticated and encrypted. A new PC must be **paired** once: both screens show
+the same 6-digit code, and the user allows it on the phone. A paired PC connects without asking.
 
 Primitives: P-256 ECDH (public keys as `04 | X | Y`, the shared secret is the X coordinate, big-endian),
 SHA-256, HMAC-SHA256, HKDF-SHA256 (RFC 5869), AES-256-GCM with a 16-byte tag. `protocol/golden.txt` has
@@ -164,8 +159,8 @@ vectors for all of them (`wifi.*`, generated with the JDK), checked by both test
 
 | Type | Name | Direction | Body |
 |---|---|---|---|
-| 1 | CLIENT_HELLO | PC → phone | `"MCHS"`, u8 version (1), u8 flags (bit 0: force pairing, bit 1: QR pairing), PC id (16), ephemeral public key (65), Npc (16), u8 name length, PC name (UTF-8) |
-| 2 | SERVER_HELLO | phone → PC | phone id (16), ephemeral public key (65), Nph (16), u8 mode (0 paired, 1 pairing, 2 QR pairing), [pairing: commitment (32)], u8 name length, phone name |
+| 1 | CLIENT_HELLO | PC → phone | `"MCHS"`, u8 version (1), u8 flags (bit 0: force pairing), PC id (16), ephemeral public key (65), Npc (16), u8 name length, PC name (UTF-8) |
+| 2 | SERVER_HELLO | phone → PC | phone id (16), ephemeral public key (65), Nph (16), u8 mode (0 paired, 1 pairing), [pairing: commitment (32)], u8 name length, phone name |
 | 3 | NONCE_A | PC → phone | Na (16), pairing only |
 | 4 | NONCE_B | phone → PC | Nb (16), pairing only |
 | 5 | PC_FINISHED | PC → phone | HMAC (32) |
@@ -189,21 +184,6 @@ the phone checks it and asks the user. Only after "Allow" does the phone store `
 The PC then stores `K` too: the phone in its private app storage, the PC protected with DPAPI under
 `HKCU\Software\MyCam\PairedPhones`.
 
-**The PC asks too (1.5).** The PC shows the code with **Allow** and **Don't allow**, and stores `K` and
-starts the session only after its user allows *and* PHONE_FINISHED has arrived. Without this, a device on
-the network posing as a phone could approve its own pairing in milliseconds and then send video into the
-MyCam camera. There are no new messages:
-
-- The PC sends PC_FINISHED as before, so both screens show the code at the same time.
-- It waits up to the same 75 s for both answers.
-- If its user refuses or doesn't answer, it sends REJECT (1) and closes the connection.
-- Auto-connect doesn't connect to a refused phone again until the companion restarts. The user can still
-  pick that phone with Connect, or the phone can ask for a session (`MYCAM+1`).
-
-If the phone's user allowed first, the phone keeps a key the PC never stored. The existing recovery
-handles it: the next time they connect, the PC has no key, sends REJECT (2) and pairs again with "force
-pairing".
-
     K (pairing) = HKDF(ikm = z, salt = Na | Nb, info = "MyCam pair v1", 32)
     session     = HKDF(ikm = z | K, salt = Npc | Nph, info = "MyCam session v1", 96)
                 = PC-to-phone key (32) | phone-to-PC key (32) | finished key kFin (32)
@@ -219,70 +199,3 @@ reordered or the wrong key) ends the session. The phone sends one record per pac
 
 **Forgetting:** "Forget paired PCs" on the phone and "Forget Wi-Fi phones" on the PC delete the keys; the
 next connection pairs again with a new code.
-
-
-## QR pairing (1.5)
-
-The phone pairs by scanning the QR code on the PC's "Connect a phone" page. **iPhones and Android phones
-scan the same QR code.** An iPhone opens it in Safari (`docs/web-camera-format.md`). The MyCam Android app
-reads it with its own scanner and pairs natively. Scanning the PC's screen is the user's consent and proves
-the phone is in front of that PC. So neither screen shows a code, nobody taps Allow, and the phone goes
-straight from the scan to a connected session.
-
-**Nothing connects into the PC.** As with every Wi-Fi session, the PC only sends: UDP probes, and then a
-TCP connection out to the phone. So Android pairing works on any network, Windows "Public" ones included,
-with no firewall rule. (The iPhone page is the exception: Safari has to connect to the PC.)
-
-**The QR code.**
-
-    https://<pc-ipv4>:47900/?t=<code>&pc=<PC id>
-
-- `t` is the existing one-time code: 16 random bytes in base64url (22 characters), used once, valid for
-  5 minutes.
-- `pc` is the PC id (32 hex digits), as in CLIENT_HELLO.
-
-The app treats a scanned text as a MyCam code only if it has the `https` scheme, port 47900, path `/`, and
-both `t` and `pc`. A code with `t` but no `pc` comes from an older companion: the app asks the user to
-update MyCam on the PC.
-
-**Steps.**
-
-1. **The PC probes.** While the QR code is showing, the PC sends the usual `MYCAM?1 <pc name>` probe every
-   2 s: by broadcast, and also unicast to every address of the /24 the QR code points at. The unicast copy
-   gets through on networks that drop broadcasts. Phones answer as they always do.
-2. **The phone asks.** After the scan, the phone turns wireless mode on and waits up to 20 s for a probe
-   from the QR code's address. To that probe's source address and port, it sends:
-
-       phone -> PC:   MYCAM#1 <tcp port> <proof> <phone name>
-       proof = hex of the first 16 bytes of HMAC-SHA256(code, "MyCam qr invite v1" | tcp port, u16 BE)
-
-   It resends this every 2 s until the PC connects or it gives up.
-3. **The PC checks.** If `proof` matches the current code, the PC connects to `<source address>:<tcp port>`
-   and runs the handshake with CLIENT_HELLO flag bit 1 (QR pairing). Resends from that phone are ignored
-   meanwhile. Otherwise it answers on the same socket:
-
-       PC -> phone:   MYCAM-1 code     (no such code: used, expired, or a different PC's)
-       PC -> phone:   MYCAM-1 busy     (another phone has a session)
-
-4. **The handshake.** A phone that holds a scanned code for that PC id answers SERVER_HELLO with mode 2. A
-   phone without one sends REJECT (2). Both sides then derive:
-
-       K (pairing) = HKDF(ikm = z | code, salt = Npc | Nph, info = "MyCam qr pair v1", 32)
-       session     = as in paired mode, from z and K
-
-   The FINISHED messages follow as usual. The code is in K, so someone in between (who never saw the
-   screen) can't produce a valid FINISHED. The code itself is 128 bits, so guessing it is hopeless.
-
-5. **Done.** Both sides store `K` (replacing any older key), the PC uses up the code, and the QR code shows
-   a new one.
-
-Golden vectors: `qr.*` (`qr.pair_key`, `qr.invite_proof`), generated with the JDK, checked by both test
-suites.
-
-**After pairing,** the phone keeps wireless mode on, and the PC turns "Find phones on Wi-Fi" on (the user
-just paired a Wi-Fi phone). So they reconnect by themselves next time, as any paired phone does.
-
-**Limits.**
-- The phone and the PC must be able to reach each other directly, so a guest Wi-Fi with client isolation
-  won't work.
-- The scanner can't run while the phone is streaming, because the stream is using the camera.

@@ -13,8 +13,6 @@ class ProtocolTest {
         File("../protocol/golden.txt").readLines()
             .map { it.substringBefore('#').trim() }
             .filter { it.contains('=') }
-            // Only the wire protocol's entries: others (wifi.sas, qr.fingerprint...) are text, not hex.
-            .filter { it.startsWith("packet.") || it.startsWith("command.") }
             .associate { line ->
                 val (name, value) = line.split('=', limit = 2).map { it.trim() }
                 name to hex(value)

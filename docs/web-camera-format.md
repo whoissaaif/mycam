@@ -52,14 +52,9 @@ strict Content Security Policy (only its own scripts and styles, and connections
 | Pairing code (in the QR code) | 128 bits, base64url | Once, for 5 minutes. A new one appears by itself while the "Connect an iPhone" page is open, and none exists when it's closed | PC memory only |
 | Device token | 256 bits, base64url | Until "Forget" | The page's `localStorage` (`mycam.device`). The PC keeps only its SHA-256, in `HKCU\Software\MyCam\WebDevices\<id>` (`TokenHash`, `Name`, `Added`) |
 
-- **First connection:** the QR code points at `https://<pc-ip>:47900/?t=<code>&pc=<PC id>`
-  (`pc` since 1.5, for the Android app's own pairing, PROTOCOL.md "QR pairing"; the page ignores it). The page first
-  removes both from the address bar (`history.replaceState`, so they don't stay in Safari's history). Then
+- **First connection:** the QR code points at `https://<pc-ip>:47900/?t=<code>`. The page first removes
+  the code from the address bar (`history.replaceState`, so it doesn't stay in Safari's history). Then
   it calls `POST /pair`, keeps the device token, and connects.
-- **Android phone, scanned with Google Lens or the camera app (1.5):** the page opens in Chrome. It
-  doesn't use the code yet. It offers **Open in the MyCam app**, which is an `intent:` link carrying the
-  same `t` and `pc`, with the GitHub releases page as the fallback when the app isn't installed. It also
-  offers **Use this page instead**, which runs the normal web pairing above.
 - **Later connections:** opening `https://<pc-ip>:47900/` again (or the Home Screen icon) and tapping
   Start reconnects without scanning.
 - **Never logged:** tokens never go to the log. The settings window shows the address without the code.

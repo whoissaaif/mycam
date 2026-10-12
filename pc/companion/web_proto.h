@@ -27,8 +27,6 @@ constexpr uint64_t kPairingCodeMs = 5 * 60 * 1000; // The QR code's token works 
 std::string Base64(const uint8_t* data, size_t size);
 std::string Base64Url(const uint8_t* data, size_t size); // No padding: safe in a URL as it is.
 std::string Hex(const uint8_t* data, size_t size);
-// The reverse of Base64Url(): false on anything that isn't exactly that encoding.
-bool FromBase64Url(const std::string& s, Bytes* out);
 std::string UrlDecode(const std::string& s);
 // The value of `name` in "a=1&b=2" (URL-decoded), or "" when it isn't there.
 std::string QueryParam(const std::string& query, const std::string& name);

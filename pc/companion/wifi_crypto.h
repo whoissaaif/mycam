@@ -30,13 +30,6 @@ std::string Sas(const Bytes& pcPub, const Bytes& phonePub, const Bytes& na, cons
 Bytes PairKey(const Bytes& ecdh, const Bytes& na, const Bytes& nb);
 Bytes SessionKeys(const Bytes& ecdh, const Bytes& pairKey, const Bytes& npc, const Bytes& nph); // 96 bytes
 Bytes Finished(const Bytes& kFin, const char* label, const Bytes& transcript);
-// QR pairing (PROTOCOL.md "QR pairing"). The pairing key, with the QR code's one-time code (16 bytes) mixed in
-// so only a phone that saw the PC's screen can finish the handshake: HKDF(z | code, Npc | Nph, "MyCam qr pair
-// v1", 32). Golden "qr.pair_key".
-Bytes QrPairKey(const Bytes& ecdh, const Bytes& code, const Bytes& npc, const Bytes& nph);
-// The proof in the phone's "MYCAM#1" invite: hex of the first 16 bytes of HMAC(code, "MyCam qr invite v1" |
-// tcp port, u16 BE). Golden "qr.invite_proof".
-std::string QrInviteProof(const Bytes& code, uint16_t tcpPort);
 
 // An ephemeral P-256 key pair.
 class EcKey {

@@ -316,7 +316,6 @@ void WebServer::HandlePair(Conn& c, const web::HttpRequest&, const std::string& 
     const std::string token =
         book_.AddDevice(web::QueryParam(body, "name"), wifi::Random(32), wifi::Random(8), uint64_t(_time64(nullptr)), &d);
     SaveDevice(d);
-    newlyPairedId_ = d.id;
     Log("web: paired %s at %s", d.name.c_str(), c.peer.c_str());
     if (pairing_) MakeCode(); // Ready for the next device.
     ++generation_;
@@ -623,24 +622,7 @@ void WebServer::StopPairing() {
 
 std::string WebServer::PairingUrl() const {
     if (!pairing_ || !pairingIp_ || listen_ == INVALID_SOCKET || book_.PairingCode().empty()) return "";
-    return "https://" + IpText(pairingIp_) + ":" + std::to_string(web::kPort) + "/?t=" + book_.PairingCode() +
-           (pcId_.empty() ? "" : "&pc=" + pcId_);
-}
-
-std::string WebServer::CurrentPairingCode() const {
-    return pairing_ && book_.HasPairingCode(GetTickCount64()) ? book_.PairingCode() : std::string();
-}
-
-void WebServer::PairingCodeUsed() {
-    if (!pairing_) return;
-    MakeCode();
-    ++generation_;
-}
-
-std::string WebServer::TakeNewlyPaired(const std::string& deviceId) {
-    if (deviceId.empty() || deviceId != newlyPairedId_) return "";
-    newlyPairedId_.clear();
-    return deviceId;
+    return "https://" + IpText(pairingIp_) + ":" + std::to_string(web::kPort) + "/?t=" + book_.PairingCode();
 }
 
 // --- Remembered devices: HKCU\Software\MyCam\WebDevices\<id> = TokenHash, Name, Added ----------------------

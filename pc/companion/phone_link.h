@@ -20,7 +20,6 @@ struct libusb_context;
 struct libusb_device;
 struct libusb_device_handle;
 struct libusb_transfer;
-struct sockaddr_in;
 
 namespace mycam {
 
@@ -28,8 +27,6 @@ namespace wifi { class RecordKey; }
 
 // Forgets every phone paired over Wi-Fi (they must pair again with a code). Settings window.
 void ForgetPairedPhones();
-// This PC's Wi-Fi id (made once), as 32 hex digits: in CLIENT_HELLO and the QR code.
-std::string PcIdHex();
 
 // How long the phone gives its user to answer a pairing request (the PC waits a little longer, see
 // kUserTimeoutMs in phone_link_wifi.cpp). The pairing dialog counts this down.
@@ -55,12 +52,6 @@ struct LinkStatus {
     bool wirelessSearch = false;  // "Find phones on Wi-Fi" is on.
     std::wstring phoneName;       // Wi-Fi phones: the name the phone announced.
     std::wstring pairingCode;     // Pairing a Wi-Fi phone: the 6-digit code both screens must show.
-    bool pairingAllowed = false;  // ...and this PC's user allowed it (1.5): waiting for the phone's answer.
-    // Bumped by every successful new pairing (QR code, 6-digit code or iPhone): the UI then says "Paired with
-    // <pairedName>" and shows the camera. pairedWifi: an Android phone over Wi-Fi (not an iPhone page).
-    uint32_t pairedCount = 0;
-    std::wstring pairedName;
-    bool pairedWifi = false;
     // "Scan for phones": a one-shot look for phones on the Wi-Fi, and what answered.
     bool scanning = false;                 // A scan window is running.
     uint32_t scansDone = 0;                // Scans finished since the companion started (0: never scanned).
@@ -111,10 +102,8 @@ public:
     // "Find phones on Wi-Fi" is off. A plugged-in phone still wins. ipv4 in network order.
     void ConnectTo(uint32_t ipv4) { connectRequest_ = ipv4; }
     static constexpr uint64_t kScanWindowMs = 6000;
-    // A code pairing (6 digits) needs this PC's user too (1.5, PROTOCOL.md "The PC asks too"): Allow lets it
-    // go ahead once the phone has allowed it as well; "Don't allow" refuses it, and auto-connect leaves that
-    // phone alone until the companion restarts. No effect when not pairing.
-    void AllowPairing() { allowPairing_ = true; }
+    // Abandons a Wi-Fi pairing that is waiting for the phone's answer: the PC closes the socket (no
+    // protocol message), and that phone isn't asked again for a while. No effect when not pairing.
     void CancelPairing() { cancelPairing_ = true; }
     // "Connect an iPhone": show a QR code for `ipv4` (0: the best address) until StopWebPairing().
     void StartWebPairing(uint32_t ipv4) { webPairRequest_ = int64_t(ipv4); }
@@ -160,21 +149,10 @@ private:
     void RefreshNearby();            // Paired / connected marks, then Publish() if the list changed.
     bool WifiAllowed() const { return wireless_ || manualSession_; } // A Wi-Fi session may go on.
     void RunManualConnect(uint32_t ip);
-    // QR pairing for the Android app (PROTOCOL.md "QR pairing"): probes while the QR code shows, then the
-    // session a phone's "MYCAM#1" asked for (qrRequest_).
-    void ProbeForQr(uint64_t now);
-    void OnQrInvite(const sockaddr_in& from, uint16_t port, const std::string& proof, const std::string& name);
-    void RunQrConnect();
-    // A new pairing worked (QR, code or iPhone): tells the UI, which says so and shows the camera.
-    void NotePaired(const std::string& name, bool wifi);
     // How a Wi-Fi session ended, for when to try that phone again.
-    // RefusedHere: this PC's user said no to a code pairing (or didn't answer): auto-connect leaves that phone be.
-    enum class WifiEnd { Ran, Refused, RefusedHere, NeedsPairing, Failed };
-    // qrCode: the one-time code a phone proved it scanned; the handshake then runs in QR pairing mode.
-    WifiEnd RunTcpSession(uintptr_t socket, const std::string& phoneName, bool forcePair,
-                          const std::vector<uint8_t>* qrCode = nullptr);
-    // Pairing / paired proof / QR pairing, then sets wifiTx_/wifiRx_.
-    WifiEnd Handshake(uintptr_t socket, bool forcePair, const std::vector<uint8_t>* qrCode);
+    enum class WifiEnd { Ran, Refused, NeedsPairing, Failed };
+    WifiEnd RunTcpSession(uintptr_t socket, const std::string& phoneName, bool forcePair);
+    WifiEnd Handshake(uintptr_t socket, bool forcePair); // Pairing / paired proof, then sets wifiTx_/wifiRx_.
     bool ReceiveRecords(uintptr_t socket);               // Decrypts what arrived and feeds the parser.
     bool UsbPhoneArrived(); // During a Wi-Fi session: a phone was plugged in (the cable takes over).
     bool SendTcp(const uint8_t* data, size_t size);
@@ -213,7 +191,6 @@ private:
 
     std::atomic<bool> wireless_{false};
     std::atomic<bool> cancelPairing_{false};
-    std::atomic<bool> allowPairing_{false};
     bool usbReady_ = false;
     uintptr_t udp_ = ~uintptr_t(0);       // SOCKET for discovery (INVALID_SOCKET when closed).
     uintptr_t tcp_ = ~uintptr_t(0);       // SOCKET of the current Wi-Fi session.
@@ -226,14 +203,6 @@ private:
     std::atomic<bool> scanRequest_{false};
     std::atomic<uint32_t> connectRequest_{0};
     bool manualSession_ = false;  // The current Wi-Fi session was asked for with Connect (search may be off).
-    // A phone that scanned the QR code asked for a session ("MYCAM#1", PROTOCOL.md "QR pairing"): where to
-    // connect and the code it proved it has (ip 0: nothing asked).
-    struct QrRequest { uint32_t ip = 0; uint16_t port = 0; std::string name; std::vector<uint8_t> code; } qrRequest_;
-    uint64_t lastQrProbe_ = 0;    // Probes go out every 2 s while the QR code shows.
-    // Successful new pairings so far (QR, code or iPhone), so the UI can say "Paired with ...".
-    uint32_t pairedCount_ = 0;
-    std::wstring pairedName_;
-    bool pairedWifi_ = false;
     uint64_t scanUntil_ = 0;      // End of the running scan window (0: none).
     uint64_t scanEndedAt_ = 0;    // When the last scan window closed: the discovery socket lingers after it.
     uint32_t scansDone_ = 0;

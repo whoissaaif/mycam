@@ -54,18 +54,8 @@ public:
     void StartPairing(uint32_t ipv4);
     void StopPairing();
     bool Pairing() const { return pairing_; }
-    // https://<address>:47900/?t=<code>&pc=<PC id> while pairing, else "". Holds the code: never log it.
+    // https://<address>:47900/?t=<code> while pairing, else "". Holds the code: never log it.
     std::string PairingUrl() const;
-    // The PC id (32 hex digits) the QR code carries, so the Android app knows which PC it scanned
-    // (PROTOCOL.md "QR pairing"). Set once by PhoneLink, which owns the id.
-    void SetPcId(const std::string& hex) { pcId_ = hex; }
-    // The Android app pairs over Wi-Fi with the QR code's one-time code (PROTOCOL.md "QR pairing"): the code
-    // while it is valid ("" otherwise), and "used" after a successful pairing (the QR code shows a new one).
-    std::string CurrentPairingCode() const;
-    void PairingCodeUsed();
-    // A page that paired with POST /pair has just opened its session: its device id (once; "" otherwise), so
-    // PhoneLink can say "paired" rather than only "connected".
-    std::string TakeNewlyPaired(const std::string& deviceId);
     uint64_t PairingExpires() const { return book_.PairingCodeExpires(); } // GetTickCount64 time.
     std::vector<web::NetAddress> Addresses() const { return addresses_; }
     uint32_t PairingAddress() const { return pairingIp_; }
@@ -105,8 +95,6 @@ private:
     bool busy_ = false;
     std::string busyExcept_;
     bool pairing_ = false;
-    std::string pcId_;           // In the QR code (`pc`).
-    std::string newlyPairedId_;  // The device the last POST /pair added, until its session starts.
     uint32_t pairingIp_ = 0;
     uint32_t generation_ = 0;
     uint64_t lastPing_ = 0;

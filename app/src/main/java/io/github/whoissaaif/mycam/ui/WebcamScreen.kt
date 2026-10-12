@@ -81,10 +81,6 @@ data class ScreenActions(
     /** Asks a PC from the nearby list to connect to this phone (the pairing then starts on both). */
     val onConnectPc: (String) -> Unit = {},
     val onPreview: (Boolean) -> Unit = {},
-    /** The scanner found a MyCam QR code (its text): pair with that PC and connect. */
-    val onQrScanned: (String) -> Unit = {},
-    val onDismissQr: () -> Unit = {},
-    val onDismissPaired: () -> Unit = {},
 )
 
 internal data class StatusView(val icon: Int, val headline: String, val detail: String, val live: Boolean = false)
@@ -138,17 +134,6 @@ fun WebcamScreen(
 ) {
     var tab by rememberSaveable { mutableStateOf(initialTab) }
     var scanOpen by rememberSaveable { mutableStateOf(initialScan) }
-    var qrOpen by rememberSaveable { mutableStateOf(false) }
-    // The scanner needs the camera: it closes if a stream starts meanwhile.
-    LaunchedEffect(state.streaming) { if (state.streaming) qrOpen = false }
-    // Just paired: the Camera tab, behind "Paired with ..." (the PC is connected, so that's where to be).
-    LaunchedEffect(state.justPaired) {
-        if (state.justPaired != null) {
-            qrOpen = false
-            scanOpen = false
-            tab = TAB_CAMERA
-        }
-    }
     var showLicences by remember { mutableStateOf(false) }
 
     // Applying feedback: only while the camera runs, since that's when a change restarts it.
@@ -181,11 +166,10 @@ fun WebcamScreen(
     }
 
     val pairing = state.pendingPc != null || state.pairingTimedOut != null
-    val modal = pairing || showLicences || state.justPaired != null
+    val modal = pairing || showLicences
     val blur by animateDpAsState(if (modal) 16.dp else 0.dp, tween(motionMs(Motion.DIALOG)), label = "backdropBlur")
 
-    BackHandler(enabled = qrOpen) { qrOpen = false }
-    BackHandler(enabled = (scanOpen || tab != TAB_CONNECT) && !modal && !qrOpen) {
+    BackHandler(enabled = (scanOpen || tab != TAB_CONNECT) && !modal) {
         if (scanOpen) scanOpen = false else tab = TAB_CONNECT
     }
 
@@ -262,7 +246,6 @@ fun WebcamScreen(
                         0 -> ConnectPage(
                             state, actions, applying != null, onFindDevices,
                             sweepLive = !liveSwept, onLiveSwept = { liveSwept = true },
-                            onScanQr = { qrOpen = true },
                         )
                         1 -> ScanPage(state, actions.onScan, actions.onConnectPc, onBack = { scanOpen = false })
                         2 -> CameraPage(state, previewOn, actions.onPreview, onFacing)
@@ -294,19 +277,6 @@ fun WebcamScreen(
             onDismissTimedOut = actions.onDismissTimedOut,
         )
         LicenceDialog(visible = showLicences && !pairing, onClose = { showLicences = false })
-        PairedDialog(pcName = state.justPaired.takeIf { !pairing }, onClose = actions.onDismissPaired)
-        // Over everything: the scanner is a full-screen camera with its own Close.
-        if (qrOpen) {
-            QrScanner(
-                onFound = { text ->
-                    qrOpen = false
-                    tab = TAB_CONNECT
-                    scanOpen = false
-                    actions.onQrScanned(text)
-                },
-                onClose = { qrOpen = false },
-            )
-        }
     }
 }
 

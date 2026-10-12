@@ -29,8 +29,6 @@ class WifiHandshake(
      * asking (and return false) once [pcGone] says the PC hung up, e.g. "Cancel pairing" on the PC.
      */
     private val askUser: (pcName: String, code: String, pcGone: () -> Boolean) -> Boolean,
-    /** QR pairing: the one-time code scanned from this PC's screen (16 bytes), or null if none is pending. */
-    private val qrCodeFor: (pcId: ByteArray) -> ByteArray? = { null },
 ) {
     class Result(val input: InputStream, val output: OutputStream, val pcName: String, val newlyPaired: Boolean)
 
@@ -55,8 +53,7 @@ class WifiHandshake(
         val hello = DataInputStream(read(TYPE_CLIENT_HELLO).inputStream())
         val magic = ByteArray(4).also { hello.readFully(it) }
         if (!magic.contentEquals(MAGIC) || hello.readUnsignedByte() != VERSION) throw IOException("not a MyCam PC")
-        val flags = hello.readUnsignedByte()
-        val forcePair = flags and FLAG_FORCE_PAIR != 0
+        val forcePair = hello.readUnsignedByte() and FLAG_FORCE_PAIR != 0
         val pcId = ByteArray(16).also { hello.readFully(it) }
         val pcPub = ByteArray(65).also { hello.readFully(it) }
         val npc = ByteArray(16).also { hello.readFully(it) }
@@ -66,19 +63,6 @@ class WifiHandshake(
         val phonePub = WifiCrypto.rawPublic(key.public)
         val z = WifiCrypto.ecdh(key.private, WifiCrypto.publicFromRaw(pcPub))
         val nph = randomBytes(16)
-
-        // QR pairing (PROTOCOL.md "QR pairing"): the PC proved, by connecting after our invite, that it is the
-        // one whose code we scanned; the code goes into the key, so only it can finish. Nothing to ask.
-        if (flags and FLAG_QR != 0) {
-            val code = qrCodeFor(pcId) ?: run { reject(REJECT_AUTH); return null }
-            send(TYPE_SERVER_HELLO, phoneId + phonePub + nph + byteArrayOf(MODE_QR) + name(phoneName))
-            val pairKey = WifiCrypto.qrPairKey(z, code, npc, nph)
-            val keys = WifiCrypto.sessionKeys(z, pairKey, npc, nph)
-            if (!finishedFromPc(keys)) { reject(REJECT_AUTH); return null }
-            store.put(pcId, pairKey, pcName)
-            return finish(keys, pcName, newlyPaired = true)
-        }
-
         val known = if (forcePair) null else store.key(pcId)
 
         if (known != null) {
@@ -210,7 +194,6 @@ class WifiHandshake(
         private val MAGIC = "MCHS".toByteArray()
         private const val VERSION = 1
         private const val FLAG_FORCE_PAIR = 0x01
-        private const val FLAG_QR = 0x02
         private const val STEP_TIMEOUT_MS = 10_000
         private const val WATCH_POLL_MS = 250
         const val TYPE_CLIENT_HELLO = 1
@@ -222,7 +205,6 @@ class WifiHandshake(
         const val TYPE_REJECT = 7
         private const val MODE_PAIRED: Byte = 0
         private const val MODE_PAIRING: Byte = 1
-        private const val MODE_QR: Byte = 2
         const val REJECT_REFUSED = 1
         const val REJECT_AUTH = 2
         const val REJECT_BUSY = 3

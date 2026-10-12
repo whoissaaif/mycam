@@ -104,19 +104,6 @@ Bytes Finished(const Bytes& kFin, const char* label, const Bytes& transcript) {
     return HmacSha256(kFin, Concat({&l, &transcript}));
 }
 
-Bytes QrPairKey(const Bytes& ecdh, const Bytes& code, const Bytes& npc, const Bytes& nph) {
-    return Hkdf(Concat({&ecdh, &code}), Concat({&npc, &nph}), Ascii("MyCam qr pair v1"), 32);
-}
-
-std::string QrInviteProof(const Bytes& code, uint16_t tcpPort) {
-    const Bytes label = Ascii("MyCam qr invite v1"), p = {uint8_t(tcpPort >> 8), uint8_t(tcpPort)};
-    const Bytes mac = HmacSha256(code, Concat({&label, &p}));
-    static const char digits[] = "0123456789abcdef";
-    std::string out;
-    for (size_t i = 0; i < 16; ++i) { out += digits[mac[i] >> 4]; out += digits[mac[i] & 15]; }
-    return out;
-}
-
 // --- EcKey ------------------------------------------------------------------------------------------
 
 EcKey::~EcKey() {

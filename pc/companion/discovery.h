@@ -54,23 +54,6 @@ inline bool ParseDiscoveryConnectRequest(const std::string& text, uint16_t* port
     return ParseDiscoveryMessage(text, "MYCAM+1", port, name);
 }
 
-// A phone that scanned this PC's QR code asking it to connect (PROTOCOL.md "QR pairing"):
-// "MYCAM#1 <tcp port> <proof: 32 hex digits> <phone name>". The proof is lower-cased.
-inline bool ParseDiscoveryQrRequest(const std::string& text, uint16_t* port, std::string* proof, std::string* name) {
-    std::string rest;
-    if (!ParseDiscoveryMessage(text, "MYCAM#1", port, &rest)) return false;
-    const size_t space = rest.find(' ');
-    std::string p = rest.substr(0, space);
-    if (p.size() != 32) return false;
-    for (char& c : p) {
-        if (c >= 'A' && c <= 'F') c = char(c - 'A' + 'a');
-        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))) return false;
-    }
-    *proof = p;
-    *name = space == std::string::npos ? std::string() : rest.substr(space + 1);
-    return true;
-}
-
 // The phones found on the network, in the order they first answered, one per IP address, at most kMax.
 class NearbyList {
 public:
