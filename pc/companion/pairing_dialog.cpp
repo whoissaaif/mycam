@@ -41,6 +41,8 @@ struct PairingDialog::Impl {
     float iconScale = 0;
 
     std::wstring code, phone;
+    bool allowed = false;     // This PC's user allowed it; waiting for the phone (Allow is gone then).
+    int focus = kPairCancel;  // The focused button. "Don't allow" first, so a stray Enter never allows.
     uint64_t since = 0;
     Tween openFade;
     int hot = kNone, pressed = kNone;
@@ -75,16 +77,24 @@ struct PairingDialog::Impl {
         const float cardH = codeSize.h + 12;
         add(kPairCode, Kind::Text, L"Code " + code, MakeBox(x, y, w, cardH));
         y += cardH + 8;
-        const float hintH = paint.Measure(Font::Body, L"Tap Allow on the phone if it shows the same code.", w).h;
-        add(kPairHint, Kind::Text, L"Tap Allow on the phone if it shows the same code.", MakeBox(x, y, w, hintH));
+        const std::wstring hint = allowed ? L"Allowed on this PC. Waiting for Allow on the phone…"
+                                          : L"Allow only if the phone shows the same code, then tap Allow on the phone too.";
+        const float hintH = paint.Measure(Font::Body, hint, w).h;
+        add(kPairHint, Kind::Text, hint, MakeBox(x, y, w, hintH));
         y += hintH + 12;
         const float countW = paint.Measure(Font::Body, L"0:00").w + 8;
         Element* bar = add(kPairProgress, Kind::ProgressBar, L"Time left", MakeBox(x, y, w - countW, 13));
         const uint64_t elapsed = since ? Now() - since : 0;
         bar->value = elapsed >= kPairingAnswerMs ? 0.f : float(kPairingAnswerMs - elapsed) / float(kPairingAnswerMs);
         y += 13 + 18;
-        const float bw = std::max(96.f, paint.Measure(Font::Body, L"Cancel pairing").w + 30), bh = std::max(23.f, lineH + 10);
-        add(kPairCancel, Kind::Button, L"Cancel pairing", MakeBox(kW - kPad - bw, y, bw, bh), true);
+        // Both users must allow a code pairing (PROTOCOL.md "The PC asks too"): Allow, and "Don't allow".
+        const float bh = std::max(23.f, lineH + 10);
+        const float dw = std::max(96.f, paint.Measure(Font::Body, L"Don’t allow").w + 30);
+        if (!allowed) { // Left to right, in reading order for screen readers.
+            const float aw = std::max(96.f, paint.Measure(Font::Body, L"Allow").w + 30);
+            add(kPairAllow, Kind::Button, L"Allow", MakeBox(kW - kPad - dw - 10 - aw, y, aw, bh), true);
+        }
+        add(kPairCancel, Kind::Button, L"Don’t allow", MakeBox(kW - kPad - dw, y, dw, bh), true);
         y += bh + 14;
         height = std::ceil(y + xp::kBorder);
     }
@@ -159,8 +169,9 @@ struct PairingDialog::Impl {
             st.pressed = pressed == e.id && hot == e.id;
             if (e.kind == Kind::CaptionButton) paint.CaptionButton(e.rect, true, st);
             if (e.kind == Kind::Button) {
-                paint.FlatButton(e.rect, e.name, -1, st, xp::FlatStyle::Secondary, Font::Body);
-                if (keyboardCues && GetFocus() == hwnd) paint.FocusRing(e.rect.Inset(-2, -2), 8.f);
+                paint.FlatButton(e.rect, e.name, -1, st,
+                                 e.id == kPairAllow ? xp::FlatStyle::Primary : xp::FlatStyle::Secondary, Font::Body);
+                if (keyboardCues && GetFocus() == hwnd && e.id == focus) paint.FocusRing(e.rect.Inset(-2, -2), 8.f);
             }
         }
         if (opening) dc->PopLayer();
@@ -171,6 +182,20 @@ struct PairingDialog::Impl {
     void Cancel() {
         if (model->cancel) model->cancel();
         Destroy();
+    }
+
+    // Allowed here: the dialog stays until the phone answers (the status then clears the code and closes it).
+    void Allow() {
+        if (allowed) return;
+        if (model->allow) model->allow();
+        allowed = true;
+        focus = kPairCancel;
+        InvalidateRect(hwnd, nullptr, FALSE);
+    }
+
+    void Activate(int id) {
+        if (id == kPairAllow) Allow();
+        else if (id == kPairCancel || id == kCaptionClose) Cancel();
     }
 
     void Destroy() {
@@ -253,16 +278,22 @@ struct PairingDialog::Impl {
             const int target = pressed;
             pressed = kNone;
             InvalidateRect(hwnd, nullptr, FALSE);
-            if (target != kNone && HitTest(GET_X_LPARAM(lp) / scale, GET_Y_LPARAM(lp) / scale) == target) Cancel();
+            if (target != kNone && HitTest(GET_X_LPARAM(lp) / scale, GET_Y_LPARAM(lp) / scale) == target) Activate(target);
             return 0;
         }
         case WM_KEYDOWN:
-            if (wp == VK_ESCAPE || wp == VK_RETURN || wp == VK_SPACE) {
+            if (wp == VK_ESCAPE) {
                 Cancel();
                 return 0;
             }
-            if (wp == VK_TAB) {
+            if (wp == VK_RETURN || wp == VK_SPACE) {
+                Activate(focus);
+                return 0;
+            }
+            if (wp == VK_TAB || wp == VK_LEFT || wp == VK_RIGHT) { // Two buttons at most: any of these switches.
                 keyboardCues = true;
+                if (!allowed) focus = focus == kPairCancel ? kPairAllow : kPairCancel;
+                if (uia) uia->Update();
                 InvalidateRect(hwnd, nullptr, FALSE);
                 return 0;
             }
@@ -361,12 +392,12 @@ struct PairingDialog::Impl {
         uia = std::make_unique<UiaHost>(hwnd, UiaSource{
             [this] { return hwnd ? elements : std::vector<Element>{}; },
             [this](int id) {
-                if (id != kPairCancel && id != kCaptionClose) return false;
-                Cancel(); // Closes the dialog.
+                if (id != kPairCancel && id != kCaptionClose && !(id == kPairAllow && !allowed)) return false;
+                Activate(id); // "Don't allow" and Close close the dialog; Allow keeps it until the phone answers.
                 return true;
             },
-            [](int id) { return id == kPairCancel; }, // The only focusable element.
-            [this] { return hwnd ? int(kPairCancel) : int(kNone); },
+            [this](int id) { return id == kPairCancel || (id == kPairAllow && !allowed); },
+            [this] { return hwnd ? focus : int(kNone); },
             [this](const Box& b) {
                 POINT a = {LONG(std::floor(b.l * scale)), LONG(std::floor(b.t * scale))};
                 POINT c = {LONG(std::ceil(b.r * scale)), LONG(std::ceil(b.b * scale))};
@@ -394,10 +425,13 @@ struct PairingDialog::Impl {
     // Takes the current status; false if there is nothing to pair any more.
     bool Sync(const LinkStatus& s) {
         if (s.pairingCode.empty()) return false;
-        if (s.pairingCode != code) {
+        if (s.pairingCode != code) { // A new pairing: nothing allowed yet.
             code = s.pairingCode;
             since = Now();
+            allowed = false;
+            focus = kPairCancel;
         }
+        if (s.pairingAllowed) allowed = true;
         phone = s.phoneName.empty() ? std::wstring(L"the phone") : s.phoneName;
         return true;
     }

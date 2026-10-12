@@ -1052,6 +1052,36 @@ void TestWebAddresses() {
           list[3].text == "vpn");
 }
 
+// QR pairing (PROTOCOL.md "QR pairing"): the fingerprint in the QR code, the connect proof and the decoders the
+// /app routes use. Golden "qr.*" (JDK). qr.fingerprint and qr.key_text are text, so they're spelled out here.
+void TestQrPairing(std::map<std::string, Bytes>& golden) {
+    const Bytes der = golden["qr.cert_der"];
+    CHECK(web::CertFingerprint(der.data(), der.size()) == "_eq5rPNxA2K9JljNyaKej5x1f8-YEWA6jER80dkVEQg");
+    const Bytes key = golden["qr.key"], phoneId = golden["qr.phone_id"], port = golden["qr.port"];
+    CHECK(port.size() == 2);
+    CHECK(wifi::ConnectProof(key, phoneId, uint16_t(port[0] << 8 | port[1])) == golden["qr.connect_proof"]);
+    CHECK(web::Base64Url(key.data(), key.size()) == "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8");
+
+    web::Bytes out;
+    CHECK(web::FromBase64Url("QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8", &out) && out == key);
+    CHECK(web::FromBase64Url("", &out) && out.empty());
+    CHECK(web::FromBase64Url("_-8", &out) && out == (web::Bytes{0xFF, 0xEF})); // The two URL-safe characters.
+    for (size_t n = 0; n < 40; ++n) { // Round trips at every length (all three tail cases).
+        web::Bytes b(n);
+        for (size_t i = 0; i < n; ++i) b[i] = uint8_t(i * 37 + 11);
+        CHECK(web::FromBase64Url(web::Base64Url(b.data(), b.size()), &out) && out == b);
+    }
+    CHECK(!web::FromBase64Url("QUJD=", &out)); // Padding isn't base64url here.
+    CHECK(!web::FromBase64Url("QUJD+", &out)); // Nor is the standard alphabet.
+    CHECK(!web::FromBase64Url("Q", &out));     // A lone character can't be a whole byte.
+    CHECK(!web::FromBase64Url("QR", &out));    // Leftover bits set: not how anyone encodes "A".
+
+    CHECK(web::FromHex("303132333435363738393a3b3c3d3e3f", &out) && out == phoneId);
+    CHECK(web::FromHex("303132333435363738393A3B3C3D3E3F", &out) && out == phoneId);
+    CHECK(!web::FromHex("303", &out));
+    CHECK(!web::FromHex("3g", &out));
+}
+
 } // namespace
 
 int main() {
@@ -1093,6 +1123,7 @@ int main() {
     printf("web: http and handshake\n");   TestWebHandshake();
     printf("web: tokens\n");               TestWebTokens();
     printf("web: addresses\n");            TestWebAddresses();
+    printf("qr pairing\n");                withGolden(TestQrPairing);
 
     printf("%d checks, %d failed\n", g_checks, g_failures);
     return g_failures ? 1 : 0;

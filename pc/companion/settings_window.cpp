@@ -613,9 +613,9 @@ struct SettingsWindow::Impl {
                           kScan, L"&Scan for Devices", x, y, w);
         LayoutScanSentence(s, now, x, y, w);
         *y += kGap;
-        // QR card: the code a phone scans to pair (today iPhones through Safari; Android once IMPROVEMENTS 12 lands).
+        // QR card: the code a phone scans to pair (Android in MyCam, iPhones through Safari; IMPROVEMENTS 12).
         LayoutConnectCard(kCardWebHome, Glyph::Phone, L"Generate QR",
-                          L"Scan it with an iPhone or iPad on the same Wi-Fi: nothing to install.", kConnectIPhone,
+                          L"Scan it with MyCam on Android, or an iPhone’s Camera app, on the same Wi-Fi.", kConnectIPhone,
                           L"Show &QR code", x, y, w);
     }
 
@@ -1126,7 +1126,7 @@ struct SettingsWindow::Impl {
     }
 
     void LayoutIPhone(const LinkStatus& s, float x, float* y, float w) {
-        PageHeader(L"Connect an iPhone", L"Use an iPhone or iPad as the camera, in Safari. Nothing to install.", x, y, w);
+        PageHeader(L"Connect a phone", L"Scan this code: an iPhone or iPad with its Camera app, an Android phone with MyCam.", x, y, w);
         const float ix = x + kCardPad, iw = w - 2 * kCardPad;
         UpdateQr(s.webUrl);
         const web::NetAddress* current = nullptr;
@@ -1135,13 +1135,13 @@ struct SettingsWindow::Impl {
             const size_t ci = cards.size(), ii = items.size();
             cards.push_back({kCardIPhone, MakeBox(x, *y, w, 10)});
             Item& card = Add(kCardIPhone, Kind::Card, L"", MakeBox(x, *y, w, 10), kNone);
-            card.e.name = L"Scan this code with the iPhone";
+            card.e.name = L"Scan this code with the phone";
             float cy = *y + kCardPad;
             if (!s.webReady || s.webAddresses.empty()) {
                 const std::wstring why =
                     !s.webReady ? L"This isn’t available right now: MyCam couldn’t start its iPhone page on port 47900. "
                                   L"Restart MyCam; the log says more."
-                                : L"This PC isn’t on a network an iPhone can reach. Connect it to Wi-Fi or Ethernet, "
+                                : L"This PC isn’t on a network a phone can reach. Connect it to Wi-Fi or Ethernet, "
                                   L"then come back here.";
                 const Size t = paint.Measure(Font::Body, why, iw);
                 Item& n = Add(kWebUnavailable, Kind::Text, L"", MakeBox(ix, cy, iw, t.h), kCardIPhone);
@@ -1157,17 +1157,20 @@ struct SettingsWindow::Impl {
                 const float tx = ix + side + 18, tw = iw - side - 18;
                 float ty = cy;
                 const std::wstring steps =
-                    L"1.  On the iPhone, open the Camera app and point it at this code. Tap the link that appears.\n"
+                    L"Android:  in MyCam, tap Scan QR Code and point it at this code. It connects by itself.\n\n"
+                    L"iPhone:\n"
+                    L"1.  Open the Camera app and point it at this code. Tap the link that appears.\n"
                     L"2.  The first time, Safari says the connection isn’t private. Tap Show Details, then “visit this "
                     L"website”.\n"
-                    L"3.  Tap Start and allow the camera. Then choose “MyCam” as the camera in any app on this PC.";
+                    L"3.  Tap Start and allow the camera.\n\n"
+                    L"Then choose “MyCam” as the camera in any app on this PC.";
                 const Size st = paint.Measure(Font::Body, steps, tw);
                 {
                     Item& t = Add(kWebSteps, Kind::Text, L"", MakeBox(tx, ty, tw, st.h), kCardIPhone);
                     t.e.name = t.label = steps;
                     ty += st.h + 10;
                 }
-                const std::wstring note = L"Each code works once, for 5 minutes; then a new one appears. The iPhone and "
+                const std::wstring note = L"Each code works once, for 5 minutes; then a new one appears. The phone and "
                                           L"this PC must be on the same network.";
                 const Size nt = paint.Measure(Font::Small, note, tw);
                 {
@@ -1304,7 +1307,8 @@ struct SettingsWindow::Impl {
             h.e.liveRegion = true;
             cy += t.h + 4;
         }
-        const std::wstring hint = L"Make sure the code below matches on both devices.";
+        const std::wstring hint = s.pairingAllowed ? L"Allowed on this PC. Waiting for Allow on the phone…"
+                                                   : L"Allow only if the phone shows the same code.";
         const Size hs = paint.Measure(Font::Body, hint, iw);
         {
             Item& h = Add(kPairHint, Kind::Text, L"", MakeBox(ix, cy, iw, hs.h), kCardPairing);
@@ -1337,11 +1341,20 @@ struct SettingsWindow::Impl {
             cy += 13 + kGap + 4;
         }
         {
-            const Size cancel = ButtonSize(L"Cancel", 110);
-            AddButton(kPairCancel, L"Cancel", FlatStyle::Secondary, MakeBox(x + (w - cancel.w) / 2, cy, cancel.w, cancel.h),
-                      kCardPairing)
-                .e.name = L"Cancel pairing";
-            cy += cancel.h + kCardPad;
+            // Both users must allow a code pairing (PROTOCOL.md "The PC asks too"). Once allowed here, only
+            // "Don't allow" stays, until the phone answers.
+            const Size deny = ButtonSize(L"Don’t allow", 110);
+            const Size allow = ButtonSize(L"Allow", 110);
+            const float gap = 12, total = s.pairingAllowed ? deny.w : allow.w + gap + deny.w;
+            float bx = x + (w - total) / 2;
+            if (!s.pairingAllowed) {
+                AddButton(kPairAllow, L"Allow", FlatStyle::Primary, MakeBox(bx, cy, allow.w, allow.h), kCardPairing)
+                    .e.name = L"Allow pairing";
+                bx += allow.w + gap;
+            }
+            AddButton(kPairCancel, L"Don’t allow", FlatStyle::Secondary, MakeBox(bx, cy, deny.w, deny.h), kCardPairing)
+                .e.name = L"Don’t allow pairing";
+            cy += deny.h + kCardPad;
         }
         const Box box = MakeBox(x, *y, w, cy - *y);
         cards[ci].box = box;
@@ -1500,6 +1513,9 @@ struct SettingsWindow::Impl {
         case kScanUsb: // No passive wait: drop the session and look at the bus again (§2.2).
             usbScanAt = Now();
             model->reconnect();
+            break;
+        case kPairAllow:
+            if (model->allowPairing) model->allowPairing();
             break;
         case kPairCancel:
             if (model->cancelPairing) model->cancelPairing();

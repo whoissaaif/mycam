@@ -376,6 +376,79 @@ side shares one single-threaded session loop with USB (no new threads). No pairi
 - [ ] Bitrate/latency tuning for Wi-Fi; default to 1080p30 when wireless
 - [ ] Testing: 2.4 vs 5 GHz, hotspot, Wi-Fi drop and reconnect, switching between cable and Wi-Fi
 
+## 12. QR pairing for Android (M): 🟡 built (2026-10-13), device tests left
+
+Pairing over Wi-Fi today means turning on Wi-Fi mode, finding the PC, waiting for a 6-digit code,
+comparing it on two screens and tapping Allow. It also depends on UDP broadcasts, which many routers drop.
+The PC already shows a QR code for iPhones, so Android phones should scan **the same code**: scan once, and
+the phone is paired and connected. The wire format is in PROTOCOL.md "QR pairing". This section covers the
+design and the work.
+
+**Decisions (2026-10-12, owner):**
+- **One QR code for both kinds of phone:** Safari for iPhones, MyCam's own scanner for Android.
+- **Scanner:** ZXing `core`, bundled (about 0.5 MB), on our own Camera2 code. It doesn't need Google Play
+  services, so it works on every phone.
+- **The 6-digit pairing stays as the fallback** ("Can't scan?" → Find devices). From now on it needs Allow
+  on the PC as well as on the phone. Before, a device on the network posing as a phone could approve its
+  own pairing in milliseconds and then send video into the MyCam camera.
+- **Paired phones still reconnect through discovery by themselves.** `/app/connect` also lets the phone
+  reconnect directly.
+
+**Why the key exchange is safe without a code comparison:**
+- The QR code carries the PC's certificate fingerprint, so the phone's HTTPS connection is pinned to that PC.
+- The one-time code proves the phone saw the PC's screen in the last 5 minutes.
+- `K` then travels inside that pinned TLS connection.
+- From then on it is the ordinary paired handshake, with no new cryptography in the session itself.
+
+**Phone flow:**
+1. On the Connect page, **Scan QR Code** opens a full-screen scanner (portrait while it shows). It asks for camera permission if needed. While a stream is live the row is disabled
+   with "Stop the stream to scan" (the camera is in use).
+2. The scanner finds a code with `t` and `f` and gives a short vibration. It closes straight away and
+   shows "Connecting to <PC>…" for the second the next step takes. **No code is shown and nothing asks for
+   confirmation, on the phone or the PC (owner, 2026-10-13):** scanning is the consent, and it goes straight
+   to connected.
+3. The phone turns wireless mode on if it's off, calls `/app/pair`, stores `K`, then calls
+   `/app/connect`. The PC connects within about a second and the stream page shows the PC as connected.
+   Scanning a PC the phone is already paired with simply pairs again (a new `K` replaces the old one on
+   both sides), so there is one path and nothing to go stale.
+4. Errors, in plain words, with **Scan again** and **Close**:
+   - Wrong certificate: "This isn't the PC in the QR code".
+   - Code used or expired: "Scan the new code the PC shows".
+   - The PC can't be reached: "Same Wi-Fi? Is the PC's network set to Private?".
+   - Paired, but the PC is busy with another phone, or never connected within 10 s.
+   - Code without `f` (scanner screen): "Update MyCam on the PC".
+   - Not a MyCam code: say nothing and keep scanning.
+5. The phone remembers the PC's last address with its pairing, for a later direct `/app/connect`.
+
+**PC flow:**
+- On Home, the QR card is called **"Generate QR"** (done 2026-10-13; its button is "Show QR code").
+- The "Connect an iPhone" page is now **"Connect a phone"**, with the same QR code and steps for each kind
+  of phone. A QR pairing needs no balloon of its own: the usual "Phone connected over Wi-Fi" one follows.
+- The 6-digit pairing dialog and the window's pairing page have **Allow** and **Don't allow** ("Don't allow"
+  has the keyboard focus first, so a stray Enter never allows). The window's Cancel button had never been
+  wired up (`model.cancelPairing` was unset); it works now.
+
+**Work items:**
+- [x] PC `tls_server`: the certificate's SHA-256 fingerprint (`Credentials::Fingerprint`).
+- [x] PC `web_server` / `web_proto`: `f` in the QR URL, `/app/pair` and `/app/connect`; `FromHex`,
+      `FromBase64Url` and `CertFingerprint` are pure and unit-tested.
+- [x] PC `PhoneLink`: `AppPair` / `AppConnect` and a direct connect (`direct_`, run from the idle loop).
+- [x] PC: Allow / Don't allow on code pairing; a phone refused here is never auto-connected again
+      (`WifiEnd::RefusedHere`) until the companion restarts.
+- [x] PC UI: "Generate QR" on Home, "Connect a phone" page, pairing dialog and page buttons.
+- [x] Phone: the scanner (`ui/QrScanner.kt`: Camera2 → `ImageReader` YUV → ZXing on the camera thread).
+      No torch: a QR code on a screen glows by itself, and a torch only adds glare.
+- [x] Phone: pinned HTTPS (`QrPairing.kt`), `/app/pair`, `/app/connect`, the PC's address remembered
+      (`PairedPcs.setAddress`), status and errors on the Connect page.
+- [x] Golden vectors `qr.*` (JDK), checked by `QrPairingTest` and `mycam_tests`.
+- [ ] Phone: use the remembered address to reconnect directly (a "Connect" on a paired PC in Settings).
+- [ ] Page (`app.js`): on Android, offer "Open in the MyCam app" (an `intent:` link plus a `mycam://` intent
+      filter in the app) or "Use this page instead". The page already drops `f` with the rest of the query.
+- [ ] Tests on devices: the test phone and a second Android phone, an iPhone scanning the same code, an
+      expired code, a wrong network, a Public network on the PC, an already paired phone scanning again, and
+      the 6-digit fallback with Allow / Don't allow on the PC.
+- [ ] Release APK (R8) on a phone: ZXing and the pinned TLS client under minification.
+
 ---
 
 ## Suggested order

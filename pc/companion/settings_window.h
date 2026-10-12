@@ -34,7 +34,8 @@ struct SettingsModel {
     std::function<void(bool)> setWireless;
     std::function<void()> forgetPhones;            // Forget Wi-Fi phones
     std::function<void()> showPairing;             // Opens the pairing dialog (headline click while pairing)
-    std::function<void()> cancelPairing;           // "Cancel pairing" (PhoneLink::CancelPairing)
+    std::function<void()> allowPairing;            // "Allow" a code pairing (PhoneLink::AllowPairing)
+    std::function<void()> cancelPairing;           // "Don't allow" (PhoneLink::CancelPairing)
     std::function<void()> scanForPhones;           // "Scan for phones" (PhoneLink::ScanForPhones)
     std::function<void(uint32_t)> connectTo;       // Connect, from the scan list (PhoneLink::ConnectTo, IPv4)
     // "Connect an iPhone": a QR code while that page shows (PhoneLink::StartWebPairing / StopWebPairing).

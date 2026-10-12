@@ -48,13 +48,27 @@ public:
     void EndPhone();
     void SetPhoneHandler(std::function<void(const uint8_t*, size_t)> handler) { onPhone_ = std::move(handler); }
 
+    // --- The Android app (PROTOCOL.md "QR pairing") ---------------------------------------------------
+    // POST /app/pair (after the one-time code checks out) and POST /app/connect. PhoneLink handles both: it
+    // owns the Wi-Fi pairing keys and the sessions. Both run on the worker thread, inside Poll().
+    struct AppPairReply { std::string pcId, pcName, key; }; // 32 hex digits, UTF-8, K in base64url.
+    enum class AppConnect { Ok, Unknown, Busy };
+    using AppPairHandler = std::function<bool(const web::Bytes& phoneId, const std::string& name, AppPairReply* reply)>;
+    using AppConnectHandler =
+        std::function<AppConnect(const web::Bytes& phoneId, uint16_t port, const web::Bytes& proof, uint32_t ipv4)>;
+    void SetAppHandlers(AppPairHandler pair, AppConnectHandler connect) {
+        onAppPair_ = std::move(pair);
+        onAppConnect_ = std::move(connect);
+    }
+
     // --- Pairing (the settings window's "Connect an iPhone") ----------------------------------------
     // Starts pairing with a new one-time code, for the QR code at `ipv4` (0: the best address). Pairing
     // stays on until StopPairing(), with a new code whenever one is used or runs out.
     void StartPairing(uint32_t ipv4);
     void StopPairing();
     bool Pairing() const { return pairing_; }
-    // https://<address>:47900/?t=<code> while pairing, else "". Holds the code: never log it.
+    // https://<address>:47900/?t=<code>&f=<certificate fingerprint> while pairing, else "". Holds the
+    // code: never log it.
     std::string PairingUrl() const;
     uint64_t PairingExpires() const { return book_.PairingCodeExpires(); } // GetTickCount64 time.
     std::vector<web::NetAddress> Addresses() const { return addresses_; }
@@ -73,6 +87,8 @@ private:
     void HandleRequest(Conn& c, const web::HttpRequest& r, const std::string& body);
     void HandleUpgrade(Conn& c, const web::HttpRequest& r);
     void HandlePair(Conn& c, const web::HttpRequest& r, const std::string& body);
+    void HandleAppPair(Conn& c, const std::string& body);
+    void HandleAppConnect(Conn& c, const std::string& body);
     void HandleWs(Conn& c, const uint8_t* data, size_t size);
     void SendRaw(Conn& c, const uint8_t* data, size_t size);
     void SendResponse(Conn& c, int code, const char* reason, const std::string& type, const std::string& body,
@@ -90,6 +106,9 @@ private:
     std::unique_ptr<tls::Credentials> cred_;
     std::vector<std::unique_ptr<Conn>> conns_;
     std::function<void(const uint8_t*, size_t)> onPhone_;
+    AppPairHandler onAppPair_;
+    AppConnectHandler onAppConnect_;
+    std::string fingerprint_; // The QR code's `f`.
     web::TokenBook book_;
     std::vector<web::NetAddress> addresses_;
     bool busy_ = false;

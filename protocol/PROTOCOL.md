@@ -148,8 +148,13 @@ phone again. A working session dropped: 2 s. The phone couldn't be reached: 10 s
 
 ## Wireless security (1.4)
 
-Every Wi-Fi session is authenticated and encrypted. A new PC must be **paired** once: both screens show
-the same 6-digit code, and the user allows it on the phone. A paired PC connects without asking.
+Every Wi-Fi session is authenticated and encrypted. A new PC must be **paired** once, in one of two ways:
+
+- **QR code (1.5, the main way):** the phone scans the code the PC shows. See "QR pairing" below.
+- **Code comparison (the fallback):** both screens show the same 6-digit code, and the user allows it on
+  the phone and, since 1.5, on the PC too.
+
+A paired PC connects without asking.
 
 Primitives: P-256 ECDH (public keys as `04 | X | Y`, the shared secret is the X coordinate, big-endian),
 SHA-256, HMAC-SHA256, HKDF-SHA256 (RFC 5869), AES-256-GCM with a 16-byte tag. `protocol/golden.txt` has
@@ -184,6 +189,21 @@ the phone checks it and asks the user. Only after "Allow" does the phone store `
 The PC then stores `K` too: the phone in its private app storage, the PC protected with DPAPI under
 `HKCU\Software\MyCam\PairedPhones`.
 
+**The PC asks too (1.5).** The PC shows the code with **Allow** and **Don't allow**, and stores `K` and
+starts the session only after its user allows *and* PHONE_FINISHED has arrived. Without this, a device on
+the network posing as a phone could approve its own pairing in milliseconds and then send video into the
+MyCam camera. There are no new messages:
+
+- The PC sends PC_FINISHED as before, so both screens show the code at the same time.
+- It waits up to the same 75 s for both answers.
+- If its user refuses or doesn't answer, it sends REJECT (1) and closes the connection.
+- Auto-connect doesn't connect to a refused phone again until the companion restarts. The user can still
+  pick that phone with Connect, or the phone can ask for a session (`MYCAM+1`).
+
+If the phone's user allowed first, the phone keeps a key the PC never stored. The existing recovery
+handles it: the next time they connect, the PC has no key, sends REJECT (2) and pairs again with "force
+pairing".
+
     K (pairing) = HKDF(ikm = z, salt = Na | Nb, info = "MyCam pair v1", 32)
     session     = HKDF(ikm = z | K, salt = Npc | Nph, info = "MyCam session v1", 96)
                 = PC-to-phone key (32) | phone-to-PC key (32) | finished key kFin (32)
@@ -199,3 +219,66 @@ reordered or the wrong key) ends the session. The phone sends one record per pac
 
 **Forgetting:** "Forget paired PCs" on the phone and "Forget Wi-Fi phones" on the PC delete the keys; the
 next connection pairs again with a new code.
+
+## QR pairing (1.5)
+
+The phone pairs by scanning the QR code on the PC's "Connect a phone" page. **iPhones and Android phones
+scan the same QR code.** An iPhone opens it in Safari (`docs/web-camera-format.md`). The MyCam Android app
+reads it with its own scanner and pairs natively, so the result is an ordinary paired PC (`K`, as above),
+and every later session uses the normal handshake in paired mode. Scanning the PC's screen is the user's
+consent and proves the phone is in front of that PC. So neither screen shows a code and nobody taps Allow:
+the phone goes straight from the scan to a connected session. The packet
+protocol (v3) and the handshake (version 1) are unchanged. QR pairing only adds two HTTPS routes to the
+PC's web server (TCP 47900).
+
+**The QR code.**
+
+    https://<pc-ipv4>:47900/?t=<code>&f=<fingerprint>
+
+- `t` is the existing one-time code: 128 bits, base64url, used once, valid for 5 minutes.
+- `f` is new: base64url (no padding, 43 characters) of SHA-256 over the DER bytes of the PC's TLS
+  certificate. The iPhone page ignores it.
+
+The app treats a scanned text as a MyCam code only if it has the `https` scheme, port 47900, path `/`, and
+both `t` and `f`. A code without `f` comes from an older companion: the app asks the user to update MyCam on
+the PC.
+
+**Pinned HTTPS.** The phone talks to `https://<pc-ipv4>:47900` and accepts exactly the certificate whose
+SHA-256 equals `f`. It uses no CA check and no host-name check (the certificate is self-signed and is
+reached by IP address). Any other certificate ends the pairing.
+
+**Routes.** Both are form-encoded `POST` requests, and both answer JSON with `Cache-Control: no-store`.
+
+| Request | Body | Answer |
+|---|---|---|
+| `POST /app/pair` | `t=<code>&phone=<phone id, 32 hex>&name=<phone name, UTF-8, up to 64 bytes>` | `{"ok":true,"pc":"<PC id, 32 hex>","name":"<PC name>","key":"<K, base64url, 43 chars>"}`, or 403 `{"ok":false,"error":"code"}` |
+| `POST /app/connect` | `phone=<phone id>&port=<phone's TCP port>&proof=<base64url HMAC>` | `{"ok":true}`, 403 `{"ok":false,"error":"unknown"}` (the PC has no key for this phone), or 503 `{"ok":false,"error":"busy"}` (another phone has a session) |
+
+**`/app/pair`:**
+- The PC uses up the code exactly as `POST /pair` does, and makes a new code for the QR code.
+- It generates `K` (32 random bytes) and stores it for the phone id with DPAPI, replacing any older key.
+  It also records the phone name.
+- It answers with its own PC id and name and `K`. The phone stores `K` under that PC id (`PairedPcs`),
+  replacing any older key.
+- This route never starts a session.
+
+**`/app/connect`:** asks the PC to open a session to the phone now.
+
+    proof = HMAC-SHA256(K, "MyCam connect v1" | phone id (16 bytes) | port (u16 BE))
+
+- The PC checks `proof` in constant time against the `K` it stores for that phone.
+- If no session is running, it connects to `<the request's source address>:<port>` and runs the handshake
+  in paired mode, exactly as for a phone it found itself. That applies whether or not "Find phones on Wi-Fi"
+  is on, and the cable still wins.
+- A replayed `proof` can only make the PC try a connection, and that connection needs `K`.
+
+The phone calls `/app/pair`, stores `K`, makes sure wireless mode is listening, then calls `/app/connect`.
+It sends the two requests in that order so the key is saved before the PC connects. A paired phone may also
+call `/app/connect` again later, from the last address it saw for that PC. That reconnects even on networks
+that drop UDP broadcasts.
+
+**Limits.**
+- The PC's firewall rule covers private networks only, the same as for the iPhone page.
+- The phone and the PC must be able to reach each other directly, so a guest Wi-Fi with client isolation
+  won't work.
+- The scanner can't run while the phone is streaming, because the stream is using the camera.

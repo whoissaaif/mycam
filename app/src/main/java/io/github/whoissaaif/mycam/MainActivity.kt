@@ -118,6 +118,7 @@ class MainActivity : ComponentActivity() {
             onWireless = ::setWireless, onAnswerPc = ::answerPc, onForgetPc = ::forgetPc, onForgetAllPcs = ::forgetPcs,
             onScan = ::scanForPcs, onConnectPc = ::connectToPc, onPreview = ::changePreview,
             onAutoDim = ::changeAutoDim, onDismissTimedOut = WebcamService::dismissPairingTimedOut,
+            onQrScanned = ::pairByQr, onDismissQr = WebcamService::dismissQr,
         )
         setContent {
             MycamTheme {
@@ -313,6 +314,17 @@ class MainActivity : ComponentActivity() {
         val intent = Intent(this, WebcamService::class.java).setAction(WebcamService.ACTION_SCAN)
         if (WebcamService.state.value.wirelessOn) startService(intent)
         else ContextCompat.startForegroundService(this, intent)
+    }
+
+    /**
+     * The scanner read a MyCam QR code: the service turns wireless mode on (it may need to go foreground for
+     * that), pairs with the PC over pinned HTTPS and asks it to connect (PROTOCOL.md "QR pairing").
+     */
+    private fun pairByQr(text: String) {
+        val intent = Intent(this, WebcamService::class.java)
+            .setAction(WebcamService.ACTION_QR_PAIR)
+            .putExtra(WebcamService.EXTRA_QR, text)
+        ContextCompat.startForegroundService(this, intent)
     }
 
     /** The user picked a PC in "Find Devices": ask it to connect here, so the pairing starts from the phone. */

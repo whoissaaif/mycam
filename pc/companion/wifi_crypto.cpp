@@ -104,6 +104,11 @@ Bytes Finished(const Bytes& kFin, const char* label, const Bytes& transcript) {
     return HmacSha256(kFin, Concat({&l, &transcript}));
 }
 
+Bytes ConnectProof(const Bytes& pairKey, const Bytes& phoneId, uint16_t port) {
+    const Bytes label = Ascii("MyCam connect v1"), p = {uint8_t(port >> 8), uint8_t(port)};
+    return HmacSha256(pairKey, Concat({&label, &phoneId, &p}));
+}
+
 // --- EcKey ------------------------------------------------------------------------------------------
 
 EcKey::~EcKey() {

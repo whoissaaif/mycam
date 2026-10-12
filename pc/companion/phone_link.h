@@ -52,6 +52,7 @@ struct LinkStatus {
     bool wirelessSearch = false;  // "Find phones on Wi-Fi" is on.
     std::wstring phoneName;       // Wi-Fi phones: the name the phone announced.
     std::wstring pairingCode;     // Pairing a Wi-Fi phone: the 6-digit code both screens must show.
+    bool pairingAllowed = false;  // ...and this PC's user allowed it (1.5): waiting for the phone's answer.
     // "Scan for phones": a one-shot look for phones on the Wi-Fi, and what answered.
     bool scanning = false;                 // A scan window is running.
     uint32_t scansDone = 0;                // Scans finished since the companion started (0: never scanned).
@@ -102,8 +103,10 @@ public:
     // "Find phones on Wi-Fi" is off. A plugged-in phone still wins. ipv4 in network order.
     void ConnectTo(uint32_t ipv4) { connectRequest_ = ipv4; }
     static constexpr uint64_t kScanWindowMs = 6000;
-    // Abandons a Wi-Fi pairing that is waiting for the phone's answer: the PC closes the socket (no
-    // protocol message), and that phone isn't asked again for a while. No effect when not pairing.
+    // A code pairing (6 digits) needs this PC's user too (1.5, PROTOCOL.md "The PC asks too"): Allow lets it
+    // go ahead once the phone has allowed it as well; "Don't allow" refuses it, and auto-connect leaves that
+    // phone alone until the companion restarts. No effect when not pairing.
+    void AllowPairing() { allowPairing_ = true; }
     void CancelPairing() { cancelPairing_ = true; }
     // "Connect an iPhone": show a QR code for `ipv4` (0: the best address) until StopWebPairing().
     void StartWebPairing(uint32_t ipv4) { webPairRequest_ = int64_t(ipv4); }
@@ -149,8 +152,13 @@ private:
     void RefreshNearby();            // Paired / connected marks, then Publish() if the list changed.
     bool WifiAllowed() const { return wireless_ || manualSession_; } // A Wi-Fi session may go on.
     void RunManualConnect(uint32_t ip);
+    // The Android app (PROTOCOL.md "QR pairing"), called from the web server inside PollWeb.
+    bool AppPair(const web::Bytes& phoneId, const std::string& name, WebServer::AppPairReply* reply);
+    WebServer::AppConnect AppConnect(const web::Bytes& phoneId, uint16_t port, const web::Bytes& proof, uint32_t ipv4);
+    void RunDirectConnect(); // The session /app/connect asked for (direct_).
     // How a Wi-Fi session ended, for when to try that phone again.
-    enum class WifiEnd { Ran, Refused, NeedsPairing, Failed };
+    // RefusedHere: this PC's user said no to a code pairing (or didn't answer): auto-connect leaves that phone be.
+    enum class WifiEnd { Ran, Refused, RefusedHere, NeedsPairing, Failed };
     WifiEnd RunTcpSession(uintptr_t socket, const std::string& phoneName, bool forcePair);
     WifiEnd Handshake(uintptr_t socket, bool forcePair); // Pairing / paired proof, then sets wifiTx_/wifiRx_.
     bool ReceiveRecords(uintptr_t socket);               // Decrypts what arrived and feeds the parser.
@@ -191,6 +199,7 @@ private:
 
     std::atomic<bool> wireless_{false};
     std::atomic<bool> cancelPairing_{false};
+    std::atomic<bool> allowPairing_{false};
     bool usbReady_ = false;
     uintptr_t udp_ = ~uintptr_t(0);       // SOCKET for discovery (INVALID_SOCKET when closed).
     uintptr_t tcp_ = ~uintptr_t(0);       // SOCKET of the current Wi-Fi session.
@@ -203,6 +212,8 @@ private:
     std::atomic<bool> scanRequest_{false};
     std::atomic<uint32_t> connectRequest_{0};
     bool manualSession_ = false;  // The current Wi-Fi session was asked for with Connect (search may be off).
+    // A paired Android app asked for a session with /app/connect: where to connect (ip 0: nothing asked).
+    struct DirectConnect { uint32_t ip = 0; uint16_t port = 0; std::string name; } direct_;
     uint64_t scanUntil_ = 0;      // End of the running scan window (0: none).
     uint64_t scanEndedAt_ = 0;    // When the last scan window closed: the discovery socket lingers after it.
     uint32_t scansDone_ = 0;

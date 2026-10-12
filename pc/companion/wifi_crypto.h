@@ -30,6 +30,9 @@ std::string Sas(const Bytes& pcPub, const Bytes& phonePub, const Bytes& na, cons
 Bytes PairKey(const Bytes& ecdh, const Bytes& na, const Bytes& nb);
 Bytes SessionKeys(const Bytes& ecdh, const Bytes& pairKey, const Bytes& npc, const Bytes& nph); // 96 bytes
 Bytes Finished(const Bytes& kFin, const char* label, const Bytes& transcript);
+// QR pairing (PROTOCOL.md "QR pairing"): HMAC(K, "MyCam connect v1" | phone id | port, u16 BE), sent with
+// POST /app/connect. Golden "qr.connect_proof".
+Bytes ConnectProof(const Bytes& pairKey, const Bytes& phoneId, uint16_t port);
 
 // An ephemeral P-256 key pair.
 class EcKey {

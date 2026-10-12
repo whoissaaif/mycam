@@ -520,7 +520,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     g_link = &link;
 
     const bool testPattern = wcsstr(GetCommandLineW(), L"--test-pattern") != nullptr;
-    PairingDialog pairing({CurrentStatus, [] { g_link->CancelPairing(); }});
+    PairingDialog pairing({CurrentStatus, [] { g_link->AllowPairing(); }, [] { g_link->CancelPairing(); }});
     g_pairing = &pairing;
 
     SettingsModel model;
@@ -542,6 +542,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     model.setWireless = SetWireless;
     model.forgetPhones = ForgetPairedPhones; // They pair again (with a code) next time.
     model.showPairing = [] { if (g_pairing && g_settings) g_pairing->Show(g_settings->Hwnd()); };
+    model.allowPairing = [] { g_link->AllowPairing(); };
+    model.cancelPairing = [] { g_link->CancelPairing(); };
     model.scanForPhones = [] { g_link->ScanForPhones(); };
     model.connectTo = [](uint32_t ip) { g_link->ConnectTo(ip); };
     model.startWebPairing = [](uint32_t ip) { g_link->StartWebPairing(ip); };
