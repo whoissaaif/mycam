@@ -402,6 +402,8 @@ class WebcamService : Service() {
                     failure != null -> _state.update { it.copy(qr = QrStatus(pcName, failure)) }
                     // Asked: the PC connects within a second or so. Say so if it never does.
                     !linked -> main.postDelayed(qrGiveUp, QR_CONNECT_TIMEOUT_MS)
+                    // Already connected (this PC, scanned again, or a link that came up first): done.
+                    else -> _state.update { it.copy(qr = null) }
                 }
             }
         }, "qr-pair").start()

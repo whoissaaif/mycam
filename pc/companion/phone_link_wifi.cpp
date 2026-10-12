@@ -430,6 +430,8 @@ WebServer::AppConnect PhoneLink::AppConnect(const web::Bytes& phoneId, uint16_t 
     uint8_t diff = 0;
     for (size_t i = 0; i < expected.size(); ++i) diff |= uint8_t(expected[i] ^ proof[i]); // Both are 32 bytes.
     if (diff) return WebServer::AppConnect::Unknown;
+    // Already connected to this very phone (it scanned the code again): nothing to do, and not "busy".
+    if (sessionIp_ == ipv4 && tcp_ != INVALID_SOCKET && !webSession_) return WebServer::AppConnect::Ok;
     if (sessionIp_ != 0 || handle_ != nullptr || webSession_ || direct_.ip) return WebServer::AppConnect::Busy;
     direct_.ip = ipv4;
     direct_.port = port;

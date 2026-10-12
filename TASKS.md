@@ -62,7 +62,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
   - [x] PC: Camera and Resolution dropdowns opened an invisible list (a closed dropdown laid out after the open one cleared its panel)
 
 - [~] QR pairing for Android: scan the PC's QR code (the same one iPhones use), pair and connect; PC asks
-      Allow on 6-digit pairing too [12]: built (PC + phone, unit-tested), test on devices
+      Allow on 6-digit pairing too [12]: built and tested on the CMF Phone 1 (2026-10-13); second phone and iPhone left
 
 ## Backlog
 
