@@ -444,10 +444,25 @@ design and the work.
 - [ ] Phone: use the remembered address to reconnect directly (a "Connect" on a paired PC in Settings).
 - [ ] Page (`app.js`): on Android, offer "Open in the MyCam app" (an `intent:` link plus a `mycam://` intent
       filter in the app) or "Use this page instead". The page already drops `f` with the rest of the query.
-- [ ] Tests on devices: the test phone and a second Android phone, an iPhone scanning the same code, an
-      expired code, a wrong network, a Public network on the PC, an already paired phone scanning again, and
-      the 6-digit fallback with Allow / Don't allow on the PC.
-- [ ] Release APK (R8) on a phone: ZXing and the pinned TLS client under minification.
+- [~] Tests on devices. **Passed 2026-10-13** (CMF Phone 1, release APK, PC on Ethernet):
+      - Scan to connected in about 1.5 s; the PC logs QR pair, connect request and encrypted link within
+        100 ms.
+      - 1080p30 over the QR-paired link into the MyCam camera (ffmpeg: 241 frames in 8 s).
+      - PC network on Public: "Can't reach the PC… set to Private", and nothing reaches the PC.
+      - Scanning again while connected: re-pairs quietly. Two bugs found and fixed: the phone said "busy
+        with another phone", and the card would have stuck on "Connecting…".
+      - 6-digit fallback: the PC had forgotten the phone, so it paired again with a code. "Don't allow" on
+        the PC means no key stored and the phone's link drops. Allow on both stores the key and connects.
+      - Swiping MyCam from recent apps stops the service, the link and the notification.
+
+      **Still to test:**
+      - A second Android phone.
+      - An iPhone scanning the same code.
+      - An expired code.
+- [x] Release APK (R8) on a phone: ZXing and the pinned TLS client work under minification.
+- Known, minor:
+  - In a code pairing where the phone allows first, the phone says "Wi-Fi: connected" while the PC is still
+    deciding, and keeps a key if the PC then refuses. That key is cleaned up by the forgot-me path next time.
 
 ---
 
