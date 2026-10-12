@@ -26,6 +26,7 @@ namespace {
 constexpr float kW = 400;
 constexpr float kPad = 16;
 constexpr UINT_PTR kTimerTick = 1;
+constexpr uint64_t kPairedShowMs = 8000; // How long "Paired with ..." stays without OK.
 } // namespace
 
 struct PairingDialog::Impl {
@@ -43,6 +44,8 @@ struct PairingDialog::Impl {
     std::wstring code, phone;
     bool allowed = false;     // This PC's user allowed it; waiting for the phone (Allow is gone then).
     int focus = kPairCancel;  // The focused button. "Don't allow" first, so a stray Enter never allows.
+    std::wstring pairedName;  // Non-empty: the "Paired with ..." confirmation instead of a code (ShowPaired).
+    uint64_t pairedAt = 0;    // ...shown since (it closes by itself after kPairedShowMs).
     uint64_t since = 0;
     Tween openFade;
     int hot = kNone, pressed = kNone;
@@ -69,9 +72,23 @@ struct PairingDialog::Impl {
         const float x = kPad + 40, w = kW - x - kPad;
         float y = xp::kTitleBarH + 14;
         const float titleH = paint.LineHeight(Font::Instruction);
+        const float lineH = paint.LineHeight(Font::Body);
+        const float bh = std::max(23.f, lineH + 10);
+        if (!pairedName.empty()) { // The confirmation after any pairing (QR code, 6-digit code or iPhone).
+            add(kPairTitle, Kind::Text, L"Paired with " + pairedName, MakeBox(x, y, w, titleH));
+            y += titleH + 8;
+            const std::wstring text = L"It’s connected. Choose “MyCam” as the camera in any app on this PC.";
+            const float th = paint.Measure(Font::Body, text, w).h;
+            add(kPairHint, Kind::Text, text, MakeBox(x, y, w, th));
+            y += th + 22;
+            const float ow = std::max(96.f, paint.Measure(Font::Body, L"OK").w + 30);
+            add(kPairOk, Kind::Button, L"OK", MakeBox(kW - kPad - ow, y, ow, bh), true);
+            y += bh + 14;
+            height = std::ceil(y + xp::kBorder);
+            return;
+        }
         add(kPairTitle, Kind::Text, L"Pair with " + phone + L"?", MakeBox(x, y, w, titleH));
         y += titleH + 4;
-        const float lineH = paint.LineHeight(Font::Body);
         y += lineH + 6; // "Check that the phone shows:"
         const Size codeSize = paint.Measure(Font::Code, code.empty() ? L"000 000" : code);
         const float cardH = codeSize.h + 12;
@@ -88,7 +105,6 @@ struct PairingDialog::Impl {
         bar->value = elapsed >= kPairingAnswerMs ? 0.f : float(kPairingAnswerMs - elapsed) / float(kPairingAnswerMs);
         y += 13 + 18;
         // Both users must allow a code pairing (PROTOCOL.md "The PC asks too"): Allow, and "Don't allow".
-        const float bh = std::max(23.f, lineH + 10);
         const float dw = std::max(96.f, paint.Measure(Font::Body, L"Don’t allow").w + 30);
         if (!allowed) { // Left to right, in reading order for screen readers.
             const float aw = std::max(96.f, paint.Measure(Font::Body, L"Allow").w + 30);
@@ -130,7 +146,8 @@ struct PairingDialog::Impl {
             lp.opacity = t;
             dc->PushLayer(lp, nullptr);
         }
-        xp::WindowChrome(paint, kW, height, L"Pair with a phone", active, icon16.Get());
+        const bool paired = !pairedName.empty();
+        xp::WindowChrome(paint, kW, height, paired ? L"Paired" : L"Pair with a phone", active, icon16.Get());
         const xp::Palette& pal = paint.Colors();
         const Box body = {xp::kBorder, xp::kTitleBarH, kW - xp::kBorder, height - xp::kBorder};
         // The v2 flat palette, the same as the window's own pairing page: page grey, ink text and the code
@@ -141,27 +158,34 @@ struct PairingDialog::Impl {
         const Element* title = Find(kPairTitle);
         // The phone name is what gets the ellipsis; the code never does.
         paint.Text(Font::Instruction, title->name, title->rect, pal.text, Align::Leading, -1, true);
-        const Element* card = Find(kPairCode);
-        paint.Text(Font::Body, L"Check that the phone shows:", MakeBox(card->rect.l, card->rect.t - paint.LineHeight(Font::Body) - 6,
-                                                                      card->rect.W(), paint.LineHeight(Font::Body)), pal.subtle);
-        paint.RoundRect(card->rect, 8, paint.HighContrast() ? pal.card : Rgb(0xF7F9FC));
-        paint.RoundFrame(card->rect, 8, paint.HighContrast() ? pal.text : pal.ctlBorder);
-        paint.Text(Font::Code, code, card->rect, pal.text, Align::Center, -1, false, true);
-        const Element* hint = Find(kPairHint);
-        paint.Text(Font::Body, hint->name, hint->rect, pal.subtle);
+        if (paired) {
+            const Element* text = Find(kPairHint);
+            paint.Text(Font::Body, text->name, text->rect, pal.subtle);
+            const Element* ok = Find(kPairOk);
+            if (!pal.highContrast) paint.Line(body.l + kPad, ok->rect.t - 9.5f, body.r - kPad, ok->rect.t - 9.5f, pal.cardBorder);
+        } else {
+            const Element* card = Find(kPairCode);
+            paint.Text(Font::Body, L"Check that the phone shows:", MakeBox(card->rect.l, card->rect.t - paint.LineHeight(Font::Body) - 6,
+                                                                          card->rect.W(), paint.LineHeight(Font::Body)), pal.subtle);
+            paint.RoundRect(card->rect, 8, paint.HighContrast() ? pal.card : Rgb(0xF7F9FC));
+            paint.RoundFrame(card->rect, 8, paint.HighContrast() ? pal.text : pal.ctlBorder);
+            paint.Text(Font::Code, code, card->rect, pal.text, Align::Center, -1, false, true);
+            const Element* hint = Find(kPairHint);
+            paint.Text(Font::Body, hint->name, hint->rect, pal.subtle);
 
-        const Element* bar = Find(kPairProgress);
-        paint.ProgressChunks(bar->rect, DeterminateChunks(bar->value, bar->rect.W() - 6, xp::Painter::kChunk, xp::Painter::kChunkGap));
-        wchar_t left[8];
-        FormatCountdown(uint64_t(bar->value * kPairingAnswerMs), left, 8);
-        paint.Text(Font::Body, bar->value > 0 ? left : L"0:00", Box{bar->rect.r + 8, bar->rect.t - 3, kW - kPad, bar->rect.b + 3},
-                   pal.subtle, Align::Leading, -1, false, true);
+            const Element* bar = Find(kPairProgress);
+            paint.ProgressChunks(bar->rect, DeterminateChunks(bar->value, bar->rect.W() - 6, xp::Painter::kChunk, xp::Painter::kChunkGap));
+            wchar_t left[8];
+            FormatCountdown(uint64_t(bar->value * kPairingAnswerMs), left, 8);
+            paint.Text(Font::Body, bar->value > 0 ? left : L"0:00", Box{bar->rect.r + 8, bar->rect.t - 3, kW - kPad, bar->rect.b + 3},
+                       pal.subtle, Align::Leading, -1, false, true);
 
-        // A single hairline above the button row (the XP etched groove was beige over white), then the
-        // buttons, drawn with the v2 flat kit rather than the old 3-D push button.
-        const Element* cancel = Find(kPairCancel);
-        if (!pal.highContrast) {
-            paint.Line(body.l + kPad, cancel->rect.t - 9.5f, body.r - kPad, cancel->rect.t - 9.5f, pal.cardBorder);
+            // A single hairline above the button row (the XP etched groove was beige over white), then the
+            // buttons, drawn with the v2 flat kit rather than the old 3-D push button.
+            const Element* cancel = Find(kPairCancel);
+            if (!pal.highContrast) {
+                paint.Line(body.l + kPad, cancel->rect.t - 9.5f, body.r - kPad, cancel->rect.t - 9.5f, pal.cardBorder);
+            }
         }
         for (const auto& e : elements) {
             xp::ButtonState st;
@@ -170,7 +194,8 @@ struct PairingDialog::Impl {
             if (e.kind == Kind::CaptionButton) paint.CaptionButton(e.rect, true, st);
             if (e.kind == Kind::Button) {
                 paint.FlatButton(e.rect, e.name, -1, st,
-                                 e.id == kPairAllow ? xp::FlatStyle::Primary : xp::FlatStyle::Secondary, Font::Body);
+                                 e.id == kPairAllow || e.id == kPairOk ? xp::FlatStyle::Primary : xp::FlatStyle::Secondary,
+                                 Font::Body);
                 if (keyboardCues && GetFocus() == hwnd && e.id == focus) paint.FocusRing(e.rect.Inset(-2, -2), 8.f);
             }
         }
@@ -180,7 +205,7 @@ struct PairingDialog::Impl {
     }
 
     void Cancel() {
-        if (model->cancel) model->cancel();
+        if (pairedName.empty() && model->cancel) model->cancel(); // The confirmation just closes.
         Destroy();
     }
 
@@ -194,7 +219,8 @@ struct PairingDialog::Impl {
     }
 
     void Activate(int id) {
-        if (id == kPairAllow) Allow();
+        if (id == kPairOk) Destroy();
+        else if (id == kPairAllow) Allow();
         else if (id == kPairCancel || id == kCaptionClose) Cancel();
     }
 
@@ -236,6 +262,10 @@ struct PairingDialog::Impl {
         case WM_ERASEBKGND:
             return 1;
         case WM_TIMER:
+            if (!pairedName.empty() && Now() - pairedAt > kPairedShowMs) {
+                Destroy(); // The confirmation goes away by itself.
+                return 0;
+            }
             InvalidateRect(hwnd, nullptr, FALSE);
             return 0;
         case WM_DPICHANGED: {
@@ -292,7 +322,7 @@ struct PairingDialog::Impl {
             }
             if (wp == VK_TAB || wp == VK_LEFT || wp == VK_RIGHT) { // Two buttons at most: any of these switches.
                 keyboardCues = true;
-                if (!allowed) focus = focus == kPairCancel ? kPairAllow : kPairCancel;
+                if (!allowed && pairedName.empty()) focus = focus == kPairCancel ? kPairAllow : kPairCancel;
                 if (uia) uia->Update();
                 InvalidateRect(hwnd, nullptr, FALSE);
                 return 0;
@@ -392,11 +422,15 @@ struct PairingDialog::Impl {
         uia = std::make_unique<UiaHost>(hwnd, UiaSource{
             [this] { return hwnd ? elements : std::vector<Element>{}; },
             [this](int id) {
-                if (id != kPairCancel && id != kCaptionClose && !(id == kPairAllow && !allowed)) return false;
-                Activate(id); // "Don't allow" and Close close the dialog; Allow keeps it until the phone answers.
+                if (!pairedName.empty() ? id != kPairOk && id != kCaptionClose
+                                        : id != kPairCancel && id != kCaptionClose && !(id == kPairAllow && !allowed))
+                    return false;
+                Activate(id); // "Don't allow", OK and Close close the dialog; Allow keeps it until the phone answers.
                 return true;
             },
-            [this](int id) { return id == kPairCancel || (id == kPairAllow && !allowed); },
+            [this](int id) {
+                return !pairedName.empty() ? id == kPairOk : id == kPairCancel || (id == kPairAllow && !allowed);
+            },
             [this] { return hwnd ? focus : int(kNone); },
             [this](const Box& b) {
                 POINT a = {LONG(std::floor(b.l * scale)), LONG(std::floor(b.t * scale))};
@@ -424,6 +458,7 @@ struct PairingDialog::Impl {
 
     // Takes the current status; false if there is nothing to pair any more.
     bool Sync(const LinkStatus& s) {
+        if (!pairedName.empty()) return true; // The confirmation stays until OK or its time is up.
         if (s.pairingCode.empty()) return false;
         if (s.pairingCode != code) { // A new pairing: nothing allowed yet.
             code = s.pairingCode;
@@ -447,6 +482,10 @@ void PairingDialog::Show(HWND owner) {
         impl_ = new Impl();
         impl_->model = &model_;
     }
+    if (!impl_->pairedName.empty()) { // A new code pairing replaces a confirmation still on screen.
+        impl_->pairedName.clear();
+        if (impl_->hwnd) impl_->Destroy();
+    }
     if (!impl_->Sync(model_.status())) return;
     if (impl_->hwnd) {
         ShowWindow(impl_->hwnd, SW_SHOW);
@@ -454,6 +493,18 @@ void PairingDialog::Show(HWND owner) {
         InvalidateRect(impl_->hwnd, nullptr, FALSE);
         return;
     }
+    impl_->Create(owner);
+}
+
+void PairingDialog::ShowPaired(const std::wstring& phoneName, HWND owner) {
+    if (!impl_) {
+        impl_ = new Impl();
+        impl_->model = &model_;
+    }
+    if (impl_->hwnd) impl_->Destroy(); // A pairing dialog becomes the confirmation (it has another size).
+    impl_->pairedName = phoneName.empty() ? std::wstring(L"your phone") : phoneName;
+    impl_->pairedAt = Impl::Now();
+    impl_->focus = kPairOk;
     impl_->Create(owner);
 }
 

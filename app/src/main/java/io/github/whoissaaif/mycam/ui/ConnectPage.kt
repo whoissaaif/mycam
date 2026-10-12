@@ -139,13 +139,10 @@ private fun QrStatusCard(qr: WebcamService.QrStatus, onScanAgain: () -> Unit, on
         }
         Text(
             when (failure) {
-                QrPairing.Failure.WrongPc -> stringResource(R.string.qr_fail_wrong_pc)
+                QrPairing.Failure.NoPc -> stringResource(R.string.qr_fail_no_pc)
                 QrPairing.Failure.CodeUsed -> stringResource(R.string.qr_fail_code_used)
-                QrPairing.Failure.Unreachable -> stringResource(R.string.qr_fail_unreachable)
                 QrPairing.Failure.Busy -> stringResource(R.string.qr_fail_busy)
-                QrPairing.Failure.Forgotten -> stringResource(R.string.qr_fail_forgotten)
                 QrPairing.Failure.NoSession -> stringResource(R.string.qr_fail_no_session, qr.pcName ?: "the PC")
-                QrPairing.Failure.Other -> stringResource(R.string.qr_fail_other)
             },
             style = MaterialTheme.typography.bodyMedium, color = V2.Subtle,
         )

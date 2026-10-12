@@ -119,6 +119,7 @@ class MainActivity : ComponentActivity() {
             onScan = ::scanForPcs, onConnectPc = ::connectToPc, onPreview = ::changePreview,
             onAutoDim = ::changeAutoDim, onDismissTimedOut = WebcamService::dismissPairingTimedOut,
             onQrScanned = ::pairByQr, onDismissQr = WebcamService::dismissQr,
+            onDismissPaired = WebcamService::dismissJustPaired,
         )
         setContent {
             MycamTheme {

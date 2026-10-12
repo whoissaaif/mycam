@@ -30,12 +30,11 @@ class WirelessServer(
     private val context: Context,
     private val onProbe: (ip: String, port: Int, name: String) -> Unit,
     private val onClient: (Socket, String) -> Unit,
+    /** The PC at that address turned down a QR invite: "code" or "busy" (PROTOCOL.md "QR pairing"). */
+    private val onRefusal: (ip: String, reason: String) -> Unit = { _, _ -> },
 ) {
     @Volatile private var running = false
     @Volatile private var server: ServerSocket? = null
-
-    /** The TCP server is up, so a PC can connect (QR pairing waits for this before asking the PC to). */
-    val listening: Boolean get() = running && server?.isBound == true
     private var discovery: DatagramSocket? = null
     private var multicastLock: WifiManager.MulticastLock? = null
     private val threads = mutableListOf<Thread>()
@@ -94,6 +93,10 @@ class WirelessServer(
                 val packet = DatagramPacket(buf, buf.size)
                 socket.receive(packet)
                 val text = String(packet.data, 0, packet.length, Charsets.UTF_8)
+                if (text.startsWith(Protocol.WIRELESS_REFUSE + " ")) {
+                    packet.address.hostAddress?.let { onRefusal(it, text.substringAfter(' ').trim().take(16)) }
+                    continue
+                }
                 if (!text.startsWith(Protocol.WIRELESS_ASK)) continue
                 val ip = packet.address.hostAddress ?: continue
                 val name = text.substringAfter(' ', "").trim().take(64).takeIf { it.isNotEmpty() }
@@ -115,20 +118,30 @@ class WirelessServer(
      * own: a send on the main looper is a NetworkOnMainThreadException, not a slow send. Fire and forget —
      * the PC answers by opening a TCP session, and the caller resends a few times if it doesn't.
      */
-    fun askToConnect(ip: String, udpPort: Int) {
+    fun askToConnect(ip: String, udpPort: Int) =
+        send(ip, udpPort, "${Protocol.WIRELESS_CONNECT} ${Protocol.WIRELESS_TCP_PORT} ${deviceName(context)}")
+
+    /**
+     * QR pairing (PROTOCOL.md "QR pairing"): asks the PC whose QR code was scanned to connect, with proof that
+     * this phone holds its one-time [code]. Sent to the port its probe came from, like [askToConnect].
+     */
+    fun qrInvite(ip: String, udpPort: Int, code: ByteArray) =
+        send(ip, udpPort, QrPairing.invite(code, Protocol.WIRELESS_TCP_PORT, deviceName(context)))
+
+    /** One datagram from the discovery socket, on a thread of its own (callers are on the main thread). */
+    private fun send(ip: String, udpPort: Int, text: String) {
         val socket = discovery ?: return
         if (udpPort <= 0 || udpPort > 65535) return
-        val message = "${Protocol.WIRELESS_CONNECT} ${Protocol.WIRELESS_TCP_PORT} ${deviceName(context)}"
-            .toByteArray(Charsets.UTF_8)
+        val message = text.toByteArray(Charsets.UTF_8)
         Thread({
             try {
                 socket.send(DatagramPacket(message, message.size, InetAddress.getByName(ip), udpPort))
             } catch (e: IOException) {
-                Log.w(TAG, "can't ask $ip:$udpPort to connect: ${e.message}")
+                Log.w(TAG, "can't send to $ip:$udpPort: ${e.message}")
             } catch (e: SecurityException) {
-                Log.w(TAG, "can't ask $ip:$udpPort to connect: ${e.message}")
+                Log.w(TAG, "can't send to $ip:$udpPort: ${e.message}")
             }
-        }, "wireless-invite").start()
+        }, "wireless-send").start()
     }
 
 

@@ -99,6 +99,13 @@ object WifiCrypto {
     fun pairKey(ecdh: ByteArray, na: ByteArray, nb: ByteArray) =
         hkdf(ecdh, na + nb, "MyCam pair v1".toByteArray(), 32)
 
+    /**
+     * QR pairing (PROTOCOL.md "QR pairing"): the scanned one-time code goes into the pairing key, so only a
+     * phone that saw the PC's screen can finish the handshake. Golden "qr.pair_key".
+     */
+    fun qrPairKey(ecdh: ByteArray, code: ByteArray, npc: ByteArray, nph: ByteArray) =
+        hkdf(ecdh + code, npc + nph, "MyCam qr pair v1".toByteArray(), 32)
+
     /** 96 bytes: PC-to-phone key, phone-to-PC key, finished key. */
     fun sessionKeys(ecdh: ByteArray, pairKey: ByteArray, npc: ByteArray, nph: ByteArray) =
         hkdf(ecdh + pairKey, npc + nph, "MyCam session v1".toByteArray(), 96)

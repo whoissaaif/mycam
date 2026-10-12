@@ -32,7 +32,6 @@ HTTPS on **TCP 47900**, with TLS from Schannel. The installer adds an inbound fi
 | `POST /pair`, form `t=<code>&name=<device>` | Trades the QR code's one-time code for a device token. Returns `{"ok":true,"device":"<token>","name":"iPhone"}`, or 403 `{"error":"code"}` |
 | `POST /check`, form `d=<device token>` | Returns `{"ok":true,"busy":false,"name":"iPhone"}`, or 403 when the PC doesn't know (or forgot) the device |
 | `GET /ws?d=<device token>` (WebSocket upgrade) | The camera link. Refused (403) without a valid device token, or when the `Origin` isn't this server. Refused with 503 while another phone uses MyCam |
-| `POST /app/pair`, `POST /app/connect` (1.5) | The MyCam Android app pairs natively with the same QR code. Not used by the page. See PROTOCOL.md "QR pairing" |
 
 **Responses** carry `Cache-Control: no-store` and `Referrer-Policy: no-referrer`. The page also gets a
 strict Content Security Policy (only its own scripts and styles, and connections only to this PC).
@@ -53,13 +52,13 @@ strict Content Security Policy (only its own scripts and styles, and connections
 | Pairing code (in the QR code) | 128 bits, base64url | Once, for 5 minutes. A new one appears by itself while the "Connect an iPhone" page is open, and none exists when it's closed | PC memory only |
 | Device token | 256 bits, base64url | Until "Forget" | The page's `localStorage` (`mycam.device`). The PC keeps only its SHA-256, in `HKCU\Software\MyCam\WebDevices\<id>` (`TokenHash`, `Name`, `Added`) |
 
-- **First connection:** the QR code points at `https://<pc-ip>:47900/?t=<code>&f=<fingerprint>`
-  (`f` since 1.5: the certificate's SHA-256, for the Android app; the page ignores it). The page first
+- **First connection:** the QR code points at `https://<pc-ip>:47900/?t=<code>&pc=<PC id>`
+  (`pc` since 1.5, for the Android app's own pairing, PROTOCOL.md "QR pairing"; the page ignores it). The page first
   removes both from the address bar (`history.replaceState`, so they don't stay in Safari's history). Then
   it calls `POST /pair`, keeps the device token, and connects.
 - **Android phone, scanned with Google Lens or the camera app (1.5):** the page opens in Chrome. It
   doesn't use the code yet. It offers **Open in the MyCam app**, which is an `intent:` link carrying the
-  same `t` and `f`, with the GitHub releases page as the fallback when the app isn't installed. It also
+  same `t` and `pc`, with the GitHub releases page as the fallback when the app isn't installed. It also
   offers **Use this page instead**, which runs the normal web pairing above.
 - **Later connections:** opening `https://<pc-ip>:47900/` again (or the Home Screen icon) and tapping
   Start reconnects without scanning.

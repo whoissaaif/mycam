@@ -22,6 +22,10 @@ object Protocol {
     const val WIRELESS_HERE = "MYCAM!1"  // phone -> PC: "MYCAM!1 <tcp port> <phone name>"
     // phone -> PC, unicast to the probe's source port: "connect to me now" (either side may start a pairing).
     const val WIRELESS_CONNECT = "MYCAM+1"
+    // QR pairing (1.5, PROTOCOL.md "QR pairing"). phone -> PC, unicast to the probe's source port:
+    // "MYCAM#1 <tcp port> <proof> <phone name>". PC -> phone when it can't: "MYCAM-1 code" or "MYCAM-1 busy".
+    const val WIRELESS_QR = "MYCAM#1"
+    const val WIRELESS_REFUSE = "MYCAM-1"
 
     const val PACKET_MAGIC = 0x4D43414D // 'MCAM'
     const val HEADER_SIZE = 20

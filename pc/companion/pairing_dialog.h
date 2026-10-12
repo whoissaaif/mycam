@@ -29,6 +29,9 @@ public:
     // Opens the dialog for the current pairing code (or brings it to the front). `owner` (optional) is
     // disabled while the dialog is open, as with any modal dialog. No-op when nothing is pairing.
     void Show(HWND owner);
+    // "Paired with <phone>" after any successful pairing (QR code, 6-digit code or iPhone), with OK. It closes by
+    // itself after a few seconds; a new code pairing replaces it.
+    void ShowPaired(const std::wstring& phoneName, HWND owner);
     void Close();
     // Status changed: follows a new code, closes once the code is gone.
     void Refresh();
