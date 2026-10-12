@@ -16,6 +16,7 @@
 #include <algorithm>
 
 #include "log.h"
+#include "web_proto.h"
 
 namespace mycam::tls {
 
@@ -240,6 +241,7 @@ bool Credentials::Init(std::string* why) {
     if (!cert) return false;
     cert_ = cert;
     thumbprint_ = ThumbprintOf(cert);
+    fingerprint_ = web::CertFingerprint(cert->pbCertEncoded, cert->cbCertEncoded);
 
     TLS_PARAMETERS params = {};
     params.grbitDisabledProtocols = SP_PROT_SSL3_SERVER | SP_PROT_TLS1_0_SERVER | SP_PROT_TLS1_1_SERVER;

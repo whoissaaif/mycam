@@ -68,6 +68,13 @@ void PhoneLink::Run() {
     web_->SetPhoneHandler([this](const uint8_t* data, size_t size) {
         if (webSession_) FeedBytes(data, size);
     });
+    web_->SetAppHandlers(
+        [this](const web::Bytes& phoneId, const std::string& name, WebServer::AppPairReply* reply) {
+            return AppPair(phoneId, name, reply);
+        },
+        [this](const web::Bytes& phoneId, uint16_t port, const web::Bytes& proof, uint32_t ipv4) {
+            return AppConnect(phoneId, port, proof, ipv4);
+        });
     status_.state = ok ? LinkState::Searching : LinkState::NoDriver;
     Publish();
 
@@ -84,7 +91,7 @@ void PhoneLink::Run() {
             SyncLockPaused();
             WriteStatusFrame(GetTickCount64()); // "Waiting for the phone" while none is connected.
             PollDiscovery(GetTickCount64());     // "Scan for phones" answers arrive promptly.
-            if (connectRequest_ != 0) break;     // Connect (from the scan list): NetScanOnce runs it now.
+            if (connectRequest_ != 0 || direct_.ip) break; // Connect (scan list or the app): NetScanOnce runs it.
             PollWeb(StatusWaitMs());             // Serves the iPhone page meanwhile (or just waits).
             if (web_ && web_->PhonePending()) break; // An iPhone's page wants a session: WebScanOnce runs it.
         }

@@ -230,17 +230,28 @@ class PairedPcs(private val prefs: SharedPreferences) {
         .map { (k, v) -> PairedPc(k.removePrefix(PREFIX), (v as String).substringAfter('|')) }
         .sortedBy { it.name.lowercase() }
 
+    /**
+     * Where a PC paired by QR code was (its IPv4 and certificate fingerprint, PROTOCOL.md "QR pairing"), so the
+     * phone can ask it for a session directly later, even where broadcasts don't get through.
+     */
+    fun setAddress(pcId: ByteArray, host: String, fingerprint: ByteArray) {
+        prefs.edit { putString(ADDRESS + hex(pcId), host + "|" + QrPairing.encodeBase64Url(fingerprint)) }
+    }
+
     /** Forgets one PC (by [PairedPc.id]): it has to pair again, with a code, next time. */
     fun forget(id: String) {
-        prefs.edit { remove(PREFIX + id) }
+        prefs.edit { remove(PREFIX + id); remove(ADDRESS + id) }
     }
 
     fun forgetAll() {
-        prefs.edit().apply { prefs.all.keys.filter { it.startsWith(PREFIX) }.forEach { remove(it) } }.apply()
+        prefs.edit().apply {
+            prefs.all.keys.filter { it.startsWith(PREFIX) || it.startsWith(ADDRESS) }.forEach { remove(it) }
+        }.apply()
     }
 
     companion object {
         private const val PREFIX = "paired_pc_"
+        private const val ADDRESS = "pc_address_"
         private fun hex(b: ByteArray) = b.joinToString("") { "%02x".format(it) }
 
         /** This phone's random id, made once. */

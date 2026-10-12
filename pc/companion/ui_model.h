@@ -88,7 +88,7 @@ enum Id : int {
     kZoomSlider = 815,                                  // Zoom slider (replaces the −/+/1× row).
     kChipRes = 816, kChipFps = 817, kChipCam = 818,      // The three dark pills under the preview.
     // Pairing (the dialog, and the pairing page in the window).
-    kPairTitle = 900, kPairCode = 901, kPairHint = 902, kPairProgress = 903, kPairCancel = 904, kPairArt = 905,
+    kPairTitle = 900, kPairCode = 901, kPairHint = 902, kPairProgress = 903, kPairCancel = 904, kPairArt = 905, kPairAllow = 906,
     // "Connect an iPhone" page: the QR code, the steps, the address (and the network to use), and the
     // remembered iPhones (rows: WebDeviceRowId).
     kWebQr = 920, kWebSteps = 921, kWebAddress = 922, kDdWebAddress = 923, kWebNote = 924, kWebDevicesTitle = 925,

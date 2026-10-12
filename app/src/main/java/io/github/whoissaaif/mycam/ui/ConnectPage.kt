@@ -35,6 +35,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import io.github.whoissaaif.mycam.QrPairing
 import io.github.whoissaaif.mycam.R
 import io.github.whoissaaif.mycam.WebcamService
 import io.github.whoissaaif.mycam.ui.theme.LocalReducedMotion
@@ -68,19 +69,23 @@ fun ConnectPage(
     sweepLive: Boolean,
     onLiveSwept: () -> Unit,
     modifier: Modifier = Modifier,
+    onScanQr: () -> Unit = {},
 ) {
     var usbHelp by rememberSaveable { mutableStateOf(false) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         StatusCard(state, actions, applying, sweepLive, onLiveSwept)
 
+        state.qr?.let { QrStatusCard(it, onScanAgain = onScanQr, onDismiss = actions.onDismissQr) }
+
         PageHeading(stringResource(R.string.connect_title), stringResource(R.string.connect_subtitle))
 
         FlatCard(padding = 8.dp) {
-            // Not built yet (redesign-v2.md section 5 lists it as the one new feature): visible, disabled,
-            // and honest about it rather than hidden.
+            // The quickest way (IMPROVEMENTS.md 12): scan the PC's code, paired and connected. The scanner needs
+            // the camera, so not while it streams.
             NavRow(
                 LineIcon.Qr, stringResource(R.string.connect_qr), stringResource(R.string.connect_qr_detail),
-                onClick = {}, enabled = false, trailingNote = stringResource(R.string.coming_soon),
+                onClick = onScanQr, enabled = !state.streaming,
+                trailingNote = if (state.streaming) stringResource(R.string.connect_qr_busy) else null,
             )
             CardDivider()
             NavRow(
@@ -106,6 +111,48 @@ fun ConnectPage(
                     }
                 }
             }
+        }
+    }
+}
+
+/**
+ * After a QR scan: "Connecting to <PC>…" with the XP progress bar, or why it didn't work with Scan again.
+ * A polite live region, so TalkBack reads the outcome.
+ */
+@Composable
+private fun QrStatusCard(qr: WebcamService.QrStatus, onScanAgain: () -> Unit, onDismiss: () -> Unit) {
+    FlatCard {
+        val failure = qr.failure
+        Text(
+            when {
+                failure != null -> stringResource(R.string.qr_failed)
+                qr.pcName != null -> stringResource(R.string.qr_connecting, qr.pcName)
+                else -> stringResource(R.string.qr_pairing)
+            },
+            style = MaterialTheme.typography.titleMedium, color = V2.Text,
+            modifier = Modifier.semantics { heading(); liveRegion = LiveRegionMode.Polite },
+        )
+        Spacer(Modifier.height(8.dp))
+        if (failure == null) {
+            XpProgressBar(null)
+            return@FlatCard
+        }
+        Text(
+            when (failure) {
+                QrPairing.Failure.WrongPc -> stringResource(R.string.qr_fail_wrong_pc)
+                QrPairing.Failure.CodeUsed -> stringResource(R.string.qr_fail_code_used)
+                QrPairing.Failure.Unreachable -> stringResource(R.string.qr_fail_unreachable)
+                QrPairing.Failure.Busy -> stringResource(R.string.qr_fail_busy)
+                QrPairing.Failure.Forgotten -> stringResource(R.string.qr_fail_forgotten)
+                QrPairing.Failure.NoSession -> stringResource(R.string.qr_fail_no_session, qr.pcName ?: "the PC")
+                QrPairing.Failure.Other -> stringResource(R.string.qr_fail_other)
+            },
+            style = MaterialTheme.typography.bodyMedium, color = V2.Subtle,
+        )
+        Spacer(Modifier.height(12.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            PrimaryButton(stringResource(R.string.qr_scan_again), onClick = { onDismiss(); onScanAgain() }, modifier = Modifier.weight(1f))
+            SecondaryButton(stringResource(R.string.qr_close), onClick = onDismiss, modifier = Modifier.weight(1f))
         }
     }
 }

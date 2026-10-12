@@ -27,12 +27,15 @@ public:
     bool Init(std::string* why);
     void* Handle() { return &cred_[0]; } // CredHandle*
     std::string Thumbprint() const { return thumbprint_; } // SHA-1 hex, for the log.
+    // The QR code's `f`: base64url SHA-256 of the certificate (web::CertFingerprint). The Android app pins it.
+    std::string Fingerprint() const { return fingerprint_; }
 
 private:
     uintptr_t cred_[2] = {};
     bool valid_ = false;
     const void* cert_ = nullptr; // PCCERT_CONTEXT
     std::string thumbprint_;
+    std::string fingerprint_;
 };
 
 // One server-side TLS connection. Bytes from the socket go into Receive(); what it returns in *toSend must

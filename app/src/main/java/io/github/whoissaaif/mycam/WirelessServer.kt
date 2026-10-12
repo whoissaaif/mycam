@@ -32,7 +32,10 @@ class WirelessServer(
     private val onClient: (Socket, String) -> Unit,
 ) {
     @Volatile private var running = false
-    private var server: ServerSocket? = null
+    @Volatile private var server: ServerSocket? = null
+
+    /** The TCP server is up, so a PC can connect (QR pairing waits for this before asking the PC to). */
+    val listening: Boolean get() = running && server?.isBound == true
     private var discovery: DatagramSocket? = null
     private var multicastLock: WifiManager.MulticastLock? = null
     private val threads = mutableListOf<Thread>()

@@ -1,8 +1,9 @@
 #pragma once
 // The XP-styled pairing dialog (redesign.md §8.3, W4): the phone's name, the 6-digit code in Trebuchet MS
 // Bold 24 pt (never truncated; the name gets the ellipsis), a green determinate bar counting down the
-// time the phone gives its user, and "Cancel pairing", which makes the PC close the socket (no protocol
-// change). It opens when a pairing code appears and closes when the pairing resolves.
+// time the phone gives its user, and Allow / "Don't allow" (1.5: a code pairing needs this PC's user too;
+// "Don't allow" makes the PC refuse it). It opens when a pairing code appears and closes when the pairing
+// resolves.
 
 #include <windows.h>
 
@@ -16,7 +17,8 @@ namespace mycam {
 
 struct PairingModel {
     std::function<LinkStatus()> status;
-    std::function<void()> cancel; // PhoneLink::CancelPairing
+    std::function<void()> allow;  // PhoneLink::AllowPairing
+    std::function<void()> cancel; // PhoneLink::CancelPairing ("Don't allow")
 };
 
 class PairingDialog {
