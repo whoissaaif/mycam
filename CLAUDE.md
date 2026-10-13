@@ -81,7 +81,7 @@ TASKS.md.
   public, and an email in a commit cannot be taken back out afterwards.
 - **Push every commit.** Committing and pushing go together: don't leave work sitting in the working tree
   or in unpushed commits at the end of a task. The exception is "keep it local", which means commit but
-  don't push. Since the repo is public, read what you are about to commit before you commit it.
+  don't push. Since the repo is going public, read what you are about to commit before you commit it.
 - **Tagging and releasing still need an explicit ask.** Pushing a commit is routine; cutting `vX.Y.Z` and
   publishing downloadable binaries is not.
 - Package / applicationId: `io.github.whoissaaif.mycam`. Changing it makes a new app on phones.
