@@ -67,16 +67,18 @@ TASKS.md.
 
 ## Rules from the user
 
-- **Repo is public** (`github.com/whoissaaif/mycam`, MIT). It was private until 1.4.0. Everything committed
-  is world-readable the moment it is pushed, and so is every release asset, so the "never commit" list below
-  is a hard rule, not housekeeping. Don't make it private again without asking.
+- **Repo is private today and is meant to go public** (`github.com/whoissaaif/mycam`, MIT). It was public
+  around 1.4.0 and is private again for now. Treat everything in it as already world-readable: the history
+  and the release assets all become public the day the switch is flipped, and nothing can be taken back out
+  of them then. So the "never commit" list below is a hard rule, not housekeeping. Check the real state with
+  `gh repo view --json visibility` rather than trusting this line; don't change the visibility without asking.
 - **Never commit `inspo/`** (it contains Microsoft artwork), `screenshots/`, `release/`, `keystore.properties`
   or `*.jks`. The release keystore lives at `%USERPROFILE%\.mycam\mycam-release.jks`. **The user types the key
   password themselves.** Never ask for it, store it or echo it.
 - Commits use **whoever is working** as the author, from the repo's local `git config` — more than one person
   works here, and each one's commits should carry their own name. Don't pass an identity on the command line
-  to override it. Always the author's GitHub **no-reply email**, never a real address (the repo is public, and
-  a commit's email cannot be taken back out).
+  to override it. Always the author's GitHub **no-reply email**, never a real address: this repo is going
+  public, and an email in a commit cannot be taken back out afterwards.
 - **Push every commit.** Committing and pushing go together: don't leave work sitting in the working tree
   or in unpushed commits at the end of a task. The exception is "keep it local", which means commit but
   don't push. Since the repo is public, read what you are about to commit before you commit it.
