@@ -41,5 +41,8 @@ local.properties
 # Agent worktrees
 /.claude/worktrees/
 
+# Generated knowledge graph (graphify): rebuilt from the repo, so not worth committing
+/graphify-out/
+
 pc/tools/webtest/cert/
 pc/tools/webtest/results/
