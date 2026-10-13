@@ -73,7 +73,10 @@ TASKS.md.
 - **Never commit `inspo/`** (it contains Microsoft artwork), `screenshots/`, `release/`, `keystore.properties`
   or `*.jks`. The release keystore lives at `%USERPROFILE%\.mycam\mycam-release.jks`. **The user types the key
   password themselves.** Never ask for it, store it or echo it.
-- Commits use the GitHub **no-reply email**, with author name `saif`. Don't expose the real email.
+- Commits use **whoever is working** as the author, from the repo's local `git config` — more than one person
+  works here, and each one's commits should carry their own name. Don't pass an identity on the command line
+  to override it. Always the author's GitHub **no-reply email**, never a real address (the repo is public, and
+  a commit's email cannot be taken back out).
 - **Push every commit.** Committing and pushing go together: don't leave work sitting in the working tree
   or in unpushed commits at the end of a task. The exception is "keep it local", which means commit but
   don't push. Since the repo is public, read what you are about to commit before you commit it.
