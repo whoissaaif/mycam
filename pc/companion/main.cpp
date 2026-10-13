@@ -123,7 +123,12 @@ void UpdateTray() {
     // turns on "Find phones on Wi-Fi", so it reconnects by itself next time.
     const bool justPaired = s.pairedCount != g_shownStatus.pairedCount && s.pairedCount != 0;
     if (justPaired) {
-        if (s.pairedWifi && !g_wireless) SetWireless(true);
+        if (s.pairedWifi && !g_wireless) {
+            // Turning this on is how a paired phone reconnects by itself, but it also makes this PC announce
+            // its name on the network every 2 s from now on, so it is written down rather than done quietly.
+            Log("wifi: paired a phone over Wi-Fi, so \"Find phones on Wi-Fi\" is now on (Settings turns it off)");
+            SetWireless(true);
+        }
         if (g_settings) g_settings->ShowCamera();
         if (g_pairing) {
             const HWND owner = g_settings && g_settings->Hwnd() && IsWindowVisible(g_settings->Hwnd()) ? g_settings->Hwnd() : nullptr;

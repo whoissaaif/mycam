@@ -354,7 +354,29 @@ bool TokenBook::Forget(const std::string& id) {
     return devices_.size() != before;
 }
 
-std::string CleanDeviceName(const std::string& name) {
+namespace {
+
+// Code points that would let a name reach outside its own line in a window: the line and paragraph
+// separators, and the bidirectional overrides and isolates (which can reverse the text around them).
+bool Unshowable(uint32_t cp) {
+    return cp == 0x2028 || cp == 0x2029 ||                 // Line / paragraph separator.
+           cp == 0x200E || cp == 0x200F ||                  // Left-to-right / right-to-left mark.
+           (cp >= 0x202A && cp <= 0x202E) ||                // Embedding and override.
+           (cp >= 0x2066 && cp <= 0x2069) ||                // Isolates.
+           cp == 0xFEFF;                                    // Zero-width no-break space.
+}
+
+// The code point of a `len`-byte UTF-8 sequence starting at `s`.
+uint32_t CodePoint(const char* s, size_t len) {
+    const uint8_t c = uint8_t(s[0]);
+    uint32_t cp = len == 1 ? c : len == 2 ? (c & 0x1Fu) : len == 3 ? (c & 0x0Fu) : (c & 0x07u);
+    for (size_t k = 1; k < len; ++k) cp = cp << 6 | (uint8_t(s[k]) & 0x3Fu);
+    return cp;
+}
+
+} // namespace
+
+std::string CleanName(const std::string& name, const std::string& fallback) {
     std::string out;
     for (size_t i = 0; i < name.size();) {
         const uint8_t c = uint8_t(name[i]);
@@ -364,13 +386,16 @@ std::string CleanDeviceName(const std::string& name) {
         for (size_t k = 1; k < len; ++k) valid &= (uint8_t(name[i + k]) & 0xC0) == 0x80;
         if (!valid) break;
         if (len == 1 && (c < 0x20 || c == 0x7F)) { i += 1; continue; } // Control characters go.
+        if (len > 1 && Unshowable(CodePoint(name.data() + i, len))) { i += len; continue; }
         if (out.size() + len > 40) break;
         out.append(name, i, len);
         i += len;
     }
     out = Trim(out);
-    return out.empty() ? "iPhone" : out;
+    return out.empty() ? fallback : out;
 }
+
+std::string CleanDeviceName(const std::string& name) { return CleanName(name, "iPhone"); }
 
 // --- Addresses -------------------------------------------------------------------------------------------
 

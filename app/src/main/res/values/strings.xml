@@ -40,6 +40,10 @@
     <string name="paired_title">Paired</string>
     <string name="paired_with">Paired with %1$s</string>
     <string name="paired_detail">It’s connected. Choose “MyCam” as the camera in any app on the PC.</string>
+    <!-- Letting a PC use the camera (PROTOCOL.md "QR pairing"): asked once per PC, after it connects. -->
+    <string name="gate_title">Camera access</string>
+    <string name="gate_question">Let this PC use the camera?</string>
+    <string name="gate_detail">It’s connected, and the camera stays off until you allow it. Only allow a PC you own or trust: it can turn the camera on whenever you are both on the same network. Don’t allow forgets it.</string>
     <string name="paired_ok">OK</string>
     <string name="connect_find">Find Devices</string>
     <string name="connect_find_detail">Search on the same Wi-Fi</string>

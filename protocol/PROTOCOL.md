@@ -225,9 +225,12 @@ next connection pairs again with a new code.
 
 The phone pairs by scanning the QR code on the PC's "Connect a phone" page. **iPhones and Android phones
 scan the same QR code.** An iPhone opens it in Safari (`docs/web-camera-format.md`). The MyCam Android app
-reads it with its own scanner and pairs natively. Scanning the PC's screen is the user's consent and proves
-the phone is in front of that PC. So neither screen shows a code, nobody taps Allow, and the phone goes
-straight from the scan to a connected session.
+reads it with its own scanner and pairs natively. So neither screen shows a code to compare, and the phone
+goes straight from the scan to a connected session.
+
+Scanning is not treated as permission to watch, though. A QR code can be printed or forwarded, so it is
+weaker evidence than a code compared on two screens: once the session is up, the phone asks whether that PC
+may use the camera and keeps it off until it is told. See "Letting a PC use the camera".
 
 **Nothing connects into the PC.** As with every Wi-Fi session, the PC only sends: UDP probes, and then a
 TCP connection out to the phone. So Android pairing works on any network, Windows "Public" ones included,
@@ -248,8 +251,10 @@ update MyCam on the PC.
 **Steps.**
 
 1. **The PC probes.** While the QR code is showing, the PC sends the usual `MYCAM?1 <pc name>` probe every
-   2 s: by broadcast, and also unicast to every address of the /24 the QR code points at. The unicast copy
-   gets through on networks that drop broadcasts. Phones answer as they always do.
+   2 s: by broadcast, and also unicast to every address of the subnet the QR code's address is on. The
+   unicast copy gets through on networks that drop broadcasts. The subnet is the one the adapter reports,
+   not an assumed /24; wider than a /24 there are too many addresses to ask one by one, so only the
+   broadcast goes out and the log says so. Phones answer as they always do.
 2. **The phone asks.** After the scan, the phone turns wireless mode on and waits up to 20 s for a probe
    from the QR code's address. To that probe's source address and port, it sends:
 
@@ -264,6 +269,16 @@ update MyCam on the PC.
        PC -> phone:   MYCAM-1 code     (no such code: used, expired, or a different PC's)
        PC -> phone:   MYCAM-1 busy     (another phone has a session)
 
+   Nothing in a refusal proves it came from that PC, and a source address is easy to forge on a local
+   network, so the phone treats it as a hint: it shows the reason, keeps inviting, and only reports it when
+   the attempt runs out. A forged datagram therefore costs a few seconds instead of ending the pairing with
+   a message telling the user to go and make a new code. The phone also ignores any refusal that doesn't
+   closely follow an invite of its own.
+
+   A PC that already has a connect attempt in flight says nothing at all rather than "busy": that attempt is
+   a moment, not a state, and it may be a replay of this phone's own invite from somewhere else, so the
+   phone's next resend gets in as soon as it finishes.
+
 4. **The handshake.** A phone that holds a scanned code for that PC id answers SERVER_HELLO with mode 2. A
    phone without one sends REJECT (2). Both sides then derive:
 
@@ -274,15 +289,43 @@ update MyCam on the PC.
    screen) can't produce a valid FINISHED. The code itself is 128 bits, so guessing it is hopeless.
 
 5. **Done.** Both sides store `K` (replacing any older key), the PC uses up the code, and the QR code shows
-   a new one.
+   a new one. From the moment the PC accepts an invite until the handshake ends, that code is claimed:
+   `POST /pair` answers **409** meanwhile, so one displayed code can't also become an iPhone's device token.
+   A handshake that doesn't pair releases it again.
 
 Golden vectors: `qr.*` (`qr.pair_key`, `qr.invite_proof`), generated with the JDK, checked by both test
 suites.
 
 **After pairing,** the phone keeps wireless mode on, and the PC turns "Find phones on Wi-Fi" on (the user
-just paired a Wi-Fi phone). So they reconnect by themselves next time, as any paired phone does.
+just paired a Wi-Fi phone) and writes that to its log, since it also means announcing its name on the
+network every 2 s from then on. So they reconnect by themselves next time, as any paired phone does —
+subject to the camera flag in "Letting a PC use the camera".
 
 **Limits.**
 - The phone and the PC must be able to reach each other directly, so a guest Wi-Fi with client isolation
   won't work.
 - The scanner can't run while the phone is streaming, because the stream is using the camera.
+
+
+## Letting a PC use the camera (1.5)
+
+Pairing settles that the two sides share a key. It does not settle that the person holding the phone wanted
+*that* PC to be able to watch through it, and a QR code is a bearer token: it can be printed, forwarded or
+shown on a web page, so scanning one is weaker evidence than comparing a code on two screens.
+
+So the phone keeps one flag per PC, beside the pairing key: **may this PC use the camera?**
+
+- **Set when the user says so**, and nowhere else. A 6-digit pairing sets it as the user taps Allow, because
+  that tap already is the answer. A QR pairing does not set it.
+- **A PC without it still gets a session.** The handshake runs, the link comes up and the phone reports
+  `STATE` = paused. `START` is answered with `STATE` (paused) and the camera stays off, exactly as a user
+  pause behaves, so the PC shows its "Camera paused" picture and nothing else changes.
+- **The phone asks once**, naming the PC: *"Paired with <PC>. Let this PC use the camera?"* **Allow** stores
+  the flag and starts the camera if the PC is already asking for video. **Don't allow** forgets the PC
+  (key and all) and drops the link, so a code scanned by mistake leaves nothing behind. Back and the close
+  button mean "don't allow": a stray tap must not half-allow a PC.
+- **A key stored before this flag existed** reads as "not allowed", so the first connection after an update
+  asks. That is deliberate: those keys were created without anyone being asked.
+- **Over the cable there is no flag.** Plugging the phone in is the consent, and USB links are never gated.
+
+There are no new messages: a blocked camera is an ordinary paused camera on the wire.

@@ -307,6 +307,11 @@ void WebServer::HandleRequest(Conn& c, const web::HttpRequest& r, const std::str
 
 void WebServer::HandlePair(Conn& c, const web::HttpRequest&, const std::string& body) {
     const uint64_t now = GetTickCount64();
+    if (codeClaimed_) { // An Android phone scanned this code first and is pairing with it now.
+        Log("web: refused to pair %s: a phone is already using this code", c.peer.c_str());
+        SendResponse(c, 409, "Conflict", "application/json", "{\"ok\":false,\"error\":\"code\"}");
+        return;
+    }
     if (!book_.UsePairingCode(web::QueryParam(body, "t"), now)) {
         Log("web: refused to pair %s: the code is wrong, used or expired", c.peer.c_str());
         SendResponse(c, 403, "Forbidden", "application/json", "{\"ok\":false,\"error\":\"code\"}");
@@ -593,6 +598,7 @@ void WebServer::RefreshAddresses() {
                 n.text = IpText(n.ipv4);
                 n.adapter = a->FriendlyName ? a->FriendlyName : L"";
                 n.kind = web::ClassifyAdapter(a->IfType, a->Description ? a->Description : L"", ntohl(n.ipv4));
+                n.prefix = u->OnLinkPrefixLength <= 32 ? uint8_t(u->OnLinkPrefixLength) : 0;
                 list.push_back(std::move(n));
             }
         }
@@ -632,9 +638,16 @@ std::string WebServer::CurrentPairingCode() const {
 }
 
 void WebServer::PairingCodeUsed() {
+    codeClaimed_ = false;
     if (!pairing_) return;
     MakeCode();
     ++generation_;
+}
+
+bool WebServer::ClaimPairingCode() {
+    if (codeClaimed_) return false;
+    codeClaimed_ = true;
+    return true;
 }
 
 std::string WebServer::TakeNewlyPaired(const std::string& deviceId) {

@@ -30,6 +30,9 @@ std::string Sas(const Bytes& pcPub, const Bytes& phonePub, const Bytes& na, cons
 Bytes PairKey(const Bytes& ecdh, const Bytes& na, const Bytes& nb);
 Bytes SessionKeys(const Bytes& ecdh, const Bytes& pairKey, const Bytes& npc, const Bytes& nph); // 96 bytes
 Bytes Finished(const Bytes& kFin, const char* label, const Bytes& transcript);
+// Equal contents, in time that doesn't depend on where they differ. For comparing a MAC against one a phone
+// sent: operator== on a vector stops at the first difference.
+bool SameMac(const Bytes& a, const Bytes& b);
 // QR pairing (PROTOCOL.md "QR pairing"). The pairing key, with the QR code's one-time code (16 bytes) mixed in
 // so only a phone that saw the PC's screen can finish the handshake: HKDF(z | code, Npc | Nph, "MyCam qr pair
 // v1", 32). Golden "qr.pair_key".

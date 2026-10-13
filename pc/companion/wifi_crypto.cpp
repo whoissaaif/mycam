@@ -104,6 +104,13 @@ Bytes Finished(const Bytes& kFin, const char* label, const Bytes& transcript) {
     return HmacSha256(kFin, Concat({&l, &transcript}));
 }
 
+bool SameMac(const Bytes& a, const Bytes& b) {
+    if (a.size() != b.size()) return false;
+    unsigned diff = 0;
+    for (size_t i = 0; i < a.size(); ++i) diff |= unsigned(a[i] ^ b[i]);
+    return diff == 0;
+}
+
 Bytes QrPairKey(const Bytes& ecdh, const Bytes& code, const Bytes& npc, const Bytes& nph) {
     return Hkdf(Concat({&ecdh, &code}), Concat({&npc, &nph}), Ascii("MyCam qr pair v1"), 32);
 }

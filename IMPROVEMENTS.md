@@ -394,7 +394,10 @@ PROTOCOL.md "QR pairing". This section covers the design and the work.
   - **Paired phones reconnect through discovery by themselves.**
 - **2026-10-13:**
   - **No confirmation code and no Allow after a scan:** the scan is the consent, and it goes straight to
-    connected.
+    connected. **Revised 2026-10-13 (same day, after a security review):** still true for *pairing* — there
+    is no code to compare and the session comes up on its own — but not for the camera. A QR code is a
+    bearer token that can be printed, forwarded or shown on a web page, so the phone now asks once, after
+    connecting, whether that PC may use the camera, and keeps it off until it is told (§12.1).
   - **Nothing connects into the PC, so there's no "set the network to Private" step.** The first version
     paired over HTTPS to the PC's port 47900, which Windows blocks on Public networks. Now the PC only
     sends: it probes while the QR code shows, the phone answers with an invite proving it holds the code,
@@ -409,6 +412,14 @@ PROTOCOL.md "QR pairing". This section covers the design and the work.
   produce a valid FINISHED.
 - The invite's proof only lets the PC decide whether to connect. The handshake is the real check.
 - From then on it is the ordinary paired handshake, with no new cryptography in the session itself.
+
+**What that argument doesn't cover**, found on review the same day: it holds against anything *on the
+network*, and it rests entirely on the first line — that the code only ever exists on a screen the user
+trusts. Nothing in the protocol can tell a code off the user's own PC from one on a poster, in an email or
+on a web page. An attacker who authors a code knows its `t`, so if they also hold the address in it on a
+network the phone can reach, the handshake completes and that machine is paired — and, because the key and
+wireless mode both persist, it could stream again later with nothing shown at all. The crypto is not the
+gap; the missing step was anyone agreeing to be watched. Hence §12.1.
 
 **Phone flow:**
 1. On the Connect page, **Scan QR Code** opens a full-screen scanner (portrait while it shows). It asks for
@@ -464,6 +475,54 @@ PROTOCOL.md "QR pairing". This section covers the design and the work.
       - A second Android phone.
       - An expired or used code (`MYCAM-1 code`).
       - A network that drops broadcasts.
+      - **The camera gate** (§12.1): Allow, Don't allow, and the first connection of a PC paired before it.
+      - **A long or multi-line phone name** in the PC's pairing dialog (should stay on its line).
+
+### 12.1 Security review of QR pairing (M): ✅ done (2026-10-13)
+
+A review of the 1.4.2 branch. The crypto held up: no way in from the network, no code on the wire, nothing
+logged. What it found was one design gap and a set of smaller things.
+
+**The gap — nobody ever agreed to be watched.** See the revised decision above. Fixed by a per-PC camera
+flag on the phone (PROTOCOL.md "Letting a PC use the camera"): a PC that hasn't been allowed gets a session
+with the camera off, and the phone asks once, naming it. A 6-digit pairing sets the flag as the user taps
+Allow, so that flow gains no extra tap. A QR pairing doesn't, so it gains one. Keys stored before the flag
+existed read as "not allowed", which is what closes the silent-reconnect case for phones already paired.
+
+**Also fixed:**
+- Names a phone sends are cleaned before they reach a window or the registry (`web::CleanName`): valid UTF-8,
+  no control characters, no line or paragraph separators, no bidi overrides, 40 bytes. Both the SERVER_HELLO
+  name and the discovery name went through unchecked; line breaks in one would have drawn over the 6-digit
+  code the user is told to compare. Layouts that carry such text are also clipped to their box now.
+- A `MYCAM-1` refusal is a hint, not an answer (it is an unauthenticated datagram): the phone shows it,
+  keeps inviting, and only reports it when the attempt runs out. A PC with an attempt in flight stays quiet
+  instead of saying "busy", so a replayed invite can't make the real phone give up.
+- The one-time code is claimed for the duration of a QR handshake; `POST /pair` answers 409 meanwhile.
+- `wifi::SameMac` compares the phone's FINISHED in constant time (it was `operator!=` on a vector).
+- Nobody answering the PC's Allow is no longer treated as a refusal: it was permanently blacklisting the
+  phone until restart, and logging "refused". It now backs off like any "not now", and this PC's user gets
+  their own 60 s from when the code appeared rather than whatever the phone left of a shared 75 s.
+- The unicast probe sweep uses the adapter's real prefix instead of assuming a /24, and says so in the log
+  when the subnet is too wide to sweep. On a /16 it was asking 253 of 65 000 addresses — the fallback failed
+  on exactly the networks it exists for.
+- The broadcast probe no longer goes out twice while the QR code shows.
+- A QR invite's name gets the same 64 bytes as any other message (the proof was eating 33 of them).
+- `QrPairing.parse` takes IPv4 literals only, and `unhex` plain ASCII hex only (`Character.digit` accepted
+  other Unicode digit forms).
+- A connect that a phone asked for over the network is no longer logged as "asked for on the PC".
+- Turning "Find phones on Wi-Fi" on after a pairing is written to the log, since it also starts announcing
+  this PC's name every 2 s.
+
+**Known and left alone, with reasons:**
+- **SERVER_HELLO goes out before the PC is authenticated**, so anything that connects to the phone's port
+  47800 while wireless mode is on learns the phone's stable 16-byte id and its name. Fixing it means
+  reordering the handshake, which is a protocol break for a tracking-grade leak; the gain didn't justify
+  destabilising the connect path. Pre-existing, not from QR pairing.
+- **A refused phone is remembered by IP address** (`netPhones_`), because discovery carries no device id, so
+  a DHCP change can move that refusal onto a different phone or let the refused one back in. Only an
+  explicit "Don't allow" is permanent now, which limits the blast radius.
+- **An on-path attacker can still delay a QR pairing** by replaying invites. They could drop the packets
+  instead, so authenticating the invite (which would break 1.4.2 phones) buys nothing.
 
 ---
 

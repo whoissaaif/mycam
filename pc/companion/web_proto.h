@@ -131,7 +131,12 @@ private:
     std::vector<WebDevice> devices_;
 };
 
-// A friendly name the page sends ("iPhone"), cut to what the PC shows: printable, at most 40 bytes of UTF-8.
+// A name a phone sent, cut to what the PC can safely show: valid UTF-8 only, no control characters, no line
+// or paragraph separators and no bidirectional overrides, at most 40 bytes. `fallback` is used when nothing
+// is left. A remote name ends up in the pairing dialog's title, so everything that reaches a window or the
+// registry goes through this first.
+std::string CleanName(const std::string& name, const std::string& fallback);
+// The page's own name ("iPhone"), with that default.
 std::string CleanDeviceName(const std::string& name);
 
 // --- Addresses -------------------------------------------------------------------------------------------
@@ -145,6 +150,7 @@ struct NetAddress {
     std::string text;   // "192.168.1.20"
     std::wstring adapter;
     NetKind kind = NetKind::Other;
+    uint8_t prefix = 0; // On-link prefix length (24 for a /24); 0 when the adapter didn't say.
 };
 
 // How an adapter counts, from its IANA interface type, its description and the address.

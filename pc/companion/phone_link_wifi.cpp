@@ -299,14 +299,17 @@ void PhoneLink::ReadAnswers(uint64_t now) {
         const std::string text(buf, size_t(n));
         uint16_t port = 0;
         std::string name, proof;
-        if (ParseDiscoveryQrRequest(text, &port, &proof, &name)) {
+        const bool qr = ParseDiscoveryQrRequest(text, &port, &proof, &name);
+        const bool invite = !qr && ParseDiscoveryConnectRequest(text, &port, &name);
+        if (!qr && !invite && !ParseDiscoveryReply(text, &port, &name)) continue;
+        const uint32_t ip = from.sin_addr.s_addr;
+        const std::string ipText = IpText(ip);
+        // Whoever sent this chose the name, and it reaches the scan list and the pairing dialog.
+        if (!name.empty()) name = web::CleanName(name, ipText);
+        if (qr) {
             OnQrInvite(from, port, proof, name);
             continue;
         }
-        const bool invite = ParseDiscoveryConnectRequest(text, &port, &name);
-        if (!invite && !ParseDiscoveryReply(text, &port, &name)) continue;
-        const uint32_t ip = from.sin_addr.s_addr;
-        const std::string ipText = IpText(ip);
         if (nearby_.Seen(ip, ipText, port, name, now)) nearbyDirty_ = true;
         if (invite) {
             const std::string shown = name.empty() ? ipText : name;
@@ -375,6 +378,8 @@ void PhoneLink::PollDiscovery(uint64_t now) {
 
 // Connect, from the scan list: one Wi-Fi session to that phone, whatever "Find phones on Wi-Fi" says.
 void PhoneLink::RunManualConnect(uint32_t ip) {
+    // Which side asked, taken before any early return so the flag never carries into the next connect.
+    const bool askedHere = connectAsked_.exchange(false);
     const NearbyPhone* found = nearby_.Find(ip);
     if (!found) {
         Log("wifi: connect: %s isn't in the scan list any more", IpText(ip).c_str());
@@ -382,7 +387,10 @@ void PhoneLink::RunManualConnect(uint32_t ip) {
     }
     const std::string name = found->name;
     const uint16_t port = found->port;
-    Log("wifi: connecting to %s (%s:%u), asked for on the PC", name.c_str(), IpText(ip).c_str(), unsigned(port));
+    // Say which side asked: a "MYCAM+1" from the network looks exactly like Connect from here otherwise, and
+    // anyone reading the log afterwards would think somebody at this PC started it.
+    Log("wifi: connecting to %s (%s:%u), asked for %s", name.c_str(), IpText(ip).c_str(), unsigned(port),
+        askedHere ? "on the PC" : "by the phone over the network");
     manualSession_ = true;
     WifiEnd end = WifiEnd::Failed;
     for (int attempt = 0; attempt < 2 && !quit_; ++attempt) {
@@ -396,7 +404,8 @@ void PhoneLink::RunManualConnect(uint32_t ip) {
     }
     manualSession_ = false;
     // Auto-connect (search on) mustn't ask a phone again right after a user said no, here or on the phone.
-    if (wireless_ && end == WifiEnd::Refused) netPhones_[ip].retryAfter = GetTickCount64() + kRetryRefusedMs;
+    if (wireless_ && (end == WifiEnd::Refused || end == WifiEnd::TimedOutHere))
+        netPhones_[ip].retryAfter = GetTickCount64() + kRetryRefusedMs;
     if (wireless_ && end == WifiEnd::RefusedHere) netPhones_[ip].retryAfter = kNever;
     lastProbe_ = 0;
 }
@@ -411,17 +420,38 @@ void PhoneLink::RunManualConnect(uint32_t ip) {
 void PhoneLink::ProbeForQr(uint64_t now) {
     if (!web_ || !web_->Pairing() || now - lastQrProbe_ < kProbeEveryMs || !EnsureUdp()) return;
     lastQrProbe_ = now;
-    BroadcastProbe();
-    const uint32_t self = ntohl(web_->PairingAddress());
+    // The broadcast is shared with the ordinary probe timer, so showing the QR code doesn't double the rate.
+    if (now - lastProbe_ >= kProbeEveryMs) {
+        lastProbe_ = now;
+        BroadcastProbe();
+    }
+    const uint32_t pairingIp = web_->PairingAddress();
+    const uint32_t self = ntohl(pairingIp);
     if (!self) return;
+    // The unicast copies, for networks that drop broadcasts. The subnet is whatever the adapter reports, not
+    // an assumed /24: on a /16 a /24's worth of guesses misses almost every host. Sweeping a subnet that big
+    // isn't practical either (a /16 would be 65k datagrams every 2 s), so there the broadcast is all there is.
+    uint8_t prefix = 0;
+    for (const web::NetAddress& a : web_->Addresses())
+        if (a.ipv4 == pairingIp) prefix = a.prefix;
+    if (prefix > 30) return;  // A /31 or /32 has no other host to ask.
+    if (prefix < 24) {        // Too wide to ask one by one (0: the adapter didn't say).
+        constexpr uint64_t kSweepNoteEveryMs = 60000;
+        if (prefix && now - lastSweepNote_ >= kSweepNoteEveryMs) {
+            lastSweepNote_ = now;
+            Log("wifi: this network is a /%u, too big to probe address by address; relying on the broadcast. "
+                "If the phone can't find this PC, put both on the same smaller network.", unsigned(prefix));
+        }
+        return;
+    }
+    const uint32_t mask = ~0u << (32 - prefix), net = self & mask, last = net | ~mask;
     const std::string message = std::string(kAsk) + " " + ComputerName();
-    const uint32_t net = self & 0xFFFFFF00u;
-    for (uint32_t host = 1; host < 255; ++host) {
-        if ((net | host) == self) continue;
+    for (uint32_t host = net + 1; host < last; ++host) { // Skip the network and broadcast addresses.
+        if (host == self) continue;
         sockaddr_in to = {};
         to.sin_family = AF_INET;
         to.sin_port = htons(kDiscoveryPort);
-        to.sin_addr.s_addr = htonl(net | host);
+        to.sin_addr.s_addr = htonl(host);
         sendto(SOCKET(udp_), message.data(), int(message.size()), 0, reinterpret_cast<sockaddr*>(&to), sizeof(to));
     }
 }
@@ -431,12 +461,18 @@ void PhoneLink::ProbeForQr(uint64_t now) {
 void PhoneLink::OnQrInvite(const sockaddr_in& from, uint16_t port, const std::string& proof, const std::string& name) {
     const uint32_t ip = from.sin_addr.s_addr;
     if (ip == qrRequest_.ip || (sessionIp_ != 0 && ip == sessionIp_)) return; // Its resends while it connects.
+    // A connect attempt for some other address is already queued. That is a moment, not a state, and it may
+    // well be a replay of this phone's own invite from somewhere else, so say nothing: this phone resends
+    // every 2 s and gets in as soon as that attempt finishes. Answering "busy" here would make it give up.
+    if (qrRequest_.ip) return;
     Bytes code;
     const std::string current = web_ ? web_->CurrentPairingCode() : std::string();
     const char* refusal = nullptr;
     if (current.empty() || !web::FromBase64Url(current, &code) || !web::SameSecret(wifi::QrInviteProof(code, port), proof))
         refusal = "MYCAM-1 code"; // Used, expired, or another PC's code.
-    else if (sessionIp_ != 0 || handle_ != nullptr || webSession_ || qrRequest_.ip)
+    else if (sessionIp_ != 0 || handle_ != nullptr || webSession_)
+        refusal = "MYCAM-1 busy";
+    else if (!web_->ClaimPairingCode()) // An iPhone's POST /pair has it mid-flight.
         refusal = "MYCAM-1 busy";
     if (refusal) {
         Log("wifi: %s scanned a QR code, but %s", IpText(ip).c_str(),
@@ -453,9 +489,13 @@ void PhoneLink::RunQrConnect() {
     qrRequest_ = QrRequest{}; // The session (sessionIp_) covers the phone's resends from here on.
     manualSession_ = true;    // Whether or not "Find phones on Wi-Fi" is on, like Connect.
     SOCKET s = ConnectTcp(q.ip, q.port, 3000);
+    WifiEnd end = WifiEnd::Failed;
     if (s == INVALID_SOCKET) Log("wifi: can't connect to %s (%s:%u)", q.name.c_str(), IpText(q.ip).c_str(), unsigned(q.port));
-    else RunTcpSession(uintptr_t(s), q.name, false, &q.code);
+    else end = RunTcpSession(uintptr_t(s), q.name, false, &q.code);
     manualSession_ = false;
+    // It didn't pair (unreachable, or whoever answered couldn't prove it holds the code): let go of the code
+    // so the phone that really scanned it can try again with its next resend.
+    if (end != WifiEnd::Ran && web_) web_->ReleasePairingCode();
     lastProbe_ = 0;
 }
 
@@ -513,6 +553,8 @@ void PhoneLink::NetScanOnce() {
         case WifiEnd::Ran: phone.retryAfter = GetTickCount64() + kRetryLostMs; break;
         // The user said no (or nobody answered): don't ask again for a while.
         case WifiEnd::Refused: phone.retryAfter = GetTickCount64() + kRetryRefusedMs; break;
+        // Nobody answered on this PC: treat it like any other "not now" and ask again after a while.
+        case WifiEnd::TimedOutHere: phone.retryAfter = GetTickCount64() + kRetryRefusedMs; break;
         // This PC's user said no: never by itself again (Connect, or the phone asking, still work).
         case WifiEnd::RefusedHere: phone.retryAfter = kNever; break;
         // Our pairing key doesn't work any more (e.g. this PC forgot the phone): pair again, with a code.
@@ -532,6 +574,7 @@ PhoneLink::WifiEnd PhoneLink::Handshake(uintptr_t socket, bool forcePair, const 
     const SOCKET s = SOCKET(socket);
     bool cancelled = false; // The user pressed "Don't allow" on the PC.
     bool allowedHere = false; // ...or "Allow" (1.5: a code pairing needs both users).
+    uint64_t codeShownAt = 0; // When the 6-digit code went on screen: this PC's user answers from then.
     cancelPairing_ = false;
     allowPairing_ = false;
     auto keepWaiting = [this, &cancelled, &allowedHere] {
@@ -599,7 +642,9 @@ PhoneLink::WifiEnd PhoneLink::Handshake(uintptr_t socket, bool forcePair, const 
     const size_t nameAt = 98 + (mode == kModePairing ? 32 : 0);
     if (sh.size() > nameAt && sh.size() >= nameAt + 1 + sh[nameAt] && sh[nameAt] > 0) {
         const std::string announced(sh.begin() + nameAt + 1, sh.begin() + nameAt + 1 + sh[nameAt]);
-        status_.phoneName = Wide(announced);
+        // The phone chooses this text and it lands in the pairing dialog's title, so it is cleaned first:
+        // without that, line separators in it would draw outside the title and over the code to compare.
+        status_.phoneName = Wide(web::CleanName(announced, IpText(sessionIp_)));
     }
     Bytes z;
     if (!key.Agree(phonePub, &z)) return WifiEnd::Failed;
@@ -638,6 +683,7 @@ PhoneLink::WifiEnd PhoneLink::Handshake(uintptr_t socket, bool forcePair, const 
         const std::string code = wifi::Sas(pcPub, phonePub, na, nb);
         status_.pairingCode = std::wstring(code.begin(), code.begin() + 3) + L" " + std::wstring(code.begin() + 3, code.end());
         Publish();
+        codeShownAt = GetTickCount64(); // This PC's user gets their own kPairingAnswerMs from here.
         Log("wifi: pairing with %s, code %s", Utf8(status_.phoneName).c_str(), code.c_str());
     } else {
         return WifiEnd::Failed;
@@ -647,23 +693,29 @@ PhoneLink::WifiEnd PhoneLink::Handshake(uintptr_t socket, bool forcePair, const 
     const Bytes kFin(keys.begin() + 64, keys.end());
     if (!sendMsg(kMsgPcFinished, wifi::Finished(kFin, "PC", h), false)) return WifiEnd::Failed;
     Bytes phoneFinished;
-    const uint64_t codeShownAt = GetTickCount64();
     bool ok = readMsg(kMsgPhoneFinished, &phoneFinished, mode == kModePairing ? kUserTimeoutMs : kStepTimeoutMs, false, &rejected);
     // A code pairing also needs this PC's user (PROTOCOL.md "The PC asks too"): otherwise anything on the
     // network posing as a phone could approve its own pairing and send video into the camera. The phone may
-    // have answered first; wait for the user here, within the same time limit.
+    // have answered first; the user here gets their own kPairingAnswerMs from when the code appeared, so a
+    // slow answer on the phone can't eat this PC's window.
+    bool timedOutHere = false;
     if (ok && mode == kModePairing) {
-        while (!allowedHere && !cancelled && GetTickCount64() - codeShownAt < kUserTimeoutMs && keepWaiting()) Sleep(50);
+        while (!allowedHere && !cancelled && GetTickCount64() - codeShownAt < kPairingAnswerMs && keepWaiting()) Sleep(50);
         if (!allowedHere) {
-            if (!cancelled) Log("wifi: nobody allowed the pairing on the PC in time");
             const uint8_t reject[] = {0, 2, kMsgReject, kRejectRefused};
             SendAll(s, reject, sizeof(reject));
-            cancelled = true;
+            // Nobody answering is not the same as somebody saying no: a user who never saw the dialog
+            // shouldn't lose that phone until the companion restarts (it is asked again after a while).
+            timedOutHere = !cancelled;
         }
     }
     status_.pairingCode.clear();
     status_.pairingAllowed = false;
     Publish();
+    if (timedOutHere) {
+        Log("wifi: nobody answered the pairing on this PC in time");
+        return WifiEnd::TimedOutHere;
+    }
     if (cancelled) {
         Log("wifi: pairing refused on the PC");
         return WifiEnd::RefusedHere; // The caller closes the socket; auto-connect leaves this phone alone.
@@ -673,7 +725,7 @@ PhoneLink::WifiEnd PhoneLink::Handshake(uintptr_t socket, bool forcePair, const 
         if (rejected && mode == kModePaired) { ForgetPairKey(phoneId); return WifiEnd::NeedsPairing; }
         return rejected ? WifiEnd::Refused : WifiEnd::Failed;
     }
-    if (phoneFinished != wifi::Finished(kFin, "PH", h)) {
+    if (!wifi::SameMac(phoneFinished, wifi::Finished(kFin, "PH", h))) {
         Log("wifi: the phone's proof is wrong; not connecting");
         return WifiEnd::Failed;
     }

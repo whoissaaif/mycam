@@ -1025,6 +1025,21 @@ void TestWebTokens() {
     CHECK(web::CleanDeviceName("Café ☕") == "Café ☕");
     CHECK(web::CleanDeviceName(std::string("ab\xff") + "cd") == "ab"); // Stops at bad UTF-8.
 
+    // CleanName: what a phone sends reaches the pairing dialog's title, so nothing in it may leave its line.
+    CHECK(web::CleanName("Pixel 9", "fallback") == "Pixel 9");
+    CHECK(web::CleanName("", "192.168.1.9") == "192.168.1.9");            // Empty falls back.
+    CHECK(web::CleanName("  \t ", "fallback") == "fallback");             // So does all-whitespace.
+    CHECK(web::CleanName("A\nAllow this", "x") == "AAllow this");         // Newlines go: they made extra lines.
+    CHECK(web::CleanName("A\r\nB", "x") == "AB");
+    CHECK(web::CleanName("A B", "x") == "AB");                       // Line separator.
+    CHECK(web::CleanName("A B", "x") == "AB");                       // Paragraph separator.
+    CHECK(web::CleanName("A‮B", "x") == "AB");                       // Right-to-left override.
+    CHECK(web::CleanName("A⁦B⁩C", "x") == "ABC");               // Isolates.
+    CHECK(web::CleanName("A﻿B", "x") == "AB");
+    CHECK(web::CleanName("Café ☕", "x") == "Café ☕");                   // Ordinary text is untouched.
+    CHECK(web::CleanName(std::string(60, 'x'), "y").size() == 40);        // Still capped.
+    CHECK(web::CleanDeviceName("") == "iPhone");                          // The page's default is unchanged.
+
     CHECK(web::SameSecret("abc", "abc") && !web::SameSecret("abc", "abd") && !web::SameSecret("abc", "ab"));
     const Bytes hello = {'h', 'i', '?'};
     CHECK(web::Base64(hello.data(), 3) == "aGk/" && web::Base64Url(hello.data(), 3) == "aGk_");
@@ -1092,6 +1107,12 @@ void TestQrPairing(std::map<std::string, Bytes>& golden) {
     CHECK(!ParseDiscoveryQrRequest("MYCAM#1 47800 " + proofHex.substr(0, 31) + "z Phone", &p, &proof, &name)); // Not hex.
     CHECK(!ParseDiscoveryQrRequest("MYCAM+1 47800 " + proofHex + " Phone", &p, &proof, &name));     // A different message.
     CHECK(!ParseDiscoveryConnectRequest("MYCAM#1 47800 " + proofHex, &p, &name));
+    // The proof and its space don't eat into the room for a name: a QR invite carries the same 64 bytes of
+    // name as any other message (it used to be cut to 31).
+    const std::string long64(64, 'n');
+    CHECK(ParseDiscoveryQrRequest("MYCAM#1 47800 " + proofHex + " " + long64, &p, &proof, &name));
+    CHECK(name == long64);
+    CHECK(ParseDiscoveryReply("MYCAM!1 47800 " + long64 + "toolong", &p, &name) && name == long64); // Still 64.
 }
 
 } // namespace

@@ -63,6 +63,11 @@ public:
     // while it is valid ("" otherwise), and "used" after a successful pairing (the QR code shows a new one).
     std::string CurrentPairingCode() const;
     void PairingCodeUsed();
+    // An Android pairing has taken the current code and is finishing its handshake: POST /pair is refused
+    // meanwhile, so one displayed code can't also become an iPhone's device token. Claim() is false when
+    // somebody already holds it. Release() when the handshake didn't work out; PairingCodeUsed() when it did.
+    bool ClaimPairingCode();
+    void ReleasePairingCode() { codeClaimed_ = false; }
     // A page that paired with POST /pair has just opened its session: its device id (once; "" otherwise), so
     // PhoneLink can say "paired" rather than only "connected".
     std::string TakeNewlyPaired(const std::string& deviceId);
@@ -106,6 +111,7 @@ private:
     std::string busyExcept_;
     bool pairing_ = false;
     std::string pcId_;           // In the QR code (`pc`).
+    bool codeClaimed_ = false;   // An Android QR pairing is using the current code right now.
     std::string newlyPairedId_;  // The device the last POST /pair added, until its session starts.
     uint32_t pairingIp_ = 0;
     uint32_t generation_ = 0;

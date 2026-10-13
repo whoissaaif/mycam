@@ -288,7 +288,12 @@ void Painter::Text(Font font, const std::wstring& text, const Box& box, D2D1_COL
         if (layoutCache_.size() > 600) layoutCache_.clear(); // Values change (addresses, counts): don't grow.
         it = layoutCache_.emplace(key, std::move(made)).first;
     }
-    dc_->DrawTextLayout(D2D1::Point2F(box.l, box.t), it->second.Get(), Brush(color), D2D1_DRAW_TEXT_OPTIONS_NONE);
+    // The ellipsis formats are the ones that carry text from a phone (a device name in a title), and they are
+    // laid out as a single line. A line separator inside such a name would still break the line and paint
+    // over whatever is below, so those layouts are clipped to their own box. Names are cleaned as well
+    // (web::CleanName); this is the second line of defence, and the only one the drawing code can give.
+    dc_->DrawTextLayout(D2D1::Point2F(box.l, box.t), it->second.Get(), Brush(color),
+                        ellipsis ? D2D1_DRAW_TEXT_OPTIONS_CLIP : D2D1_DRAW_TEXT_OPTIONS_NONE);
 }
 
 // --- Painter: primitives ------------------------------------------------------------------------------

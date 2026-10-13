@@ -85,6 +85,8 @@ data class ScreenActions(
     val onQrScanned: (String) -> Unit = {},
     val onDismissQr: () -> Unit = {},
     val onDismissPaired: () -> Unit = {},
+    /** "Let this PC use the camera?": true allows it, false forgets the PC and drops the link. */
+    val onAnswerCameraGate: (Boolean) -> Unit = {},
 )
 
 internal data class StatusView(val icon: Int, val headline: String, val detail: String, val live: Boolean = false)
@@ -142,8 +144,8 @@ fun WebcamScreen(
     // The scanner needs the camera: it closes if a stream starts meanwhile.
     LaunchedEffect(state.streaming) { if (state.streaming) qrOpen = false }
     // Just paired: the Camera tab, behind "Paired with ..." (the PC is connected, so that's where to be).
-    LaunchedEffect(state.justPaired) {
-        if (state.justPaired != null) {
+    LaunchedEffect(state.justPaired, state.cameraGate) {
+        if (state.justPaired != null || state.cameraGate != null) {
             qrOpen = false
             scanOpen = false
             tab = TAB_CAMERA
@@ -181,7 +183,7 @@ fun WebcamScreen(
     }
 
     val pairing = state.pendingPc != null || state.pairingTimedOut != null
-    val modal = pairing || showLicences || state.justPaired != null
+    val modal = pairing || showLicences || state.justPaired != null || state.cameraGate != null
     val blur by animateDpAsState(if (modal) 16.dp else 0.dp, tween(motionMs(Motion.DIALOG)), label = "backdropBlur")
 
     BackHandler(enabled = qrOpen) { qrOpen = false }
@@ -295,6 +297,11 @@ fun WebcamScreen(
         )
         LicenceDialog(visible = showLicences && !pairing, onClose = { showLicences = false })
         PairedDialog(pcName = state.justPaired.takeIf { !pairing }, onClose = actions.onDismissPaired)
+        CameraGateDialog(
+            pcName = state.cameraGate.takeIf { !pairing },
+            onAllow = { actions.onAnswerCameraGate(true) },
+            onDeny = { actions.onAnswerCameraGate(false) },
+        )
         // Over everything: the scanner is a full-screen camera with its own Close.
         if (qrOpen) {
             QrScanner(

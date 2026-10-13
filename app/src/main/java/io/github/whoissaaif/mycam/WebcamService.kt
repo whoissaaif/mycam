@@ -89,10 +89,24 @@ class WebcamService : Service() {
         val qr: QrStatus? = null,
         /** The PC a new pairing (QR code or 6-digit code) just connected to: "Paired with <name>" until OK. */
         val justPaired: String? = null,
+        /**
+         * The connected PC's name while it is waiting to be allowed to use the camera. A QR pairing has no
+         * moment where the user agrees to anything, and a PC paired before this existed never had one, so the
+         * phone connects, keeps the camera off and asks once. Null when nothing is waiting.
+         */
+        val cameraGate: String? = null,
     )
 
-    /** "Connecting to [pcName]…" while [failure] is null (the name arrives once paired), else why it didn't work. */
-    data class QrStatus(val pcName: String? = null, val failure: QrPairing.Failure? = null)
+    /**
+     * "Connecting to [pcName]…" while [failure] is null (the name arrives once paired), else why it didn't
+     * work. [trying] means the phone is still at it and [failure] is only the reason heard so far: a refusal
+     * arrives as an unauthenticated datagram, so it is shown but not obeyed until the attempt runs out.
+     */
+    data class QrStatus(
+        val pcName: String? = null,
+        val failure: QrPairing.Failure? = null,
+        val trying: Boolean = false,
+    )
 
     private lateinit var cameraThread: HandlerThread
     private lateinit var camera: Handler
@@ -137,6 +151,8 @@ class WebcamService : Service() {
     private class QrPending(val code: QrPairing.Code, val until: Long) {
         var heard = false
         var pcName: String? = null
+        var invitedAt = 0L                            // When the last invite went out, for [refused].
+        var refused: QrPairing.Failure? = null        // The reason the PC last gave, if any.
     }
     @Volatile private var qrPending: QrPending? = null
 
@@ -147,7 +163,7 @@ class WebcamService : Service() {
             val now = SystemClock.elapsedRealtime()
             if (linked) { finishQr(null); return }
             if (now > p.until) {
-                finishQr(if (p.heard) QrPairing.Failure.NoSession else QrPairing.Failure.NoPc)
+                finishQr(p.refused ?: if (p.heard) QrPairing.Failure.NoSession else QrPairing.Failure.NoPc)
                 return
             }
             val pc = nearby.find(p.code.host, now)
@@ -155,8 +171,9 @@ class WebcamService : Service() {
                 if (!p.heard || p.pcName != pc.name) {
                     p.heard = true
                     p.pcName = pc.name
-                    _state.update { it.copy(qr = QrStatus(pc.name)) }
+                    _state.update { it.copy(qr = QrStatus(pc.name, p.refused, trying = true)) }
                 }
+                p.invitedAt = now
                 wireless?.qrInvite(pc.ip, pc.port, p.code.code)
             }
             main.postDelayed(this, QR_RESEND_MS)
@@ -188,6 +205,11 @@ class WebcamService : Service() {
 
     // Owned by the camera thread.
     private var wantStreaming = false
+    // The connected PC hasn't been allowed to use the camera yet: stay connected, keep the camera off and
+    // wait for the user. Set when a link opens or closes (main thread) and read while handling the PC's
+    // commands (camera thread), so both are @Volatile.
+    @Volatile private var cameraBlocked = false
+    @Volatile private var gatedPcId: ByteArray? = null
     private var paused = false // User pause (phone or PC). Persisted so a reconnect never turns the camera back on.
     private var camSettings = CameraStreamer.Settings()
     private var lastCameraInfo: Protocol.CameraInfo? = null
@@ -304,6 +326,10 @@ class WebcamService : Service() {
             ACTION_FORGET_PCS -> {
                 val id = intent.getStringExtra(EXTRA_PC_ID)
                 if (id != null) forgetPc(id) else forgetPcs()
+                return START_NOT_STICKY
+            }
+            ACTION_CAMERA_GATE -> {
+                answerCameraGate(intent.getBooleanExtra(EXTRA_ALLOW, false))
                 return START_NOT_STICKY
             }
             ACTION_WIRELESS_ANSWER -> {
@@ -423,11 +449,23 @@ class WebcamService : Service() {
         _state.update { it.copy(qr = if (failure == null) null else QrStatus(p?.pcName, failure)) }
     }
 
-    /** Main thread. The PC we invited said no: our code isn't its current one, or another phone has it. */
+    /**
+     * Main thread. The PC we invited said no: our code isn't its current one, or another phone has it.
+     *
+     * This is a plain datagram with nothing to prove it came from that PC, and a source address is easy to
+     * forge on a local network, so it is a hint rather than an answer: the reason is shown and remembered,
+     * and the phone keeps inviting until the attempt runs out. One forged datagram then costs a few seconds
+     * instead of ending the pairing with a message telling the user to go and make a new code.
+     */
     private fun onQrRefused(ip: String, reason: String) {
         val p = qrPending ?: return
         if (p.code.host != ip || handshaking || linked) return
-        finishQr(if (reason == "busy") QrPairing.Failure.Busy else QrPairing.Failure.CodeUsed)
+        // Only right after an invite of our own: otherwise it answers nothing we asked.
+        if (p.invitedAt == 0L || SystemClock.elapsedRealtime() - p.invitedAt > QR_REFUSAL_WINDOW_MS) return
+        val failure = if (reason == "busy") QrPairing.Failure.Busy else QrPairing.Failure.CodeUsed
+        if (p.refused == failure) return
+        p.refused = failure
+        _state.update { it.copy(qr = QrStatus(p.pcName, failure, trying = true)) }
     }
 
     /** Handshake thread. The code scanned from that PC's screen, while a QR pairing with it is going on. */
@@ -586,10 +624,20 @@ class WebcamService : Service() {
             sock.sendBufferSize = 128 * 1024
         } catch (_: IOException) {}
         socket = sock
+        // Pairing says the two sides share a key; it doesn't say this PC may watch. Until the user allows it,
+        // the session runs with the camera off (START is answered with STATE(paused), as a user pause is).
+        cameraBlocked = !pairedPcs.cameraAllowed(secure.pcId)
+        gatedPcId = if (cameraBlocked) secure.pcId else null
         startLink(secure.output, secure.input, wirelessPc = secure.pcName)
+        if (cameraBlocked) _state.update { it.copy(cameraGate = secure.pcName) }
         _state.update { it.copy(wirelessPcIp = sock.inetAddress?.hostAddress) }
-        // A new pairing (QR code or 6-digit code): the screen says so and shows the camera.
-        if (secure.newlyPaired) _state.update { it.copy(pairedPcs = pairedPcs.list(), justPaired = secure.pcName) }
+        // A new pairing (QR code or 6-digit code): the screen says so and shows the camera. When the camera is
+        // still waiting to be allowed, the gate asks and names the PC, so there is no second message.
+        if (secure.newlyPaired) {
+            _state.update {
+                it.copy(pairedPcs = pairedPcs.list(), justPaired = if (cameraBlocked) null else secure.pcName)
+            }
+        }
         wifiLock = getSystemService(WifiManager::class.java)?.createWifiLock(
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) WifiManager.WIFI_MODE_FULL_LOW_LATENCY
             else @Suppress("DEPRECATION") WifiManager.WIFI_MODE_FULL_HIGH_PERF,
@@ -676,6 +724,10 @@ class WebcamService : Service() {
         val id = ++linkId
         output = out
         linked = true
+        if (wirelessPc == null) { // Over the cable, plugging it in is the consent.
+            cameraBlocked = false
+            gatedPcId = null
+        }
         qrPending = null // A QR pairing ends here: connected.
         main.removeCallbacks(qrTick)
         _state.update { it.copy(connected = true, error = null, wireless = wirelessPc != null, wirelessPc = wirelessPc, qr = null) }
@@ -728,7 +780,8 @@ class WebcamService : Service() {
             }
             Protocol.CMD_START -> {
                 wantStreaming = true
-                if (paused) sendState() // Stay off; the PC shows its "Camera paused" picture.
+                // Blocked or paused, the answer is the same: stay off and say so.
+                if (paused || cameraBlocked) sendState() // The PC shows its "Camera paused" picture.
                 else if (streamer == null) startStreamer()
                 else {
                     lastConfig?.let { send(Protocol.TYPE_CONFIG, 0, 0, it) }
@@ -752,6 +805,31 @@ class WebcamService : Service() {
             Protocol.CMD_SET_EXPOSURE -> changeControls(camSettings.copy(ev = arg.toByte().toInt()))
             Protocol.CMD_SET_TORCH -> changeControls(camSettings.copy(torch = arg != 0))
             Protocol.CMD_SET_FOCUS -> changeControls(camSettings.copy(focusLocked = arg != 0))
+        }
+    }
+
+    /**
+     * Main thread. The user answered "Let this PC use the camera?". Allow remembers it for that PC and starts
+     * the camera if the PC is already asking for video; Don't allow forgets the PC and drops the link, so a
+     * code scanned by mistake (or off someone else's screen) leaves nothing behind.
+     */
+    private fun answerCameraGate(allow: Boolean) {
+        val pcId = gatedPcId ?: return
+        gatedPcId = null // Answered either way: a second tap does nothing.
+        _state.update { it.copy(cameraGate = null) }
+        if (!allow) {
+            Log.i(TAG, "camera not allowed for this PC: forgetting it and dropping the link")
+            pairedPcs.forget(QrPairing.hex(pcId))
+            _state.update { it.copy(pairedPcs = pairedPcs.list()) }
+            val id = linkId
+            camera.post { onLinkLost(id) }
+            return
+        }
+        pairedPcs.allowCamera(pcId)
+        _state.update { it.copy(pairedPcs = pairedPcs.list()) }
+        camera.post {
+            cameraBlocked = false
+            if (wantStreaming && !paused && streamer == null) startStreamer() else sendState()
         }
     }
 
@@ -937,7 +1015,7 @@ class WebcamService : Service() {
 
     private fun sendState() {
         val st = when {
-            paused -> Protocol.STATE_PAUSED
+            paused || cameraBlocked -> Protocol.STATE_PAUSED
             streamer != null -> Protocol.STATE_STREAMING
             else -> Protocol.STATE_IDLE
         }
@@ -988,7 +1066,12 @@ class WebcamService : Service() {
         wifiLock?.release()
         wifiLock = null
         orientationListener?.disable()
-        _state.update { it.copy(connected = false, streaming = false, resolution = "", wireless = false, wirelessPc = null, wirelessPcIp = null) }
+        cameraBlocked = false
+        gatedPcId = null
+        _state.update {
+            it.copy(connected = false, streaming = false, resolution = "", wireless = false, wirelessPc = null,
+                    wirelessPcIp = null, cameraGate = null)
+        }
         updateNotification()
     }
 
@@ -1068,7 +1151,11 @@ class WebcamService : Service() {
         /** How long a QR pairing keeps trying (hearing the PC, then its connection), and the invite resend. */
         private const val QR_TIMEOUT_MS = 20_000L
         private const val QR_RESEND_MS = 2_000L
+        /** A "MYCAM-1" is only believed this soon after an invite of ours (see [onQrRefused]). */
+        private const val QR_REFUSAL_WINDOW_MS = 4_000L
         const val ACTION_FORGET_PCS ="io.github.whoissaaif.mycam.FORGET_PCS"
+        /** The answer to "Let this PC use the camera?" (EXTRA_ALLOW). */
+        const val ACTION_CAMERA_GATE = "io.github.whoissaaif.mycam.CAMERA_GATE"
         /** With ACTION_FORGET_PCS: forget only this PC (PairedPc.id); without it, forget them all. */
         const val EXTRA_PC_ID = "pc_id"
         /** Dim the screen automatically while streaming (Settings > Phone). */
@@ -1133,6 +1220,13 @@ class WebcamService : Service() {
         /** The user closed "Paired with ...". */
         fun dismissJustPaired() {
             _state.update { it.copy(justPaired = null) }
+        }
+
+        /** The user answered "Let this PC use the camera?" (see [answerCameraGate]). */
+        fun answerCameraGate(context: Context, allow: Boolean) {
+            context.startService(
+                Intent(context, WebcamService::class.java).setAction(ACTION_CAMERA_GATE).putExtra(EXTRA_ALLOW, allow)
+            )
         }
 
         /** The user closed the "Pairing timed out" dialog. */

@@ -24,7 +24,10 @@ struct NearbyPhone {
 
 // "<tag> <tcp port> <phone name>" -> port and name (name may be empty). False if it isn't that message.
 // `tag` is "MYCAM!1" (an answer to a probe) or "MYCAM+1" (the phone asking the PC to connect).
-inline bool ParseDiscoveryMessage(const std::string& text, const char* tag, uint16_t* port, std::string* name) {
+// `maxRest` caps what follows the port. It is 64 for the plain messages, where that is the name; the QR
+// invite spends 33 of its own on the proof and a space, so it asks for more (see ParseDiscoveryQrRequest).
+inline bool ParseDiscoveryMessage(const std::string& text, const char* tag, uint16_t* port, std::string* name,
+                                  size_t maxRest = 64) {
     const size_t tagLen = std::strlen(tag);
     if (text.compare(0, tagLen, tag) != 0) return false;
     if (text.size() < tagLen + 1 || text[tagLen] != ' ') return false; // "MYCAM!10 ..." isn't ours.
@@ -38,7 +41,7 @@ inline bool ParseDiscoveryMessage(const std::string& text, const char* tag, uint
     *port = uint16_t(p);
     std::string n = portEnd < text.size() ? text.substr(portEnd + 1) : std::string();
     while (!n.empty() && (n.back() == ' ' || n.back() == '\r' || n.back() == '\n' || n.back() == '\0')) n.pop_back();
-    if (n.size() > 64) n.resize(64);
+    if (n.size() > maxRest) n.resize(maxRest);
     *name = n;
     return true;
 }
@@ -58,7 +61,8 @@ inline bool ParseDiscoveryConnectRequest(const std::string& text, uint16_t* port
 // "MYCAM#1 <tcp port> <proof: 32 hex digits> <phone name>". The proof is lower-cased.
 inline bool ParseDiscoveryQrRequest(const std::string& text, uint16_t* port, std::string* proof, std::string* name) {
     std::string rest;
-    if (!ParseDiscoveryMessage(text, "MYCAM#1", port, &rest)) return false;
+    // 32 for the proof, 1 for the space, 64 for the name: the same room for a name as the other messages.
+    if (!ParseDiscoveryMessage(text, "MYCAM#1", port, &rest, 32 + 1 + 64)) return false;
     const size_t space = rest.find(' ');
     std::string p = rest.substr(0, space);
     if (p.size() != 32) return false;

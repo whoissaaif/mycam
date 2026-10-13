@@ -29,7 +29,7 @@ HTTPS on **TCP 47900**, with TLS from Schannel. The installer adds an inbound fi
 | Request | What it does |
 |---|---|
 | `GET /` (also `/app.js`, `/protocol.js`, `/style.css`, `/icon.png`) | The page, from the exe's resources (`companion.rc` 301–305) |
-| `POST /pair`, form `t=<code>&name=<device>` | Trades the QR code's one-time code for a device token. Returns `{"ok":true,"device":"<token>","name":"iPhone"}`, or 403 `{"error":"code"}` |
+| `POST /pair`, form `t=<code>&name=<device>` | Trades the QR code's one-time code for a device token. Returns `{"ok":true,"device":"<token>","name":"iPhone"}`, or 403 `{"error":"code"}`; 409 while an Android phone is pairing with that same code (PROTOCOL.md "QR pairing") |
 | `POST /check`, form `d=<device token>` | Returns `{"ok":true,"busy":false,"name":"iPhone"}`, or 403 when the PC doesn't know (or forgot) the device |
 | `GET /ws?d=<device token>` (WebSocket upgrade) | The camera link. Refused (403) without a valid device token, or when the `Origin` isn't this server. Refused with 503 while another phone uses MyCam |
 

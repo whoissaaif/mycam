@@ -39,7 +39,10 @@ object QrPairing {
         val uri = try { URI(text.trim()) } catch (_: Exception) { return Scan.NotMyCam }
         if (!"https".equals(uri.scheme, ignoreCase = true) || uri.port != PC_PORT) return Scan.NotMyCam
         if (!(uri.rawPath.isNullOrEmpty() || uri.rawPath == "/")) return Scan.NotMyCam
-        val host = uri.host ?: return Scan.NotMyCam
+        // A MyCam code always points at an IPv4 address, because the PC puts one of its own addresses in it.
+        // Anything else (a host name, so something that would have to be resolved) is not ours: saying so now
+        // beats pairing that waits 20 s for a probe from a name that will never match one.
+        val host = uri.host?.takeIf(::isIpv4) ?: return Scan.NotMyCam
         val query = queryOf(uri.rawQuery ?: "")
         val code = query["t"]?.let { decodeBase64Url(it) }?.takeIf { it.size == 16 } ?: return Scan.NotMyCam
         val pcId = query["pc"]?.let { unhex(it) }?.takeIf { it.size == 16 } ?: return Scan.OldPc
@@ -85,8 +88,18 @@ object QrPairing {
 
     fun hex(b: ByteArray) = b.joinToString("") { "%02x".format(it) }
 
+    /** "192.168.1.20": four decimal octets, nothing else (no name, no IPv6, no shorthand). */
+    private fun isIpv4(host: String): Boolean {
+        val parts = host.split('.')
+        return parts.size == 4 && parts.all { p ->
+            p.isNotEmpty() && p.length <= 3 && p.all { it in '0'..'9' } && p.toInt() <= 255
+        }
+    }
+
     fun unhex(s: String): ByteArray? {
-        if (s.length % 2 != 0 || s.any { Character.digit(it, 16) < 0 }) return null
+        // Plain ASCII hex only. Character.digit() would also accept other Unicode digit forms, so a `pc=`
+        // written in, say, Arabic-Indic digits would pass and then never match the PC's own id.
+        if (s.length % 2 != 0 || s.any { it !in '0'..'9' && it !in 'a'..'f' && it !in 'A'..'F' }) return null
         return ByteArray(s.length / 2) { s.substring(2 * it, 2 * it + 2).toInt(16).toByte() }
     }
 

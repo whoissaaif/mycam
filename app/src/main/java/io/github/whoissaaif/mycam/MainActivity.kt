@@ -120,6 +120,7 @@ class MainActivity : ComponentActivity() {
             onAutoDim = ::changeAutoDim, onDismissTimedOut = WebcamService::dismissPairingTimedOut,
             onQrScanned = ::pairByQr, onDismissQr = WebcamService::dismissQr,
             onDismissPaired = WebcamService::dismissJustPaired,
+            onAnswerCameraGate = { allow -> WebcamService.answerCameraGate(this, allow) },
         )
         setContent {
             MycamTheme {

@@ -109,7 +109,10 @@ public:
     void ScanForPhones() { scanRequest_ = true; }
     // Runs one Wi-Fi session to a phone from the scan list (pairing with a code if it's new), even while
     // "Find phones on Wi-Fi" is off. A plugged-in phone still wins. ipv4 in network order.
-    void ConnectTo(uint32_t ipv4) { connectRequest_ = ipv4; }
+    void ConnectTo(uint32_t ipv4) {
+        connectAsked_ = true; // Somebody pressed Connect here, as opposed to a phone asking over the network.
+        connectRequest_ = ipv4;
+    }
     static constexpr uint64_t kScanWindowMs = 6000;
     // A code pairing (6 digits) needs this PC's user too (1.5, PROTOCOL.md "The PC asks too"): Allow lets it
     // go ahead once the phone has allowed it as well; "Don't allow" refuses it, and auto-connect leaves that
@@ -168,8 +171,10 @@ private:
     // A new pairing worked (QR, code or iPhone): tells the UI, which says so and shows the camera.
     void NotePaired(const std::string& name, bool wifi);
     // How a Wi-Fi session ended, for when to try that phone again.
-    // RefusedHere: this PC's user said no to a code pairing (or didn't answer): auto-connect leaves that phone be.
-    enum class WifiEnd { Ran, Refused, RefusedHere, NeedsPairing, Failed };
+    // RefusedHere: this PC's user said no to a code pairing, so auto-connect leaves that phone alone until the
+    // companion restarts. TimedOutHere: nobody answered here, which is not a refusal: that phone is asked
+    // again after the usual back-off, so a dialog someone simply missed doesn't lose the phone.
+    enum class WifiEnd { Ran, Refused, RefusedHere, TimedOutHere, NeedsPairing, Failed };
     // qrCode: the one-time code a phone proved it scanned; the handshake then runs in QR pairing mode.
     WifiEnd RunTcpSession(uintptr_t socket, const std::string& phoneName, bool forcePair,
                           const std::vector<uint8_t>* qrCode = nullptr);
@@ -225,11 +230,13 @@ private:
     std::map<uint32_t, NetPhone> netPhones_; // By IPv4 address (network order), from discovery answers.
     std::atomic<bool> scanRequest_{false};
     std::atomic<uint32_t> connectRequest_{0};
+    std::atomic<bool> connectAsked_{false}; // connectRequest_ came from Connect here, not from the network.
     bool manualSession_ = false;  // The current Wi-Fi session was asked for with Connect (search may be off).
     // A phone that scanned the QR code asked for a session ("MYCAM#1", PROTOCOL.md "QR pairing"): where to
     // connect and the code it proved it has (ip 0: nothing asked).
     struct QrRequest { uint32_t ip = 0; uint16_t port = 0; std::string name; std::vector<uint8_t> code; } qrRequest_;
     uint64_t lastQrProbe_ = 0;    // Probes go out every 2 s while the QR code shows.
+    uint64_t lastSweepNote_ = 0;  // Last time the log said this network is too big to probe host by host.
     // Successful new pairings so far (QR, code or iPhone), so the UI can say "Paired with ...".
     uint32_t pairedCount_ = 0;
     std::wstring pairedName_;

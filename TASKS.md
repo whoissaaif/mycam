@@ -64,6 +64,10 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [~] QR pairing for Android: scan the PC's QR code (the same one iPhones use), pair and connect; PC asks
       Allow on 6-digit pairing too [12]: works on Public networks (no inbound connection), "Paired" on both screens;
       tested on the CMF Phone 1 (2026-10-13); second phone and iPhone left
+- [~] Security review of QR pairing [12.1]: the camera gate (the phone asks once per PC before any video),
+      phone names cleaned before they reach a window, refusals treated as hints, the probe sweep using the
+      real subnet, and an unanswered Allow no longer banning the phone. Both test suites pass; the gate and a
+      multi-line phone name still want a run on the device
 
 ## Backlog
 
@@ -139,4 +143,5 @@ run `installer\build.ps1` and `gradlew assembleDebug`, commit, tag `vX.Y.Z`, pus
 | 2026-10-11 | The QR code's one-time code is traded for a device token with `POST /pair` (HTTPS), not inside the WebSocket, so the "binary messages only" format stays as agreed. The PC stores only the token's SHA-256 |
 | 2026-10-11 | The iPhone page's server listens whenever the companion runs (so paired iPhones reconnect without scanning); `/ws` needs a valid device token; the firewall rule is private networks only |
 | 2026-10-12 | Android pairs over Wi-Fi by scanning the PC's QR code, the same code iPhones use (`t` + certificate fingerprint `f`), through `/app/pair` and `/app/connect` on the PC's HTTPS server. ZXing scanner bundled (no Play services). The 6-digit pairing stays as the fallback and now needs Allow on the PC too. Paired phones keep reconnecting through discovery (IMPROVEMENTS.md 12) |
+| 2026-10-13 | **Scanning a QR code is consent to pair, not consent to be watched.** A code can be printed or forwarded, so the phone keeps a per-PC camera flag: a PC that hasn't been allowed gets a session with the camera off, and the phone asks once, naming it. A 6-digit pairing sets the flag as the user taps Allow (no extra tap); a QR pairing doesn't. Keys stored before the flag count as not allowed, which also stops a PC paired earlier from streaming again silently (PROTOCOL.md "Letting a PC use the camera", IMPROVEMENTS.md 12.1) |
 | 2026-10-13 | Android QR pairing needs **no inbound connection to the PC**: the PC probes while the QR code shows, the phone answers with `MYCAM#1` (a proof of the code), and the PC connects out with the code mixed into the handshake keys. So no "set the network to Private" step (only iPhones still need it). Replaces the unreleased HTTPS `/app/pair` + pinning. After any pairing both screens say "Paired with …" and show the camera; a Wi-Fi pairing turns on Find phones on Wi-Fi (PROTOCOL.md "QR pairing", IMPROVEMENTS.md 12) |

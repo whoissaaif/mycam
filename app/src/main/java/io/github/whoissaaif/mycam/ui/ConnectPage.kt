@@ -125,7 +125,7 @@ private fun QrStatusCard(qr: WebcamService.QrStatus, onScanAgain: () -> Unit, on
         val failure = qr.failure
         Text(
             when {
-                failure != null -> stringResource(R.string.qr_failed)
+                failure != null && !qr.trying -> stringResource(R.string.qr_failed)
                 qr.pcName != null -> stringResource(R.string.qr_connecting, qr.pcName)
                 else -> stringResource(R.string.qr_pairing)
             },
@@ -146,6 +146,13 @@ private fun QrStatusCard(qr: WebcamService.QrStatus, onScanAgain: () -> Unit, on
             },
             style = MaterialTheme.typography.bodyMedium, color = V2.Subtle,
         )
+        // Still trying: the PC said no, but nothing proves that datagram came from it, so the reason is
+        // shown while the phone keeps asking. Only when the attempt runs out does it become the answer.
+        if (qr.trying) {
+            Spacer(Modifier.height(12.dp))
+            XpProgressBar(null)
+            return@FlatCard
+        }
         Spacer(Modifier.height(12.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             PrimaryButton(stringResource(R.string.qr_scan_again), onClick = { onDismiss(); onScanAgain() }, modifier = Modifier.weight(1f))

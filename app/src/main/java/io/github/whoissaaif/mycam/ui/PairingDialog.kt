@@ -219,6 +219,49 @@ fun PairedDialog(pcName: String?, onClose: () -> Unit) {
     }
 }
 
+/**
+ * "Let this PC use the camera?" — the one place the user agrees to a PC watching through this phone.
+ *
+ * It appears once per PC: after a QR pairing, and the first time a PC paired before this existed connects.
+ * The session is already up and the camera is off until this is answered, so there is nothing to lose by
+ * taking a moment over it. There is deliberately no way to dismiss it without answering: a stray tap or a
+ * Back press must not leave a PC half-allowed, so Back and the close button both mean "don't allow".
+ */
+@Composable
+fun CameraGateDialog(pcName: String?, onAllow: () -> Unit, onDeny: () -> Unit) {
+    var lastName by remember { mutableStateOf("") }
+    if (pcName != null) lastName = pcName
+    val visible = pcName != null
+    BackHandler(enabled = visible, onBack = onDeny)
+    ModalLayer(visible) {
+        val title = stringResource(R.string.gate_title)
+        XpDialogFrame(title = title, onClose = onDeny, modifier = Modifier.semantics { paneTitle = title }) {
+            MonitorIllustration(Modifier.fillMaxWidth().height(96.dp))
+            Spacer(Modifier.height(12.dp))
+            Text(
+                stringResource(R.string.paired_with, lastName), style = MaterialTheme.typography.titleLarge,
+                color = V2.Text, textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth().semantics { liveRegion = LiveRegionMode.Polite },
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                stringResource(R.string.gate_question), style = MaterialTheme.typography.bodyMedium,
+                color = V2.Text, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                stringResource(R.string.gate_detail), style = MaterialTheme.typography.bodyMedium,
+                color = V2.Subtle, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(16.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                SecondaryButton(stringResource(R.string.wireless_deny), onClick = onDeny, modifier = Modifier.weight(1f))
+                PrimaryButton(stringResource(R.string.wireless_allow), onClick = onAllow, modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
 /** The licence text of the shipped fonts (About > Licences). */
 @Composable
 fun LicenceDialog(visible: Boolean, onClose: () -> Unit) {

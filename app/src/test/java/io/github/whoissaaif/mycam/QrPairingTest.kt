@@ -70,6 +70,15 @@ class QrPairingTest {
         assertEquals(QrPairing.Scan.NotMyCam, QrPairing.parse("https://192.168.1.20:47900/?pc=$pc"))
         assertEquals(QrPairing.Scan.NotMyCam, QrPairing.parse("https://192.168.1.20:47900/?t=short&pc=$pc"))
         assertEquals(QrPairing.Scan.NotMyCam, QrPairing.parse("WIFI:S:home;T:WPA;P:secret;;"))
+        // The PC always puts one of its own IPv4 addresses in the code. A host name on the right port is not
+        // ours: it could never match the address a probe comes from, so it would only waste the 20 s wait.
+        assertEquals(QrPairing.Scan.NotMyCam, QrPairing.parse("https://example.com:47900/?t=$t&pc=$pc"))
+        assertEquals(QrPairing.Scan.NotMyCam, QrPairing.parse("https://192.168.1.999:47900/?t=$t&pc=$pc"))
+        assertEquals(QrPairing.Scan.NotMyCam, QrPairing.parse("https://192.168.1:47900/?t=$t&pc=$pc"))
+        // A pc= in other Unicode digit forms is not hex: it would pass Character.digit and then never match.
+        assertEquals(QrPairing.Scan.OldPc, QrPairing.parse("https://192.168.1.20:47900/?t=$t&pc=" + "٠".repeat(32)))
+        assertNull(QrPairing.unhex("٠١"))
+        assertArrayEquals(byteArrayOf(0x0A, 0xBC.toByte()), QrPairing.unhex("0aBc"))
         assertEquals(QrPairing.Scan.NotMyCam, QrPairing.parse("not a url at all %%%"))
     }
 

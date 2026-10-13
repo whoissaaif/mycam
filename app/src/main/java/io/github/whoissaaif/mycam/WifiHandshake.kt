@@ -32,7 +32,14 @@ class WifiHandshake(
     /** QR pairing: the one-time code scanned from this PC's screen (16 bytes), or null if none is pending. */
     private val qrCodeFor: (pcId: ByteArray) -> ByteArray? = { null },
 ) {
-    class Result(val input: InputStream, val output: OutputStream, val pcName: String, val newlyPaired: Boolean)
+    class Result(
+        val input: InputStream,
+        val output: OutputStream,
+        val pcName: String,
+        val newlyPaired: Boolean,
+        /** Which PC this is, for [PairedPcs.cameraAllowed]. */
+        val pcId: ByteArray,
+    )
 
     private val random = SecureRandom()
     private val transcript = MessageDigest.getInstance("SHA-256")
@@ -76,7 +83,7 @@ class WifiHandshake(
             val keys = WifiCrypto.sessionKeys(z, pairKey, npc, nph)
             if (!finishedFromPc(keys)) { reject(REJECT_AUTH); return null }
             store.put(pcId, pairKey, pcName)
-            return finish(keys, pcName, newlyPaired = true)
+            return finish(keys, pcId, pcName, newlyPaired = true)
         }
 
         val known = if (forcePair) null else store.key(pcId)
@@ -85,7 +92,7 @@ class WifiHandshake(
             send(TYPE_SERVER_HELLO, phoneId + phonePub + nph + byteArrayOf(MODE_PAIRED) + name(phoneName))
             val keys = WifiCrypto.sessionKeys(z, known, npc, nph)
             if (!finishedFromPc(keys)) { reject(REJECT_AUTH); return null }
-            return finish(keys, pcName, newlyPaired = false)
+            return finish(keys, pcId, pcName, newlyPaired = false)
         }
 
         // Pairing: commit to Nb before seeing Na, so nobody in between can steer the code.
@@ -109,7 +116,10 @@ class WifiHandshake(
         if (watch.gone) throw IOException("the PC hung up while pairing")
         if (!allowed) { reject(REJECT_REFUSED); return null }
         store.put(pcId, pairKey, pcName)
-        return finish(keys, pcName, newlyPaired = true)
+        // The user compared the code and tapped Allow, which is consent for this PC to use the camera. A QR
+        // pairing has no such moment, so it does not set this and the phone asks once, after connecting.
+        store.allowCamera(pcId)
+        return finish(keys, pcId, pcName, newlyPaired = true)
     }
 
     private fun finishedFromPc(keys: ByteArray): Boolean {
@@ -118,14 +128,14 @@ class WifiHandshake(
         return MessageDigest.isEqual(expected, got)
     }
 
-    private fun finish(keys: ByteArray, pcName: String, newlyPaired: Boolean): Result {
+    private fun finish(keys: ByteArray, pcId: ByteArray, pcName: String, newlyPaired: Boolean): Result {
         val mac = WifiCrypto.finished(keys.copyOfRange(64, 96), "PH", transcriptSoFar())
         send(TYPE_PHONE_FINISHED, mac, addToTranscript = false)
         socket.soTimeout = 0
         return Result(
             SecureInputStream(socket.getInputStream(), keys.copyOfRange(0, 32), WifiCrypto.DIR_PC_TO_PHONE),
             SecureOutputStream(socket.getOutputStream(), keys.copyOfRange(32, 64), WifiCrypto.DIR_PHONE_TO_PC),
-            pcName, newlyPaired,
+            pcName, newlyPaired, pcId,
         )
     }
 
@@ -248,17 +258,32 @@ class PairedPcs(private val prefs: SharedPreferences) {
         .map { (k, v) -> PairedPc(k.removePrefix(PREFIX), (v as String).substringAfter('|')) }
         .sortedBy { it.name.lowercase() }
 
+    /**
+     * Whether this PC may turn the camera on. Pairing settles that the two sides share a key; it does not
+     * settle that the person holding the phone wanted *this* PC to be able to watch. A PC that hasn't been
+     * allowed yet still gets a session, with the camera off, and the phone asks once. A key stored before
+     * this flag existed reads as not allowed, so an already-paired PC is asked for the first time too.
+     */
+    fun cameraAllowed(pcId: ByteArray): Boolean = prefs.getBoolean(ALLOW_PREFIX + hex(pcId), false)
+
+    fun allowCamera(pcId: ByteArray) {
+        prefs.edit { putBoolean(ALLOW_PREFIX + hex(pcId), true) }
+    }
+
     /** Forgets one PC (by [PairedPc.id]): it has to pair again, with a code, next time. */
     fun forget(id: String) {
-        prefs.edit { remove(PREFIX + id) }
+        prefs.edit { remove(PREFIX + id); remove(ALLOW_PREFIX + id) }
     }
 
     fun forgetAll() {
-        prefs.edit().apply { prefs.all.keys.filter { it.startsWith(PREFIX) }.forEach { remove(it) } }.apply()
+        prefs.edit().apply {
+            prefs.all.keys.filter { it.startsWith(PREFIX) || it.startsWith(ALLOW_PREFIX) }.forEach { remove(it) }
+        }.apply()
     }
 
     companion object {
         private const val PREFIX = "paired_pc_"
+        private const val ALLOW_PREFIX = "cam_ok_"
         private fun hex(b: ByteArray) = b.joinToString("") { "%02x".format(it) }
 
         /** This phone's random id, made once. */
