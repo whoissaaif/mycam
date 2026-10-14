@@ -181,7 +181,7 @@ void ShowMenu(HWND hwnd) {
     const LinkStatus s = CurrentStatus();
     const StatusView view = DescribeStatus(s, g_vcamOk);
     HMENU menu = CreatePopupMenu();
-    // The status line comes first (redesign.md §8.5), then the window.
+    // The status line comes first (docs/redesign.md §8.5), then the window.
     std::wstring status = L"MyCam: " + view.headline;
     for (size_t at = 0; (at = status.find(L'&', at)) != std::wstring::npos; at += 2) status.insert(at, 1, L'&');
     AppendMenuW(menu, MF_STRING | MF_GRAYED, kMenuStatus, status.c_str());

@@ -9,7 +9,7 @@ import androidx.compose.runtime.ReadOnlyComposable
 import io.github.whoissaaif.mycam.ui.theme.LocalReducedMotion
 
 /**
- * One timing system for the whole phone app (redesign-v2.md section 12): three durations on one ease-out
+ * One timing system for the whole phone app (docs/redesign-v2.md section 12): three durations on one ease-out
  * curve, nothing longer than 300 ms, and everything instant under reduced motion. Only opacity and
  * transform are ever animated, so a transition can be interrupted and retarget from where it is.
  */

@@ -1,8 +1,9 @@
 # MyCam: progress log
 
 How the project got from an idea to v1.3.3 and a working encrypted Wi-Fi beta, what was learned on the way,
-and where it stands now. [TASKS.md](TASKS.md) is the live to-do list. [IMPROVEMENTS.md](IMPROVEMENTS.md)
-holds the detail behind each item, and [ISSUES.md](ISSUES.md) records problems found in logs.
+and where it stands now. [TASKS.md](../TASKS.md) is the live to-do list. [IMPROVEMENTS.md](../IMPROVEMENTS.md)
+holds the detail behind each item, and open problems are tracked as
+[GitHub Issues](https://github.com/whoissaaif/mycam/issues).
 
 ---
 
@@ -27,7 +28,7 @@ holds the detail behind each item, and [ISSUES.md](ISSUES.md) records problems f
   - **Install:** no admin prompt for new phones after install; Aero design on both sides; installer; clean
     install verified.
 - **Open issues:**
-  - 4K decoding runs on the CPU, inside the USB/network read loop (ISSUES.md 1).
+  - 4K decoding runs on the CPU, inside the USB/network read loop ([issue #8](https://github.com/whoissaaif/mycam/issues/8)).
   - USB debugging stops MyCam from connecting over USB.
   - Three Wi-Fi tests remain before merging (section 15).
 
@@ -137,7 +138,7 @@ Sandbox couldn't be used because CPU virtualization is off in the firmware.
   were duplicated. 30 fps streams went out at about 42 fps.
 - **Adaptive-bitrate fixes:**
   - The bitrate maths overflowed `Int` at 4K. It now uses Long arithmetic.
-  - The ceiling could drop below the floor and pin quality at 2 Mbps; ISSUES.md caught this. The ceiling now
+  - The ceiling could drop below the floor and pin quality at 2 Mbps; [issue #8](https://github.com/whoissaaif/mycam/issues/8) caught this. The ceiling now
     expires after 30 s and never goes below 4 Mbps.
 - **PC settings window:** 30/60/120 buttons, a gap between the quality and frame-rate rows, the "Now: …" line
   on its own row, and a Win7-style minimize button.
@@ -227,7 +228,7 @@ Sandbox couldn't be used because CPU virtualization is off in the firmware.
 
 1. Finish the Wi-Fi tests (cable takeover, 60/120 fps and 4K over Wi-Fi, a busy network), then merge
    `wireless` into `main` and release 1.4.0.
-2. Decode on a separate thread, and on the GPU for 4K (ISSUES.md 1).
+2. Decode on a separate thread, and on the GPU for 4K ([issue #8](https://github.com/whoissaaif/mycam/issues/8)).
 3. MyCam with USB debugging on: bind WinUSB to the accessory's composite interface.
 4. Remaining test scenarios: notification pause, pause across a replug, PC sleep, companion crash, two
    phones, battery saver.

@@ -146,7 +146,7 @@ error (red). 16–256 px, DPI-aware.
 ### 5.2 Settings window (M): ✅
 Aero window (Direct2D): glass title bar, live status with a LIVE pill, Pause / Resume, back/front camera,
 mirror, start with Windows, reconnect, open log folder. Keyboard: Tab / arrows, Space / Enter, Esc.
-- ⏳ Screen readers: a UI Automation provider (`uia_provider.cpp`, redesign.md §8.4) gives one fragment per
+- ⏳ Screen readers: a UI Automation provider (`uia_provider.cpp`, docs/redesign.md §8.4) gives one fragment per
   element of `ui_model.h` (Invoke, Toggle, Selection / SelectionItem per radio set, ExpandCollapse, read-only
   RangeValue) and makes the status headline and sentence live regions. Checked with `pc/tools/uia_dump`
   (`-DMYCAM_BUILD_TOOLS=ON`); still to try with Narrator itself.
@@ -183,7 +183,7 @@ The owner moved the look from Win7 Aero (the 2026-10-09 decision) to **Windows X
 - a sunny "hills and sky" pause picture. The photo in the local `inspo/` folder is a reference only; the
   scene is painted by script.
 
-The full spec, findings and roadmap are in [redesign.md](redesign.md).
+The full spec, findings and roadmap are in [redesign.md](docs/redesign.md).
 
 ### 7.2 Style guide (S): ✅ [design/STYLE.md](design/STYLE.md)
 The tokens live in `app/.../ui/theme/Color.kt`, `pc/companion/xp_draw.cpp` and `design/tools/luna_draw.ps1`.

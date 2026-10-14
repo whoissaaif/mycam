@@ -1,5 +1,5 @@
 #pragma once
-// UI Automation provider for the custom-drawn companion windows (redesign.md §8.4, W2). One UIA fragment
+// UI Automation provider for the custom-drawn companion windows (docs/redesign.md §8.4, W2). One UIA fragment
 // per ui::Element (ui_model.h), hierarchical by Element::parent; each radio set gets a synthetic container
 // with the Selection pattern. Used by the settings window and the pairing dialog.
 //

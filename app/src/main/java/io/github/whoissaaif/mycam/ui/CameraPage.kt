@@ -51,7 +51,7 @@ import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
- * Camera (redesign-v2.md 3.6): the live preview, Front / Back, and the three stat tiles.
+ * Camera (docs/redesign-v2.md 3.6): the live preview, Front / Back, and the three stat tiles.
  *
  * The preview is a second output of the running capture session (6.1), so it never changes what the PC
  * receives. It is off while the screen is dimmed, off in the background, and it turns itself off when the

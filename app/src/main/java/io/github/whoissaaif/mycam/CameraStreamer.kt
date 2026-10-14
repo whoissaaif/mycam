@@ -102,7 +102,7 @@ class CameraStreamer(
     private var iso = 0
     private var fpsModes = IntArray(3) // Per quality (720p, 1080p, 4K): Protocol.FPS_* bits that work.
 
-    // The phone's own preview (redesign-v2.md 6.1): a second, deferred output of the same session, so the
+    // The phone's own preview (docs/redesign-v2.md 6.1): a second, deferred output of the same session, so the
     // encoder stream never changes and the camera is never restarted. Owned by the camera thread.
     private var previewSize: Size? = null
     private var previewConfig: OutputConfiguration? = null  // API 28+, created with the session.

@@ -2,7 +2,7 @@
 // The element model of the custom-drawn companion windows. Every interactive (and every informative)
 // thing on screen is one Element with a stable id, a kind, an accessible name, a rectangle, its state and
 // its parent group. The windows rebuild this list on every layout; keyboard navigation (W9) works on it,
-// and a UI Automation provider (W2, redesign.md §8.4) can be layered on top of it without touching the
+// and a UI Automation provider (W2, docs/redesign.md §8.4) can be layered on top of it without touching the
 // drawing code: one UIA fragment per Element, Groups as ExpandCollapse, Radios as SelectionItem (their
 // radioSet is the Selection container), Checkboxes as Toggle, Buttons/Links as Invoke, the status
 // headline as a live region.
@@ -30,7 +30,7 @@ enum class Kind {
     Text,           // Static text (status headline, sentence, values). UIA: Text.
     Image,          // The live preview. UIA: Image.
     ProgressBar,    // The green XP bar. UIA: ProgressBar (+ RangeValue when determinate).
-    // redesign-v2.md §4: the flat component kit of the v2 shell.
+    // docs/redesign-v2.md §4: the flat component kit of the v2 shell.
     Nav,            // Sidebar page item. UIA: TabItem + SelectionItem (radioSet kSetNav is its container).
     Dropdown,       // Combo box. UIA: ComboBox + ExpandCollapse + Selection; its DropItems are its children.
     DropItem,       // One entry of a Dropdown (its parent). UIA: ListItem + SelectionItem.
@@ -44,7 +44,7 @@ enum Id : int {
     kNone = 0,
     // Window chrome.
     kCaptionMin = 1, kCaptionClose = 2,
-    // Sidebar navigation: one page each (redesign-v2.md §2.1).
+    // Sidebar navigation: one page each (docs/redesign-v2.md §2.1).
     kNavHome = 10, kNavDevices = 11, kNavCamera = 12, kNavSettings = 13, kNavAbout = 14,
     // Task pane groups.
     kGroupNow = 100, kGroupCamera = 101, kGroupVideo = 102, kGroupPicture = 103, kGroupWifi = 104, kGroupTasks = 105,
@@ -103,7 +103,7 @@ enum Id : int {
     kWebDevBase = 3100, kWebDevStride = 10, kWebDevMax = 16,
 };
 
-// The pages of the v2 shell (redesign-v2.md §2). Pairing has no nav item: the window shows it while a
+// The pages of the v2 shell (docs/redesign-v2.md §2). Pairing has no nav item: the window shows it while a
 // phone is pairing and returns to the page the user was on when the code is gone.
 enum class Page : int { Home = 0, Devices = 1, Camera = 2, Settings = 3, About = 4, Pairing = 5, IPhone = 6, Count = 7 };
 
@@ -186,7 +186,7 @@ inline bool IsSetItem(Kind k) { return k == Kind::Radio || k == Kind::Nav; }
 
 // --- Dropdowns (combo boxes) ---------------------------------------------------------------------
 // A Dropdown's entries are the DropItems whose parent is the dropdown, in layout order. Entries the
-// phone cannot do stay in the list but are disabled (redesign-v2.md §10.3), so stepping skips them.
+// phone cannot do stay in the list but are disabled (docs/redesign-v2.md §10.3), so stepping skips them.
 
 inline std::vector<int> DropdownItems(const std::vector<Element>& list, int dropdown) {
     std::vector<int> out;

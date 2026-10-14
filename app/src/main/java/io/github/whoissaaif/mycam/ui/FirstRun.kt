@@ -80,7 +80,7 @@ object FirstRun {
 }
 
 /**
- * First run (A9, redesign.md 5.7): three cards over the sunny hills, shown once (see [FirstRun]).
+ * First run (A9, docs/redesign.md 5.7): three cards over the sunny hills, shown once (see [FirstRun]).
  * [onDone] hides them (Skip, or Got it on the last card).
  */
 @Composable

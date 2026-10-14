@@ -1,5 +1,5 @@
 #pragma once
-// The XP-styled pairing dialog (redesign.md §8.3, W4): the phone's name, the 6-digit code in Trebuchet MS
+// The XP-styled pairing dialog (docs/redesign.md §8.3, W4): the phone's name, the 6-digit code in Trebuchet MS
 // Bold 24 pt (never truncated; the name gets the ellipsis), a green determinate bar counting down the
 // time the phone gives its user, and Allow / "Don't allow" (1.5: a code pairing needs this PC's user too;
 // "Don't allow" makes the PC refuse it). It opens when a pairing code appears and closes when the pairing

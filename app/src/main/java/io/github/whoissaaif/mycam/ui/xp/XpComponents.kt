@@ -107,7 +107,7 @@ import io.github.whoissaaif.mycam.ui.theme.LocalReducedMotion
 import io.github.whoissaaif.mycam.ui.theme.V2
 import io.github.whoissaaif.mycam.ui.theme.Xp
 
-// Windows XP "Luna" building blocks for Compose (redesign.md sections 3 and 6). Drawn from scratch: XP is the
+// Windows XP "Luna" building blocks for Compose (docs/redesign.md sections 3 and 6). Drawn from scratch: XP is the
 // inspiration, nothing of Microsoft's is shipped. The PC window draws the same parts with Direct2D.
 
 /** Duration helper: [ms] normally, 0 when reduced motion is on. */
@@ -163,7 +163,7 @@ val TitleTextShadow = Shadow(Xp.TitleShadow, Offset(2f, 2f), 1f)
 val SkyTextShadow = Shadow(Xp.TitleShadow.copy(alpha = 0.85f), Offset(0f, 2f), 10f)
 
 /**
- * The XP Luna caption (redesign.md 3.2): a light gloss band at the top with a 1 dp highlight line, deepening
+ * The XP Luna caption (docs/redesign.md 3.2): a light gloss band at the top with a 1 dp highlight line, deepening
  * to the main blue, then a darker bottom edge. [captionTop] is where the caption starts (below the status bar).
  */
 private fun DrawScope.drawTitleBar(captionTop: Float = 0f) {
@@ -902,7 +902,7 @@ fun XpDialogFrame(
             .fillMaxWidth()
             .clip(shape)
             // v2 flat kit: a white sheet, not the XP beige face. The Luna title bar stays, because the
-            // app's own header uses the same one (redesign-v2.md §4).
+            // app's own header uses the same one (docs/redesign-v2.md §4).
             .background(V2.Card)
             .drawWithContent {
                 drawContent()

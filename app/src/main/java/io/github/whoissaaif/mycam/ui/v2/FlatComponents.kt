@@ -66,7 +66,7 @@ import io.github.whoissaaif.mycam.ui.theme.LocalReducedMotion
 import io.github.whoissaaif.mycam.ui.theme.V2
 import io.github.whoissaaif.mycam.ui.xp.rememberTick
 
-// The v2 flat component kit (redesign-v2.md section 4). The XP chrome (title bar, caption, green progress
+// The v2 flat component kit (docs/redesign-v2.md section 4). The XP chrome (title bar, caption, green progress
 // chunks) stays in ui/xp; everything inside a page is built from these.
 
 val CardShape = RoundedCornerShape(10.dp)

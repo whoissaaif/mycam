@@ -121,7 +121,7 @@ const val TAB_CAMERA = 1
 const val TAB_SETTINGS = 2
 
 /**
- * MyCam's main screen: the XP Luna title bar around the v2 flat interior (redesign-v2.md sections 3 and 4),
+ * MyCam's main screen: the XP Luna title bar around the v2 flat interior (docs/redesign-v2.md sections 3 and 4),
  * with a three-item bottom navigation — Connect, Camera, Settings.
  *
  * Changing tab is a shared-axis horizontal slide following the tab order (section 12): the outgoing page

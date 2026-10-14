@@ -51,10 +51,10 @@ class MainActivity : ComponentActivity() {
     /** Settings > Phone: dim automatically while streaming (persisted). */
     private var autoDim by mutableStateOf(true)
 
-    /** First-run cards (redesign.md 5.7): until the first connection, or Skip for this launch. */
+    /** First-run cards (docs/redesign.md 5.7): until the first connection, or Skip for this launch. */
     private var firstRun by mutableStateOf(false)
 
-    /** The splash (redesign-v2.md 3.2): about a second on every launch, never on a recreation. */
+    /** The splash (docs/redesign-v2.md 3.2): about a second on every launch, never on a recreation. */
     private var splash by mutableStateOf(true)
 
     /** Settings > Preview: show the camera on this phone (persisted, default on). */
@@ -140,7 +140,7 @@ class MainActivity : ComponentActivity() {
                     window.attributes = window.attributes.apply {
                         screenBrightness = if (dimmed) DIM_BRIGHTNESS else WindowManager.LayoutParams.BRIGHTNESS_OVERRIDE_NONE
                     }
-                    // No preview surface runs behind the Dim screen (redesign-v2.md 6.1); waking brings it back.
+                    // No preview surface runs behind the Dim screen (docs/redesign-v2.md 6.1); waking brings it back.
                     updatePreviewVisible()
                 }
                 // The first successful connection ends the first-run cards for good.
@@ -189,7 +189,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onPause() {
         resumed = false
-        // Off in the background (redesign-v2.md 6.1), before the window goes away.
+        // Off in the background (docs/redesign-v2.md 6.1), before the window goes away.
         updatePreviewVisible()
         super.onPause()
     }

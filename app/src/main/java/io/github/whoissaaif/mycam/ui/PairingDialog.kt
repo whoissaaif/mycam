@@ -66,7 +66,7 @@ import java.util.Locale
 
 /**
  * A modal layer: a 40 % dim over the (blurred, see WebcamScreen) screen and a dialog that fades in and rises
- * 16 dp (redesign.md 6.2 / 6.3). Touches never reach the screen behind.
+ * 16 dp (docs/redesign.md 6.2 / 6.3). Touches never reach the screen behind.
  */
 @Composable
 fun ModalLayer(visible: Boolean, content: @Composable () -> Unit) {
@@ -91,7 +91,7 @@ fun ModalLayer(visible: Boolean, content: @Composable () -> Unit) {
 }
 
 /**
- * Pairing a new PC over Wi-Fi (A3, redesign.md 5.5): the code in big digits, a green bar counting down the
+ * Pairing a new PC over Wi-Fi (A3, docs/redesign.md 5.5): the code in big digits, a green bar counting down the
  * handshake timeout, Don't allow and Allow (the default button). When the time runs out it says so.
  */
 @Composable
@@ -150,7 +150,7 @@ private fun PairingBody(pcName: String, code: String, deadline: Long, onAnswer: 
     val remaining = if (deadline == 0L) total else (deadline - now).coerceIn(0L, total)
     val seconds = ((remaining + 999) / 1000).toInt()
 
-    // The mockup's monitor illustration (redesign-v2.md 3.5); the wording stays "Don't allow / Allow",
+    // The mockup's monitor illustration (docs/redesign-v2.md 3.5); the wording stays "Don't allow / Allow",
     // which is Android's own language for this question (section 10.4).
     MonitorIllustration(Modifier.fillMaxWidth().height(96.dp))
     Spacer(Modifier.height(12.dp))

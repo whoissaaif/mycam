@@ -26,15 +26,15 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 
 - [~] Dim the phone screen while streaming, with a heat warning [4.1]: built, test on the phone
 - [x] Write `design/STYLE.md` [7.2]
-- [~] Windows XP redesign (branch `xp-redesign`, redesign.md) [7]: phone app, PC window + preview + pairing dialog, logo, hills pictures, waiting marquee built
+- [~] Windows XP redesign (branch `xp-redesign`, docs/redesign.md) [7]: phone app, PC window + preview + pairing dialog, logo, hills pictures, waiting marquee built
   - [ ] Test on the phone over USB and Wi-Fi (pairing dialog, countdown, per-PC forget, first run, dim screen)
   - [ ] Test the PC window with a real phone; check high contrast and reduced motion by eye
   - [ ] Narrator pass on the PC window (UI Automation)
-  - [~] "Scan for phones" on the PC (redesign.md §8.6): one-shot 6 s Wi-Fi scan, results with Connect, tray item; checked with demos, `uia_dump` and a real phone; Narrator pass to do
+  - [~] "Scan for phones" on the PC (docs/redesign.md §8.6): one-shot 6 s Wi-Fi scan, results with Connect, tray item; checked with demos, `uia_dump` and a real phone; Narrator pass to do
   - [ ] Release APK test (R8) before publishing
   - [~] First-run guide shown only once (persist on Skip, "Got it" or first connection)
   - [~] "Scan for PCs" (phone) and "Scan for phones" (PC) buttons
-- [ ] Designer mockup pass: sidebar nav, cards, dropdowns/toggles/sliders, splash, QR pairing ([redesign-v2.md](redesign-v2.md)) [7]
+- [ ] Designer mockup pass: sidebar nav, cards, dropdowns/toggles/sliders, splash, QR pairing ([redesign-v2.md](docs/redesign-v2.md)) [7]
 - [~] Redesign fixes from the owner's first pass (2026-10-11), all built; test on the phone and the PC:
   - [x] Phone: a finished scan that found nothing no longer says "Devices found"
   - [x] Phone: tapping a PC in Find Devices asks it to connect, so a pairing starts from either screen
@@ -132,7 +132,7 @@ run `installer\build.ps1` and `gradlew assembleDebug`, commit, tag `vX.Y.Z`, pus
 | 2026-10-09 | Transport: Android Open Accessory (no Developer Options) + Windows 11 virtual camera |
 | 2026-10-09 | UsbDk only switches the phone into accessory mode; streaming uses Windows' WinUSB driver |
 | 2026-10-09 | Design language: Windows 7 Aero (option A) |
-| 2026-10-10 | Design language changed to **Windows XP, Luna Blue only**, no dark mode; DejaVu Sans on the phone; new "Snap" camera logo (not an eye); preview on the PC only; original hills art (the photo in `inspo/` is a reference only) (redesign.md) |
+| 2026-10-10 | Design language changed to **Windows XP, Luna Blue only**, no dark mode; DejaVu Sans on the phone; new "Snap" camera logo (not an eye); preview on the PC only; original hills art (the photo in `inspo/` is a reference only) (docs/redesign.md) |
 | 2026-10-09 | The phone owns the pause state; Windows-lock pause is PC-only and never undoes a user pause |
 | 2026-10-09 | License: MIT. Repo private on `whoissaaif`. `inspo/` (Microsoft artwork) never committed |
 | 2026-10-09 | Commits use the GitHub no-reply email |

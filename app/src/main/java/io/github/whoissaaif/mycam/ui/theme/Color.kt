@@ -2,7 +2,7 @@ package io.github.whoissaaif.mycam.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Windows XP "Luna Blue" design tokens (redesign.md section 3.2), tuned for contrast. Shared in spirit with
+// Windows XP "Luna Blue" design tokens (docs/redesign.md section 3.2), tuned for contrast. Shared in spirit with
 // the PC window (pc/companion/settings_window.cpp), so both apps look like one product.
 // Inspiration only: everything is drawn from scratch, no Microsoft artwork.
 object Xp {
@@ -109,7 +109,7 @@ object Xp {
 }
 
 /**
- * The v2 flat interior (redesign-v2.md section 4): XP chrome on the outside, a clean modern app inside.
+ * The v2 flat interior (docs/redesign-v2.md section 4): XP chrome on the outside, a clean modern app inside.
  * White cards on a near-white page, one blue accent, flat line icons. Every pair here is WCAG AA:
  * white on [Blue] is 4.6 : 1, [Text] on [Page] is 15 : 1, [Subtle] on [Card] is 5.9 : 1,
  * [Subtle] on [Page] is 5.6 : 1 and [Disabled] on [Card] is 4.6 : 1.

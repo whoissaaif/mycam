@@ -1,5 +1,5 @@
 #pragma once
-// Windows XP "Luna Blue" drawing kit for the companion's custom-drawn windows (redesign.md §3, §6).
+// Windows XP "Luna Blue" drawing kit for the companion's custom-drawn windows (docs/redesign.md §3, §6).
 //
 // Surface: an ID2D1DeviceContext on a DXGI flip-model swap chain shown through DirectComposition, so the
 // window can have transparent rounded top corners (the XP silhouette) and use Direct2D effects (Gaussian
@@ -90,7 +90,7 @@ private:
 
 // --- Text ---------------------------------------------------------------------------------------------
 
-// Body text is Segoe UI (redesign-v2.md §4); only the window caption keeps Trebuchet MS Bold, so the XP
+// Body text is Segoe UI (docs/redesign-v2.md §4); only the window caption keeps Trebuchet MS Bold, so the XP
 // chrome still reads as XP while the interior is a clean modern app.
 enum class Font {
     Body,        // Segoe UI 9 pt
@@ -111,7 +111,7 @@ struct Palette {
     D2D1_COLOR_F surface, text, subtle, disabledText, link, linkHot, selection, selectionText;
     D2D1_COLOR_F paneTop, paneBottom, groupBody, groupBorder, groupTitle, heroTitle;
     D2D1_COLOR_F frame, focus, card;
-    // v2 flat kit (redesign-v2.md §4).
+    // v2 flat kit (docs/redesign-v2.md §4).
     D2D1_COLOR_F accent, accentHot, accentDown, accentText; // Flat blue #1E6FE8 -> #1760D0, white text.
     D2D1_COLOR_F pageBg, navBg, cardBorder, ctlFill, ctlBorder, ctlHotBorder, trackOff, trackOffBorder;
 };
@@ -130,7 +130,7 @@ struct Stop {
 struct ButtonState {
     bool hot = false, pressed = false, disabled = false, focused = false, isDefault = false;
     // How pressed the flat components look, 0..1. The press itself is immediate (`pressed`); the release
-    // eases back to 0 (redesign-v2.md §12.5), so the window hands the fading value in here.
+    // eases back to 0 (docs/redesign-v2.md §12.5), so the window hands the fading value in here.
     float press = 0;
 };
 
@@ -141,7 +141,7 @@ enum class Chevron { None, Up, Down };
 // Flat v2 buttons: a blue primary, a white secondary with a grey border, and a borderless one.
 enum class FlatStyle { Primary, Secondary, Ghost };
 
-// Flat line icons, 1.5 px stroke (redesign-v2.md §4). Drawn, never bitmaps, so they stay crisp at any DPI
+// Flat line icons, 1.5 px stroke (docs/redesign-v2.md §4). Drawn, never bitmaps, so they stay crisp at any DPI
 // and follow the ink colour. The app's own mark is never drawn here: it comes from the generated icons
 // (§11), which the window loads with LoadIconBitmap.
 enum class Glyph { Home, Devices, Camera, Settings, About, Usb, Wifi, Phone, Refresh, Monitor, Pause, Play };
@@ -196,7 +196,7 @@ public:
     void FocusRect(const Box& b);
     void SunkenFrame(const Box& b);
 
-    // --- v2 flat components (redesign-v2.md §4) -----------------------------------------------------
+    // --- v2 flat components (docs/redesign-v2.md §4) -----------------------------------------------------
     void RoundRect(const Box& b, float radius, D2D1_COLOR_F fill);
     void RoundFrame(const Box& b, float radius, D2D1_COLOR_F line, float width = 1.f);
     // White card: 1 px #E3E8EF border, radius 10, soft shadow under it.
@@ -242,7 +242,7 @@ private:
 // Loads an icon resource at an exact pixel size as a D2D bitmap.
 ComPtr<ID2D1Bitmap> LoadIconBitmap(ID2D1DeviceContext* dc, int resourceId, int px);
 
-// Accessibility settings that change how the windows draw (redesign.md §6.3, §8.4).
+// Accessibility settings that change how the windows draw (docs/redesign.md §6.3, §8.4).
 bool ReducedMotion();       // SPI_GETCLIENTAREAANIMATION is off.
 bool HighContrastOn();      // SPI_GETHIGHCONTRAST.
 bool KeyboardCuesAlways();  // SPI_GETKEYBOARDCUES: always underline access keys.

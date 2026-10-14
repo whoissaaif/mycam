@@ -1,5 +1,5 @@
 #pragma once
-// The MyCam main window, drawn in the Windows XP "Luna" style (redesign.md §8): an XP task pane on the
+// The MyCam main window, drawn in the Windows XP "Luna" style (docs/redesign.md §8): an XP task pane on the
 // left (status and Pause, then collapsible Camera / Video / Picture / Wi-Fi groups and task links), the
 // live preview with the camera controls on the right. Direct2D device context + DirectComposition
 // (xp_draw.h), a small layout engine (ui_layout.h) and an element model (ui_model.h) that keyboard

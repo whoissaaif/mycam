@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Guidance for Claude Code sessions in this repo. Read [PROGRESS.md](PROGRESS.md) for history,
+Guidance for Claude Code sessions in this repo. Read [PROGRESS.md](docs/PROGRESS.md) for history,
 [TASKS.md](TASKS.md) for what's next, and [IMPROVEMENTS.md](IMPROVEMENTS.md) for the reasoning behind each item.
 
 ## What this is
@@ -144,7 +144,7 @@ at 4K.
 
 ## Design language: Windows XP (Luna Blue)
 
-Decided 2026-10-10; it replaces the earlier Win7 Aero look. The spec is [redesign.md](redesign.md), and the tokens
+Decided 2026-10-10; it replaces the earlier Win7 Aero look. The spec is [redesign.md](docs/redesign.md), and the tokens
 and components are in [design/STYLE.md](design/STYLE.md).
 - **What it looks like:** Luna title bar, XP task panes with collapsible groups, green checks and radio dots,
   the segmented green progress bar, and the "Snap" camera logo (a friendly compact camera whose lens shows hills,

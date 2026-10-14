@@ -40,7 +40,7 @@ import io.github.whoissaaif.mycam.ui.xp.XpButton
 import io.github.whoissaaif.mycam.ui.xp.XpProgressBar
 
 /**
- * "Scan for PCs" (redesign.md 5.4): a push button, the green marquee while the phone listens for PC probes
+ * "Scan for PCs" (docs/redesign.md 5.4): a push button, the green marquee while the phone listens for PC probes
  * (6 s), then the PCs it heard with their status. When wireless mode is off the button says "Turn on and
  * scan", because pressing it turns wireless mode on. The status line is a polite live region, so TalkBack
  * announces "Looking…" and then the result. [showAddress] adds this phone's IP to "No PC found" where no

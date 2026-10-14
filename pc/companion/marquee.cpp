@@ -13,7 +13,7 @@ int Scale(int v, uint32_t actual, int ref) { return int(lround(double(v) * actua
 
 struct Rgb { double r, g, b; };
 
-// Progress chunk gradient (redesign.md §3): #E2F8E2 -> #6FD86F (45 %) -> #2DB52D (55 %) -> #5ACD5A.
+// Progress chunk gradient (docs/redesign.md §3): #E2F8E2 -> #6FD86F (45 %) -> #2DB52D (55 %) -> #5ACD5A.
 Rgb ChunkColor(double f) {
     struct Stop { double at; Rgb c; };
     static const Stop stops[] = {

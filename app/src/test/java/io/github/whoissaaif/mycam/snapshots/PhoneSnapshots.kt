@@ -132,7 +132,7 @@ class PhoneSnapshots {
     @Test fun heatWarning() = shot("12-streaming-heat") { WebcamScreen(streaming.copy(thermal = 2)) }
     @Test fun error() = shot("13-error") { WebcamScreen(UiState(connected = true, error = "The camera is in use by another app.")) }
 
-    // Scan for PCs (redesign.md 5.4): Now while listening (with the marquee), Settings with results, Now with none.
+    // Scan for PCs (docs/redesign.md 5.4): Now while listening (with the marquee), Settings with results, Now with none.
     private val scanBase = UiState(wirelessOn = true, wirelessAddress = "192.168.1.23", pairedPcs = listOf(PairedPc("a1", "DESKTOP-ABC")))
 
     @Test fun scanning() = shot("15-scan-scanning", reduced = false) {

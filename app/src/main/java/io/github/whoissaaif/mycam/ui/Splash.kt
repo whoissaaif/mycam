@@ -46,7 +46,7 @@ import androidx.compose.animation.core.tween
 import kotlinx.coroutines.delay
 
 /**
- * The splash (redesign-v2.md 3.2): the hills photo, the app mark, the name and one line, with a blue
+ * The splash (docs/redesign-v2.md 3.2): the hills photo, the app mark, the name and one line, with a blue
  * Get Started. It shows on every launch for about a second, never blocks, and a tap anywhere skips it.
  *
  * [SplashGate] is also the splash → Connect transition (section 12): the splash content fades and lifts

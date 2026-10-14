@@ -221,7 +221,7 @@ Write-Host 'wrote Android launcher, vector and status icons'
 
 # --- Preview sheet --------------------------------------------------------------------------------
 # Top: every tray / app state at every size. Bottom: every surface the mark appears on, side by side,
-# so the audit in redesign-v2.md section 11 is one look at one picture.
+# so the audit in docs/redesign-v2.md section 11 is one look at one picture.
 function Zoom($bmp, [int]$f) {
     $o, $g = New-Canvas ($bmp.Width * $f) ($bmp.Height * $f)
     $g.InterpolationMode = 'NearestNeighbor'; $g.PixelOffsetMode = 'Half'
@@ -315,7 +315,7 @@ for ($row = 0; $row -lt $states.Count; $row++) {
     foreach ($b in $rendered[$st]) { if ($b.Width -in 16, 24, 32) { $g.DrawImage($b, $x, $y0, $b.Width * 4, $b.Height * 4); $x += $b.Width * 4 + 16 } }
     $g.InterpolationMode = 'HighQualityBicubic'; $g.PixelOffsetMode = 'HighQuality'
 }
-# Every surface, side by side (redesign-v2.md section 11).
+# Every surface, side by side (docs/redesign-v2.md section 11).
 $titleFont = New-Object System.Drawing.Font('Trebuchet MS', 20, [System.Drawing.FontStyle]::Bold, [System.Drawing.GraphicsUnit]::Pixel)
 $y0 = $rowH * $states.Count
 $g.DrawString('Every surface the mark appears on', $titleFont, $ink, 10, $y0 + 6)

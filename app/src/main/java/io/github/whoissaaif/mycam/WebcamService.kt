@@ -249,7 +249,7 @@ class WebcamService : Service() {
         paused = prefs.getBoolean(PREF_PAUSED, false)
         camSettings = loadCameraSettings(prefs)
         _state.update { UiState(facing = facing, paused = paused, camera = camSettings, pairedPcs = pairedPcs.list()) }
-        // The phone's own preview (redesign-v2.md 6.1): the screen hands over a surface, this thread hands it
+        // The phone's own preview (docs/redesign-v2.md 6.1): the screen hands over a surface, this thread hands it
         // to the running capture session. The streamer decides whether the mode can carry it.
         PhonePreview.setOn(prefs.getBoolean(PREF_PREVIEW, true))
         PhonePreview.onTargetChanged = { surface -> camera.post { streamer?.setPreviewSurface(surface) } }
@@ -1160,7 +1160,7 @@ class WebcamService : Service() {
         const val EXTRA_PC_ID = "pc_id"
         /** Dim the screen automatically while streaming (Settings > Phone). */
         const val PREF_AUTO_DIM = "auto_dim"
-        /** The phone's own live preview (redesign-v2.md 6.1). Default on. */
+        /** The phone's own live preview (docs/redesign-v2.md 6.1). Default on. */
         const val PREF_PREVIEW = "preview"
         /** Set after the first successful connection: the first-run cards stop showing. */
         const val PREF_FIRST_RUN_DONE = "first_run_done"

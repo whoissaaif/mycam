@@ -44,7 +44,7 @@ import io.github.whoissaaif.mycam.ui.v2.SecondaryButton
 import io.github.whoissaaif.mycam.ui.xp.XpProgressBar
 
 /**
- * Find Devices (redesign-v2.md 3.4): a radar with a constant-speed sweep and a dot per PC found, the
+ * Find Devices (docs/redesign-v2.md 3.4): a radar with a constant-speed sweep and a dot per PC found, the
  * heading, the hint, then the devices with their name and address.
  *
  * Reduced motion keeps the radar but stops the sweep, and shows the green XP marquee instead (section

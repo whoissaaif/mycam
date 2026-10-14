@@ -9,7 +9,7 @@ import androidx.compose.ui.unit.sp
 import io.github.whoissaaif.mycam.R
 
 // DejaVu Sans (Bitstream Vera licence + public-domain changes; assets/licenses/DejaVu-LICENSE.txt).
-// Condensed has Tahoma-like proportions for the XP look (redesign.md section 3.3).
+// Condensed has Tahoma-like proportions for the XP look (docs/redesign.md section 3.3).
 val DejaVuCondensed = FontFamily(
     Font(R.font.dejavu_sans_condensed, FontWeight.Normal),
     Font(R.font.dejavu_sans_condensed_bold, FontWeight.Bold),

@@ -38,7 +38,7 @@ import io.github.whoissaaif.mycam.ui.xp.LivePill
 import kotlinx.coroutines.delay
 
 /**
- * The screen shown while streaming once the phone has been left alone (IMPROVEMENTS.md 4.1, redesign.md
+ * The screen shown while streaming once the phone has been left alone (IMPROVEMENTS.md 4.1, docs/redesign.md
  * 5.6): the hills at night. Nearly black, so it runs cooler and shows nothing private. The activity wakes
  * it on any touch. Nothing animates except the burn-in drift.
  */

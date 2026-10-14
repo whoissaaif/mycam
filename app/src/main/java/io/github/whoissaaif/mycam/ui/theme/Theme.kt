@@ -29,7 +29,7 @@ private val LunaColorScheme = lightColorScheme(
 )
 
 /**
- * True when transitions should be instant (redesign.md section 6.3): the system animator scale is 0, or
+ * True when transitions should be instant (docs/redesign.md section 6.3): the system animator scale is 0, or
  * TalkBack's touch exploration is on. The marquee is then replaced by a static "Working…" label.
  */
 val LocalReducedMotion = staticCompositionLocalOf { false }

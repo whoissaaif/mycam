@@ -42,7 +42,7 @@ import kotlin.math.roundToInt
 private val RATES = listOf(30, 60, 120)
 
 /**
- * Settings (redesign-v2.md 3.7): the same controls as the PC's camera page, in the same order —
+ * Settings (docs/redesign-v2.md 3.7): the same controls as the PC's camera page, in the same order —
  * Resolution and Frame Rate as dropdowns, Zoom and Brightness as sliders, Auto Focus and Torch as
  * switches — plus the wireless, paired-PCs, phone and about groups.
  *

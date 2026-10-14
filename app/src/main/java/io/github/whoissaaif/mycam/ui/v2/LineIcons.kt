@@ -17,7 +17,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import io.github.whoissaaif.mycam.ui.theme.V2
 
-/** The flat line icons of the v2 interior (redesign-v2.md section 4): one 1.5 dp stroke, no fills, no gloss. */
+/** The flat line icons of the v2 interior (docs/redesign-v2.md section 4): one 1.5 dp stroke, no fills, no gloss. */
 enum class LineIcon { Qr, Search, Usb, Camera, Settings, Plug, Chevron, Monitor, Wifi, Preview, Torch, Focus }
 
 @Composable

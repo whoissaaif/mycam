@@ -1,5 +1,5 @@
 #pragma once
-// Pixel conversion for the settings window's live preview (redesign.md §8.2). Pure C++, unit-tested.
+// Pixel conversion for the settings window's live preview (docs/redesign.md §8.2). Pure C++, unit-tested.
 
 #include <stddef.h>
 #include <stdint.h>

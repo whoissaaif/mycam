@@ -1,5 +1,5 @@
 #pragma once
-// Motion helpers for the companion UI (redesign.md §6.1, §6.3): easing curves, a time-based tween and the
+// Motion helpers for the companion UI (docs/redesign.md §6.1, §6.3): easing curves, a time-based tween and the
 // XP green progress bar's chunk maths. Pure C++, unit-tested in pc/tests.
 
 #include <stdint.h>
@@ -9,7 +9,7 @@
 
 namespace mycam::ui {
 
-// One timing system (redesign-v2.md §12): short, standard and page, all on the same ease-out curve, and
+// One timing system (docs/redesign-v2.md §12): short, standard and page, all on the same ease-out curve, and
 // nothing over 300 ms. Reduced motion turns every duration into 0 (see SettingsWindow::Impl::Dur).
 constexpr float kShortMs = 120;     // Dropdown open, pressed-state release.
 constexpr float kToggleMs = 150;    // Toggle thumb and track.

@@ -11,7 +11,7 @@
     <string name="action_resume">Resume</string>
     <string name="error_open_accessory">Could not open the USB connection. Unplug and plug in again.</string>
 
-    <!-- Bottom navigation, splash and the v2 pages (redesign-v2.md section 3) -->
+    <!-- Bottom navigation, splash and the v2 pages (docs/redesign-v2.md section 3) -->
     <string name="nav_connect">Connect</string>
     <string name="nav_camera">Camera</string>
     <string name="nav_settings">Settings</string>
@@ -60,7 +60,7 @@
     <string name="scan_tap_hint">Tap a PC to connect to it. A new PC shows a code on both screens.</string>
     <string name="back">Back</string>
 
-    <!-- Live preview on the phone (redesign-v2.md 6.1) -->
+    <!-- Live preview on the phone (docs/redesign-v2.md 6.1) -->
     <string name="section_preview">Preview</string>
     <string name="preview_toggle">Show the camera on this phone</string>
     <string name="preview_toggle_detail">Off while the screen is dimmed, and when MyCam is in the background.</string>
@@ -156,7 +156,7 @@
     <string name="status_wireless_waiting">Waiting for your PC</string>
     <string name="status_wireless_waiting_detail">Over Wi-Fi. The camera turns on when an app on the PC uses MyCam.</string>
 
-    <!-- Scan for PCs (redesign.md 5.4) -->
+    <!-- Scan for PCs (docs/redesign.md 5.4) -->
     <string name="scan_button">Scan for PCs</string>
     <string name="scan_button_turn_on">Turn on and scan</string>
     <string name="scan_button_turn_on_description">Turn on Use over Wi-Fi and scan for PCs</string>
@@ -207,7 +207,7 @@
     <string name="about_licences_title">Licences</string>
     <string name="about_font">DejaVu Sans fonts</string>
 
-    <!-- First run (redesign.md 5.7) -->
+    <!-- First run (docs/redesign.md 5.7) -->
     <string name="first_skip">Skip</string>
     <string name="first_next">Next</string>
     <string name="first_done">Got it</string>

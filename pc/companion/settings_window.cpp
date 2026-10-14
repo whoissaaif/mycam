@@ -37,7 +37,7 @@ using Microsoft::WRL::ComPtr;
 namespace {
 
 // Window geometry, DIPs: 720 x 500 still fits a 720 DIP work area (CLAUDE.md). The v2 shell is two
-// columns (redesign-v2.md §2.1): a white sidebar and a content area that shows one page.
+// columns (docs/redesign-v2.md §2.1): a white sidebar and a content area that shows one page.
 constexpr float kW = 720, kH = 500;
 constexpr float kNavW = 150;
 constexpr float kPad = 16;      // Content padding.
@@ -88,7 +88,7 @@ struct DeviceRow {
     Box glyphBox, nameBox, whereBox, transportBox;
 };
 
-// A white card (redesign-v2.md §4). Cards are Elements too (UIA Group), so this is only its geometry.
+// A white card (docs/redesign-v2.md §4). Cards are Elements too (UIA Group), so this is only its geometry.
 struct CardGeo {
     int id;
     Box box;
@@ -149,7 +149,7 @@ struct SettingsWindow::Impl {
     size_t lastSignature = 0;
     float lineH = 13, smallH = 12;
 
-    // Pages (redesign-v2.md §2.1): the window is a small router.
+    // Pages (docs/redesign-v2.md §2.1): the window is a small router.
     Page page = Page::Home, returnPage = Page::Home;
     Tween pageAnim;   // 0 -> 1 while the incoming page arrives.
     Tween navPill;    // The pill's top edge, in DIPs.
@@ -266,7 +266,7 @@ struct SettingsWindow::Impl {
         applyValue = value;
     }
 
-    // Picks up a new status: crossfade, badge pop, LIVE glow (redesign.md §6.3).
+    // Picks up a new status: crossfade, badge pop, LIVE glow (docs/redesign.md §6.3).
     void UpdateStatus() {
         const uint64_t now = Now();
         const LinkStatus s = Status();
@@ -639,7 +639,7 @@ struct SettingsWindow::Impl {
     }
 
     // The status headline, its detail line, the progress bar and Pause: the mockup leaves them out and
-    // that is wrong (redesign-v2.md §10.1, §10.2), so Home keeps them.
+    // that is wrong (docs/redesign-v2.md §10.1, §10.2), so Home keeps them.
     void LayoutStatusStrip(const LinkStatus& s, uint64_t now, float x, float* y, float w) {
         const float iconW = 32;
         const Size pause = ButtonSize(model->paused() ? L"&Resume the camera" : L"&Pause the camera", 120);

@@ -1,5 +1,5 @@
 #pragma once
-// The settings window's preview tap (redesign.md §8.2). It reads the frame the companion last handed to
+// The settings window's preview tap (docs/redesign.md §8.2). It reads the frame the companion last handed to
 // the virtual camera (shared memory Global\MyCamFrame, pc/common/shared_frame.h) and renders it the way
 // the virtual camera does: rotated, mirrored and fitted or filled into 16:9. So the preview shows exactly
 // what apps receive (live video, or the Paused / animated Waiting picture), and the session loop needs no

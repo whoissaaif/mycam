@@ -1,6 +1,6 @@
 #pragma once
 // One description of the link state, shared by the tray icon/tooltip, the settings window and the pairing
-// dialog (redesign.md §2.3: one icon, one main instruction, one grey sentence).
+// dialog (docs/redesign.md §2.3: one icon, one main instruction, one grey sentence).
 
 #include <string>
 
@@ -18,7 +18,7 @@ enum TrayIconId : int {
     kIconError = 105,
 };
 
-// Progress the window shows under the status (redesign.md §6.1): never in steady states.
+// Progress the window shows under the status (docs/redesign.md §6.1): never in steady states.
 enum class StatusProgress { None, Working, Pairing };
 
 struct StatusView {

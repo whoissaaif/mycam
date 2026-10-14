@@ -54,7 +54,7 @@ import io.github.whoissaaif.mycam.ui.xp.XpProgressBar
 import io.github.whoissaaif.mycam.ui.xp.popSpring
 
 /**
- * Connect (redesign-v2.md 3.3): the status surface, then the three ways to connect.
+ * Connect (docs/redesign-v2.md 3.3): the status surface, then the three ways to connect.
  *
  * The mockup shows only the three rows. The status headline, its detail and Pause stay here (section 10.1
  * and 10.2): the status is the one thing people read at a glance, and Pause is this product's privacy

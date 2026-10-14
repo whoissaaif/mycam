@@ -9,7 +9,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 
-/** Why the phone's own preview is or isn't running (redesign-v2.md 6.1). */
+/** Why the phone's own preview is or isn't running (docs/redesign-v2.md 6.1). */
 enum class PreviewSupport {
     /** Nothing has been tried yet (no camera running). */
     Unknown,
@@ -31,7 +31,7 @@ enum class PreviewSupport {
 }
 
 /**
- * The phone's live preview (redesign-v2.md 6.1), shared between the Camera screen, the activity and the
+ * The phone's live preview (docs/redesign-v2.md 6.1), shared between the Camera screen, the activity and the
  * service.
  *
  * The screen hands over the Surface of its TextureView; the service passes it to [CameraStreamer] as a

@@ -1,6 +1,6 @@
 # MyCam style guide: Windows XP (Luna Blue)
 
-The working reference for both apps. [redesign.md](../redesign.md) explains the reasoning. This file is the
+The working reference for both apps. [redesign.md](../docs/redesign.md) explains the reasoning. This file is the
 rulebook. If the code and this file disagree, fix one of them; don't let them drift.
 
 Where the tokens live:

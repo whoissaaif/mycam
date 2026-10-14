@@ -137,7 +137,7 @@ struct PairingDialog::Impl {
             iconScale = scale;
         }
         dc->Clear(D2D1::ColorF(0, 0, 0, 0));
-        // Fades in and rises a little (redesign.md §6.3), 220 ms.
+        // Fades in and rises a little (docs/redesign.md §6.3), 220 ms.
         const bool opening = openFade.Running(now);
         if (opening) {
             const float t = openFade.Value(now, EaseOut);

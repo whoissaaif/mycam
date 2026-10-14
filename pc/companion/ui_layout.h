@@ -1,5 +1,5 @@
 #pragma once
-// A tiny row/column layout helper for the custom-drawn windows (redesign.md §8.1, W7). Coordinates are
+// A tiny row/column layout helper for the custom-drawn windows (docs/redesign.md §8.1, W7). Coordinates are
 // DIPs. Text sizes come from a measure callback (DirectWrite in the app, a fake in the tests), so the
 // layout reflows when the text size changes instead of relying on hand-typed coordinates.
 // Pure C++: no Windows dependencies, unit-tested in pc/tests.

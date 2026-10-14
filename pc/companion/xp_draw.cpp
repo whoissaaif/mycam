@@ -212,7 +212,7 @@ void Painter::SetTextScale(float textScale) {
 }
 
 void Painter::CreateFormats() {
-    // Segoe UI for the body, Trebuchet MS Bold for the window caption only (redesign-v2.md §4). Both ship
+    // Segoe UI for the body, Trebuchet MS Bold for the window caption only (docs/redesign-v2.md §4). Both ship
     // with Windows and are never shipped with MyCam; Tahoma stands in if Segoe UI is missing.
     static const FontSpec specs[int(Font::Count)] = {
         {L"Segoe UI", L"Tahoma", DWRITE_FONT_WEIGHT_NORMAL, 9.f},
@@ -381,7 +381,7 @@ void Painter::SetPalette(bool hc) {
         pal_.frame = SysColor(COLOR_ACTIVEBORDER);
         pal_.focus = SysColor(COLOR_WINDOWTEXT);
         pal_.card = SysColor(COLOR_WINDOW);
-        // High contrast: flat system colours, no gloss and no tints (redesign-v2.md §12).
+        // High contrast: flat system colours, no gloss and no tints (docs/redesign-v2.md §12).
         pal_.accent = SysColor(COLOR_HIGHLIGHT);
         pal_.accentHot = SysColor(COLOR_HIGHLIGHT);
         pal_.accentDown = SysColor(COLOR_HIGHLIGHT);
@@ -396,7 +396,7 @@ void Painter::SetPalette(bool hc) {
         pal_.trackOffBorder = SysColor(COLOR_WINDOWTEXT);
         return;
     }
-    // redesign.md §3.2 (Luna Blue).
+    // docs/redesign.md §3.2 (Luna Blue).
     pal_.surface = Rgb(0xECE9D8);
     pal_.text = Rgb(0x000000);
     pal_.subtle = Rgb(0x4D4D4D);
@@ -414,7 +414,7 @@ void Painter::SetPalette(bool hc) {
     pal_.frame = Rgb(0x0831D9);
     pal_.focus = Rgb(0x000000);
     pal_.card = Rgb(0xFFFFFF);
-    // redesign-v2.md §4: one blue accent, white cards, near-white page. White on #1E6FE8 is 4.6 : 1.
+    // docs/redesign-v2.md §4: one blue accent, white cards, near-white page. White on #1E6FE8 is 4.6 : 1.
     pal_.accent = Rgb(0x1E6FE8);
     pal_.accentHot = Rgb(0x3281F0);
     pal_.accentDown = Rgb(0x1760D0);
@@ -804,7 +804,7 @@ void Painter::SunkenFrame(const Box& b) {
     Frame(b, pal_.highContrast ? SysColor(COLOR_WINDOWTEXT) : Rgb(0x7F9DB9));
 }
 
-// --- v2 flat components (redesign-v2.md §4) -------------------------------------------------------
+// --- v2 flat components (docs/redesign-v2.md §4) -------------------------------------------------------
 
 namespace {
 float Clamp01f(float t) { return t < 0 ? 0.f : t > 1 ? 1.f : t; }

@@ -1,5 +1,5 @@
 #pragma once
-// The XP-style green marquee bar animated on the "Waiting for the phone" picture (redesign.md §6.1, §7.2).
+// The XP-style green marquee bar animated on the "Waiting for the phone" picture (docs/redesign.md §6.1, §7.2).
 // Pure code (no Windows calls) so the unit tests can check it.
 
 #include <stdint.h>

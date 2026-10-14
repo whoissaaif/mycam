@@ -3,7 +3,7 @@ package io.github.whoissaaif.mycam.ui
 import io.github.whoissaaif.mycam.Protocol
 
 /**
- * Why some frame rates are greyed out at the selected quality (A10, redesign.md 5.4). Computed from the fps
+ * Why some frame rates are greyed out at the selected quality (A10, docs/redesign.md 5.4). Computed from the fps
  * masks the camera reported for every quality, so it stays capability-driven: nothing here knows any phone.
  */
 sealed class FpsReason {
