@@ -89,7 +89,9 @@ TASKS.md.
 - Track work in TASKS.md (status + Releases + Decisions tables) and IMPROVEMENTS.md (section numbers
   are referenced from TASKS.md). Update both when something lands.
 
-## Wireless (branch `wireless`, 1.4.0-beta)
+## Wireless
+
+Shipped stable in 1.4.0 (the `wireless` branch is merged into `main`).
 
 - **Phone:** `WirelessServer.kt` (UDP discovery on 47801, TCP on 47800), `WifiHandshake.kt` (pairing and
   proof, `PairedPcs` storage), `WifiCrypto.kt` (ECDH, HKDF, AES-GCM, `SecureInput/OutputStream`).
@@ -103,7 +105,10 @@ TASKS.md.
 - **Testing Wi-Fi:** unplug the cable, because a plugged-in phone always takes over, and use wireless adb.
   adb on USB blocks MyCam's USB access.
 
-## iPhone web camera (branch `aiyan-webtest`; Aiyan's area, docs/AIYAN-IPHONE.md)
+## iPhone web camera (Aiyan's area, docs/AIYAN-IPHONE.md)
+
+Shipped in 1.4.1 (the `aiyan-webtest` branch is merged into `main`); further iPhone work happens on a new
+branch per `docs/AIYAN-IPHONE.md`.
 
 - An iPhone uses a **page served by the companion**: HTTPS + WebSocket on TCP 47900. The page uses
   WebCodecs H.264, and the format is in `docs/web-camera-format.md`. One MyCam packet per WebSocket
@@ -147,8 +152,8 @@ and components are in [design/STYLE.md](design/STYLE.md).
 - **Effects:** glass, blur and motion are allowed only where redesign.md §6 lists them. Every animation honours
   reduced motion.
 - **Phone:** components in `app/.../ui/xp/XpComponents.kt`, tokens in `ui/theme/`. Font: DejaVu Sans
-  (Condensed, Bold, Mono), with its licence in `app/src/main/assets/licenses`. **No camera preview on the phone**
-  (owner decision).
+  (Condensed, Bold, Mono), with its licence in `app/src/main/assets/licenses`. A camera preview is shown on
+  the phone (`PhonePreview.kt`, `CameraPage.kt`), on by default (`PREF_PREVIEW`).
 - **PC:** a custom Direct2D window (`settings_window.cpp`, `xp_draw.cpp`, element model `ui_model.h`) with a live
   preview read from `Global\MyCamFrame`, plus `pairing_dialog.cpp`. Tahoma and Trebuchet MS come from Windows
   and are never shipped.

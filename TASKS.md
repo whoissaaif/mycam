@@ -73,9 +73,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 
 - [~] Lower phone-side latency (capture→encoded 150–230 ms on the test phone) [3.4]: camera/encoder tweaks and a camera-vs-encoder split in the log built; measure on the phone
 - [~] 30 / 60 / 120 fps choice; 60 and 120 on the back camera through high-speed capture [3.2]: built, test on the phone
-- [ ] Adaptive-bitrate Int overflow fix at 4K (in `WebcamService.kt`): test, then release as 1.3.2
 - [~] Screen-reader support (UI Automation) for the settings window and pairing dialog [5.2]: built (`uia_provider.cpp`, checked with `pc/tools/uia_dump`); try with Narrator
-- [ ] Code-sign the installer and companion [5.3]
+- [ ] Code-sign the installer and companion [5.3] — see [docs/AIYAN-WEBSITE.md](docs/AIYAN-WEBSITE.md)
 - [ ] USB debugging on: the accessory shows up as accessory+adb (composite), WinUSB isn't bound to its interface, so it never connects; bind the MI_00 interface too [2.1]
 - [ ] Test the release APK (not just debug) on a phone before every release: R8 only runs on release builds
 - [ ] Uninstaller: remove UsbDk completely (service + UsbDk.sys stay behind after msiexec) [5.3]
@@ -83,9 +82,10 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [x] Decide public vs. private repo before sharing builds [8]: public since 1.4.0
 - [ ] iPhone native app + usbmux transport on the PC (only if a Mac and the developer program become available) [9.2]
 - [ ] Windows 10 support: DirectShow camera for Windows 10, installer picks per Windows version (needs a Windows 10 PC to test) [10]
-- [ ] Wireless option: Wi-Fi transport with discovery, one-time pairing and encryption; cable stays the default [11]
-
 ## Done
+
+- [x] Adaptive-bitrate Int overflow fix at 4K (`WebcamService.kt`), shipped in 1.3.2
+- [x] Wireless option: Wi-Fi transport with discovery, one-time pairing and encryption; cable stays the default [11], shipped in 1.4.0
 
 - [x] Assets complete: Play Store 512 px icon + 1024×500 feature graphic, dimmed streaming screen [7.3]
 
@@ -96,7 +96,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [x] Wired phone-as-webcam: Android Open Accessory + Windows 11 virtual camera (1.0)
 - [x] Fixes from first real-phone testing: MediaTek config, WinUSB streaming, reliable reads, logging (1.0)
 - [x] Project hygiene: git, unit tests, protocol spec and golden vectors [6]
-- [x] Design language decided: Windows 7 Aero [7.1]
+- [x] Design language decided: Windows XP, Luna Blue [7.1] (changed from the initial Windows 7 Aero choice; see Decisions below)
 - [x] PC app: tray status icons, Aero settings window, Inno Setup installer [5.1–5.3]
 - [x] Pause on phone and PC, "Camera paused" picture [1.1] (1.1.0)
 - [x] Auto-pause while Windows is locked or asleep [1.2] (1.1.0)

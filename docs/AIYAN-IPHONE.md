@@ -98,8 +98,8 @@ Turn Test 3's page into the real one, served by the PC companion (see part 2), n
 - **Reconnect:** a dropped connection retries by itself. A page that was paired before reconnects without
   scanning again (see the tokens in part 2).
 - **Look and language:** follow the XP Luna design (`design/STYLE.md`, `redesign.md`): task-pane look, big
-  Start button, the camera switch, quality. Plain English, short sentences. No camera preview is needed;
-  saif decided against a preview on the Android app, so match that unless you have a reason.
+  Start button, the camera switch, quality. Plain English, short sentences. The Android app shows a camera
+  preview on by default (`PhonePreview.kt`); match that on the web page unless you have a reason not to.
 - **Quality bar:** at least 1080p30 steady on the iPhone 13, 1080p60 where the device allows, and the full
   delay (camera to app on the PC) measured and written down. Aim for about 250 ms or less.
 
