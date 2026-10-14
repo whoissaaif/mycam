@@ -1,6 +1,11 @@
 # MyCam: use your phone as a webcam
 
 <p align="center">
+  <a href="https://github.com/whoissaaif/mycam/releases/latest"><img src="https://img.shields.io/github/v/release/whoissaaif/mycam" alt="Latest release"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/whoissaaif/mycam" alt="License: MIT"></a>
+</p>
+
+<p align="center">
   <img src="docs/media/mycam-demo.gif" alt="MyCam demo: plug in your phone and it becomes your webcam" width="800">
 </p>
 
