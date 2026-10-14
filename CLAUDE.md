@@ -1,191 +1,28 @@
 # CLAUDE.md
 
-Guidance for Claude Code sessions in this repo. Read [PROGRESS.md](docs/PROGRESS.md) for history,
-[TASKS.md](TASKS.md) for what's next, and [IMPROVEMENTS.md](IMPROVEMENTS.md) for the reasoning behind each item.
+Rules for this repo (MyCam: Android/iPhone → Windows 11 webcam). For background read TASKS.md,
+IMPROVEMENTS.md and docs/ARCHITECTURE.md — this file is rules only.
 
-## What this is
-
-MyCam turns an Android phone into a **wired** USB webcam for **Windows 11**. It's plug and play: the phone
-asks for permission once, and the PC shows one UAC prompt per new phone. Front and back cameras are supported.
-
-- **Android app** (`app/`, Kotlin + Jetpack Compose). Camera2 → MediaCodec H.264 (surface input) → USB
-  through **Android Open Accessory (AOA)**. No Developer Options or ADB needed.
-- **Windows companion** (`pc/companion/`, C++17, Win32 tray app). It switches the phone into accessory mode,
-  reads the stream, decodes it with the Media Foundation H.264 MFT and writes NV12 frames to shared memory.
-- **Virtual camera** (`pc/vcam/`, COM DLL). It's a custom `IMFMediaSourceEx` that Windows Frame Server loads
-  through `MFCreateVirtualCamera`. It reads frames from shared memory `Global\MyCamFrame` (the DLL creates it
-  inside the service and the companion opens it; a seqlock header is in `pc/common/shared_frame.h`).
-- **Protocol** (`protocol/PROTOCOL.md`, currently **v3**). It's big-endian. Phone→PC packets have a 20-byte
-  `MCAM` header; PC→phone commands are 8 bytes and start with `MCMD`. Golden vectors in `protocol/golden.txt`
-  are tested by **both** sides. If the protocol changes, update the spec, the golden file, `Protocol.kt` and
-  `pc/companion/protocol.h` together, and bump the version.
-
-## USB transport (hard-won; don't undo)
-
-- **UsbDk** is used **only** to send the AOA switch while Windows' MTP driver owns the phone.
-- After the switch, the accessory device has no driver. The companion binds Windows' inbox **WinUSB**
-  (`winusb.inf`) through an elevated `MyCamCompanion.exe --bind-driver` (SetupAPI, `winusb_bind.cpp`).
-  Streaming then uses a **separate libusb context with the WinUSB backend**, because UsbDk can't redirect a
-  driver-bound device.
-- Since 1.3.2 the installer runs `--register-task`, which creates the SYSTEM scheduled task "MyCam phone
-  driver" (`driver_task.cpp`). Authenticated users may only start it, and it only runs `--bind-driver`. The
-  companion starts that task instead of asking for UAC, and falls back to UAC if the task is missing or
-  points at a different exe. The user approved this design on 2026-10-10; don't widen what the task does.
-- With UsbDk, call `libusb_init_context` first and then `libusb_set_option(USE_USBDK)`. Passing it as an init
-  option fails.
-- Reads are queued async transfers. Timed-out sync reads lose data. Don't send synchronously from inside a
-  transfer callback (it returns BUSY); queue the command instead.
-- If the phone streams without being asked (for example, after the companion was killed), send STOP.
-- Some MediaTek encoders never emit a `CODEC_CONFIG` buffer. In that case, take SPS/PPS from
-  `onOutputFormatChanged`. The PC can initialise the decoder without config.
-
-## Build and test
-
-Android (JDK from Android Studio; minSdk 24, targetSdk 37):
-```
-gradlew assembleDebug            # debug APK
-gradlew assembleRelease          # signed if keystore.properties exists (git-ignored)
-gradlew testDebugUnitTest        # ProtocolTest incl. golden vectors
-gradlew lintDebug
-```
-
-PC (Visual Studio 2022 + CMake 3.20+; static CRT, `/utf-8`):
-```
-cmake -S pc -B pc/build -A x64 && cmake --build pc/build --config Release
-ctest --test-dir pc/build -C Release      # mycam_tests (protocol, parser, golden, transforms)
-```
-Dev install without the installer: `pc\install.ps1` / `pc\uninstall.ps1` (elevated).
-
-Installer: `powershell -ExecutionPolicy Bypass -File installer\build.ps1 -Version X.Y.Z`. It builds
-`pc/build-release`, runs the tests, fetches UsbDk (hash-checked) and runs Inno Setup 6 →
-`installer/output/MyCam-Setup-X.Y.Z.exe`.
-
-Release steps: bump the versions in `app/build.gradle.kts` (versionCode + versionName),
-`installer/mycam.iss` and `installer/build.ps1`. Build the installer and the APK, commit, tag `vX.Y.Z`,
-push, then run `gh release create vX.Y.Z <exe> <apk> --notes-file ...`. Add a row to the Releases table in
-TASKS.md.
-
-## Rules from the user
-
-- **Repo is public** (`github.com/whoissaaif/mycam`, MIT). It went private/public a few times before
-  settling here (1.1.1, then private, public again around 1.4.0, briefly private, public again 2026-10-14) —
-  check the real state with `gh repo view --json visibility` rather than trusting this line, since it has
-  been stale before. Everything in it is world-readable: the history and every release asset, and nothing
-  can be taken back out of them once pushed. So the "never commit" list below is a hard rule, not
-  housekeeping. Don't change the visibility without asking.
-- **Never commit `inspo/`** (it contains Microsoft artwork), `screenshots/`, `release/`, `keystore.properties`
-  or `*.jks`. The release keystore lives at `%USERPROFILE%\.mycam\mycam-release.jks`. **The user types the key
-  password themselves.** Never ask for it, store it or echo it.
-- Commits use **whoever is working** as the author, from the repo's local `git config` — more than one person
-  works here, and each one's commits should carry their own name. Don't pass an identity on the command line
-  to override it. Always the author's GitHub **no-reply email**, never a real address: the repo is public,
-  and an email in a commit cannot be taken back out afterwards.
-- **Push every commit.** Committing and pushing go together: don't leave work sitting in the working tree
-  or in unpushed commits at the end of a task. The exception is "keep it local", which means commit but
-  don't push. Since the repo is public, read what you are about to commit before you commit it.
-- **Tagging and releasing still need an explicit ask.** Pushing a commit is routine; cutting `vX.Y.Z` and
-  publishing downloadable binaries is not.
-- Package / applicationId: `io.github.whoissaaif.mycam`. Changing it makes a new app on phones.
-- Keep phone behaviour that the user confirmed is correct: opening the phone's own camera app stops the stream.
-- Track work in TASKS.md (status + Releases + Decisions tables) and IMPROVEMENTS.md (section numbers
-  are referenced from TASKS.md). Update both when something lands.
-
-## Wireless
-
-Shipped stable in 1.4.0 (the `wireless` branch is merged into `main`).
-
-- **Phone:** `WirelessServer.kt` (UDP discovery on 47801, TCP on 47800), `WifiHandshake.kt` (pairing and
-  proof, `PairedPcs` storage), `WifiCrypto.kt` (ECDH, HKDF, AES-GCM, `SecureInput/OutputStream`).
-  `WebcamService` runs a generic link: a USB accessory or a socket.
-- **PC:** `phone_link_wifi.cpp` (discovery, handshake, encrypted records, DPAPI key storage in
-  `HKCU\Software\MyCam\PairedPhones`) and `wifi_crypto.cpp` (CNG). One single-threaded `SessionLoop` serves
-  both USB and Wi-Fi. Keep it that way: Aiyan's two-thread version deadlocks.
-- The wire format is specified in PROTOCOL.md "Wireless transport" / "Wireless security". The `wifi.*`
-  vectors in golden.txt were generated with the JDK (the generator is a one-off, not in the repo). Both test
-  suites check them.
-- **Testing Wi-Fi:** unplug the cable, because a plugged-in phone always takes over, and use wireless adb.
-  adb on USB blocks MyCam's USB access.
-
-## iPhone web camera (Aiyan's area, docs/AIYAN-IPHONE.md)
-
-Shipped in 1.4.1 (the `aiyan-webtest` branch is merged into `main`); further iPhone work happens on a new
-branch per `docs/AIYAN-IPHONE.md`.
-
-- An iPhone uses a **page served by the companion**: HTTPS + WebSocket on TCP 47900. The page uses
-  WebCodecs H.264, and the format is in `docs/web-camera-format.md`. One MyCam packet per WebSocket
-  message; the protocol itself is unchanged.
-- **PC:** `web_server.cpp` (single-threaded and polled), `tls_server.cpp` (Schannel; self-signed
-  certificate in `CurrentUser\My`, 397 days), `web_proto.cpp` (pure, unit-tested), `phone_link_web.cpp`
-  (the third transport in `SessionLoop`). The page lives in `pc/companion/web/` (embedded through
-  `companion.rc`).
-- **Threads:** `WebServer::Poll()` runs only on the worker thread: from the idle loop, inside
-  `SessionLoop` (`PollWeb`), and in the Wi-Fi handshake wait. Keep it that way.
-- **Tokens:** the QR code's one-time code becomes a device token through `POST /pair`. Only the token's
-  hash is stored (`HKCU\Software\MyCam\WebDevices`). **Never log tokens or the QR address.**
-- **Tests:** `ctest` also runs `web_golden` (Node.js). For end-to-end checks without a phone, build with
-  `-DMYCAM_BUILD_TOOLS=ON`, then run `web_probe.exe` with `pc/tools/webtest/fake_page.js` or
-  `browser_check.js`. These register test devices in HKCU: delete them afterwards.
-
-## Releasing
-
-- Test the **release** APK on a real phone before publishing: R8 only runs on release builds (1.3.2
-  crashed on launch because of R8's `packageScope`, now removed).
-- After `MyCamCompanion.exe --quit`, wait for the process to exit before starting it again (single instance).
-
-## Works on every phone
-
-MyCam must not be tuned to the test phone. Every option in either UI comes from what the connected phone
-reports, for each combination. For example, 60 and 120 fps depend on the quality: many phones only do 30
-at 4K.
-- `CameraStreamer.modeFor(camera, quality, fps)` is the single place that decides what works. It checks the
-  normal modes, the high-speed modes, and the encoder at that exact size. Camera start-up and the CAMERA
-  frame-rate masks both use it.
-- Vendor tweaks (such as the MediaTek encoder keys) are found at runtime, are optional, and have a generic
-  fallback.
-
-## Design language: Windows XP (Luna Blue)
-
-Decided 2026-10-10; it replaces the earlier Win7 Aero look. The spec is [redesign.md](docs/redesign.md), and the tokens
-and components are in [design/STYLE.md](design/STYLE.md).
-- **What it looks like:** Luna title bar, XP task panes with collapsible groups, green checks and radio dots,
-  the segmented green progress bar, and the "Snap" camera logo (a friendly compact camera whose lens shows hills,
-  never an eye). Luna Blue only, and no dark mode (only the Dim screen is dark).
-- **Effects:** glass, blur and motion are allowed only where redesign.md §6 lists them. Every animation honours
-  reduced motion.
-- **Phone:** components in `app/.../ui/xp/XpComponents.kt`, tokens in `ui/theme/`. Font: DejaVu Sans
-  (Condensed, Bold, Mono), with its licence in `app/src/main/assets/licenses`. A camera preview is shown on
-  the phone (`PhonePreview.kt`, `CameraPage.kt`), on by default (`PREF_PREVIEW`).
-- **PC:** a custom Direct2D window (`settings_window.cpp`, `xp_draw.cpp`, element model `ui_model.h`) with a live
-  preview read from `Global\MyCamFrame`, plus `pairing_dialog.cpp`. Tahoma and Trebuchet MS come from Windows
-  and are never shipped.
-- **Art:** `design/tools/*.ps1` (shared library `luna_draw.ps1`). Regenerate with them rather than hand-editing
-  PNGs.
-  - The hills scene is original and procedural, composited from `design/assets/source/hills-photo.png`.
-    Both source images there are the owner's own (see that folder's README), so they may be shipped;
-    nothing from `inspo/` is ever read by a script. Since 2026-10-11 the **paused** camera picture is the
-    exception to "procedural": it is `camera-paused-reference.png` itself, cropped to 16:9 (owner decision).
-  - The track of the waiting picture's marquee is at `design/tools/frame_layout.txt` and must match
-    `pc/companion/marquee.h`.
-
-## Windows / tooling gotchas
-
-- The shell is Windows. PowerShell 5's `Get-Content`/`Set-Content` mangle UTF-8 (sources contain `·`, `×`,
-  `→`). Use the Edit tool, or bash `sed`, for files with non-ASCII text. PS5 also misreads BOM-less UTF-8
-  scripts.
-- Avoid Perl one-liners for edits (`\a`, `\c` and `${}` interpolation have bitten before).
-- In .NET calls from PowerShell, use absolute paths (the .NET cwd differs from `$PWD`).
-- During installer upgrades, `--quit` must run the **new** exe, which `PrepareToInstall` extracts to `{tmp}`.
-  The old one can hang setup.
-- The virtual camera is per session/user. If a change to the DLL doesn't show up, the Frame Server service
-  is still holding the old one: reinstall, or restart the companion and the camera app.
-- Windows Sandbox / Hyper-V aren't available on this PC (CPU virtualization is off in the firmware).
-
-## Diagnostics
-
-- Companion log: `%LOCALAPPDATA%\MyCam\` (tray → settings → "Open log folder"). Phone `LOG` packets
-  (camera report, latency, adaptive-bitrate changes) are copied into it.
-- `MyCamCompanion.exe --test-pattern` streams a synthetic picture without a phone. Developer tools
-  (`capture_test`, `usb_probe`) are built with `-DMYCAM_BUILD_TOOLS=ON`.
-- The test phone is a MediaTek device. Its normal Camera2 modes stop at 30 fps, but the back camera has a
-  constrained high-speed mode (1080p/720p at 120 and 240 fps). 1080p60 uses that mode at 120 fps, and the
-  encoder drops every other frame. The front camera can only do 30.
+- **Repo is public.** Verify with `gh repo view --json visibility`, don't trust this line. Never commit
+  `inspo/`, `screenshots/`, `release/`, `keystore.properties`, `*.jks`, or any real email/secret.
+- **Commit author = whoever is working**, from local `git config` — never override it on the command line.
+  Always a GitHub no-reply email, never a real one: it can't be undone once pushed.
+- **Fetch before any destructive git rewrite** (force-push, history rewrite) on a shared branch, and
+  compare against `origin` first. A stale force-push has already dropped a collaborator's commits once.
+- **Push every commit.** Tagging `vX.Y.Z` and publishing release binaries needs an explicit ask; a normal
+  commit doesn't. Never change the repo's visibility without asking either.
+- **Protocol changes** touch `protocol/PROTOCOL.md`, `protocol/golden.txt`, `Protocol.kt` and
+  `pc/companion/protocol.h` together, with a version bump — never one side alone.
+- **Keep `SessionLoop` (`pc/companion/phone_link*.cpp`) single-threaded.** A multi-thread version deadlocks.
+- **UsbDk only switches the phone into accessory mode**; WinUSB (via the SYSTEM scheduled task) streams.
+  Don't widen what that task runs.
+- **Test the release APK (R8 on) on a real phone before publishing.** R8 has broken launch before.
+- **Never tune behavior to the test phone** — every option comes from what the device reports
+  (`CameraStreamer.modeFor`).
+- **`applicationId` `io.github.whoissaaif.mycam` never changes** — that creates a new app on phones.
+- **Keep:** opening the phone's own camera app stops the MyCam stream.
+- **Design is Windows XP, Luna Blue, only — no dark mode.** Art comes from `design/tools/*.ps1`, never
+  hand-edited.
+- **Never log tokens, pairing codes, or QR addresses.**
+- **Track work in TASKS.md and IMPROVEMENTS.md**; update both when something lands.
+- **PowerShell 5 mangles UTF-8** (`·`, `×`, `→`). Use the Edit tool or `sed`, not `Set-Content`.
