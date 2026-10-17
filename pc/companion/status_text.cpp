@@ -4,11 +4,14 @@
 
 namespace mycam {
 
-StatusView DescribeStatus(const LinkStatus& s, bool cameraRegistered) {
+StatusView DescribeStatus(const LinkStatus& s, bool cameraRegistered, const std::wstring& backend) {
     if (!cameraRegistered) {
-        return {L"Camera not registered", L"Run the MyCam installer again. Windows 11 is required.", kIconError,
-                L"Windows 11 is required.", L"Run the MyCam installer again. Windows 11 is required."};
+        return {L"Camera not registered", L"Run the MyCam installer again.", kIconError,
+                L"Camera not registered", L"Run the MyCam installer again."};
     }
+    // Tagged onto the ready/streaming facts line only (not the headline or tray tooltip, which stay the
+    // same as on Windows 11): visible in the window for a support request, without changing the common case.
+    const std::wstring tag = backend == L"DirectShow" ? L" (DirectShow)" : L"";
     const std::wstring camera = s.facing == proto::kFacingFront ? L"Front camera" : L"Back camera";
     // A web page (an iPhone in Safari) says how it reaches the PC: Wi-Fi, or the iPhone's USB hotspot.
     const std::wstring link = s.web && !s.webLink.empty() ? s.webLink : s.wireless ? L"Wi-Fi" : L"USB";
@@ -46,14 +49,14 @@ StatusView DescribeStatus(const LinkStatus& s, bool cameraRegistered) {
                 L"Connecting over USB…", L"Open MyCam on the phone, and tap OK if it asks.", StatusProgress::Working};
     case LinkState::Idle:
         return {L"Ready", camera + (s.wireless ? L" · " + link : L"") + L". Choose “MyCam” as the camera in any app.", kIconReady,
-                camera + L" · " + link, L"Choose “MyCam” as the camera in any app. The camera turns on only while an app uses it."};
+                camera + L" · " + link + tag, L"Choose “MyCam” as the camera in any app. The camera turns on only while an app uses it."};
     case LinkState::Streaming: {
         std::wstring detail = camera;
         if (s.width) detail += L" · " + std::to_wstring(s.width) + L" × " + std::to_wstring(s.height);
         if (s.wireless) detail += L" · " + link;
         std::wstring facts = camera;
         if (s.width) facts += L" · " + std::to_wstring(s.width) + L" × " + std::to_wstring(s.height);
-        facts += L" · " + link;
+        facts += L" · " + link + tag;
         return {L"Streaming", detail, kIconStreaming, facts, L"An app is using the camera. Pause it any time; apps then see a “Camera paused” picture."};
     }
     case LinkState::PhoneError:

@@ -18,6 +18,7 @@ namespace mycam {
 struct SettingsModel {
     std::function<LinkStatus()> status;
     std::function<bool()> cameraRegistered;
+    std::function<std::wstring()> backendName; // "Frame Server" or "DirectShow" (docs/WINDOWS10-SUPPORT.md)
     std::function<bool()> mirror;
     std::function<void(bool)> setMirror;
     std::function<bool()> autostart;

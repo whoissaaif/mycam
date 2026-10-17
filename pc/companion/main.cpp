@@ -67,6 +67,7 @@ std::mutex g_statusLock;
 LinkStatus g_status;
 LinkStatus g_shownStatus;
 bool g_vcamOk = false;
+std::wstring g_backendName; // "Frame Server" (Windows 11) or "DirectShow" (Windows 10); set once at startup.
 bool g_sessionLocked = false; // Windows session locked (WTS notifications)
 bool g_suspended = false;     // PC going to sleep
 int g_trayIcon = 0;
@@ -101,7 +102,7 @@ void SetWireless(bool on);
 
 void UpdateTray() {
     const LinkStatus s = CurrentStatus();
-    const StatusView view = DescribeStatus(s, g_vcamOk);
+    const StatusView view = DescribeStatus(s, g_vcamOk, g_backendName);
 
     g_tray.uFlags = NIF_TIP;
     std::wstring tip = L"MyCam: " + view.headline + L"\n" + view.detail;
@@ -179,7 +180,7 @@ void UpdateLockPause() {
 
 void ShowMenu(HWND hwnd) {
     const LinkStatus s = CurrentStatus();
-    const StatusView view = DescribeStatus(s, g_vcamOk);
+    const StatusView view = DescribeStatus(s, g_vcamOk, g_backendName);
     HMENU menu = CreatePopupMenu();
     // The status line comes first (docs/redesign.md §8.5), then the window.
     std::wstring status = L"MyCam: " + view.headline;
@@ -463,12 +464,42 @@ int QuitRunningInstance() {
     return wait == WAIT_OBJECT_0 ? 0 : 1;
 }
 
+// True on Windows 11 (build 22000+), where the Frame Server virtual camera API exists. RtlGetVersion
+// (unlike GetVersionExW) always reports the true build number, with no manifest-driven app-compat lying.
+bool IsWindows11OrGreater() {
+    using RtlGetVersionFn = LONG(WINAPI*)(OSVERSIONINFOW*);
+    HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+    auto fn = ntdll ? reinterpret_cast<RtlGetVersionFn>(GetProcAddress(ntdll, "RtlGetVersion")) : nullptr;
+    OSVERSIONINFOW info = {sizeof(info)};
+    return fn && fn(&info) == 0 && info.dwBuildNumber >= 22000;
+}
+
+// MFCreateVirtualCamera is looked up at runtime, not linked statically: mfsensorgroup.dll (or this
+// export on it) may not exist pre-Windows 11, and this only ever runs after IsWindows11OrGreater().
 HRESULT CreateVirtualCamera(ComPtr<IMFVirtualCamera>& vcam) {
-    HRESULT hr = MFCreateVirtualCamera(MFVirtualCameraType_SoftwareCameraSource, MFVirtualCameraLifetime_Session,
-                                       MFVirtualCameraAccess_CurrentUser, kCameraFriendlyName, MYCAM_VCAM_CLSID_STRING,
-                                       nullptr, 0, &vcam);
+    using MFCreateVirtualCameraFn = HRESULT(STDAPICALLTYPE*)(MFVirtualCameraType, MFVirtualCameraLifetime,
+                                                              MFVirtualCameraAccess, LPCWSTR, LPCWSTR, const GUID*,
+                                                              ULONG, IMFVirtualCamera**);
+    HMODULE module = LoadLibraryW(L"mfsensorgroup.dll");
+    if (!module) return HRESULT_FROM_WIN32(GetLastError());
+    auto create = reinterpret_cast<MFCreateVirtualCameraFn>(GetProcAddress(module, "MFCreateVirtualCamera"));
+    if (!create) return E_NOTIMPL;
+    HRESULT hr = create(MFVirtualCameraType_SoftwareCameraSource, MFVirtualCameraLifetime_Session,
+                        MFVirtualCameraAccess_CurrentUser, kCameraFriendlyName, MYCAM_VCAM_CLSID_STRING,
+                        nullptr, 0, &vcam);
     if (SUCCEEDED(hr)) hr = vcam->Start(nullptr);
     return hr;
+}
+
+// Windows 10 (see docs/WINDOWS10-SUPPORT.md): no Frame Server, so MyCamVCamDShow.dll is a DirectShow
+// source filter instead, registered once by the installer (regsvr32 + IFilterMapper2) rather than
+// activated per session. "Registered" here just means that install step landed.
+bool IsDShowCameraRegistered() {
+    std::wstring key = std::wstring(L"Software\\Classes\\CLSID\\") + MYCAM_VCAM_DSHOW_CLSID_STRING + L"\\InprocServer32";
+    HKEY hkey;
+    if (RegOpenKeyExW(HKEY_LOCAL_MACHINE, key.c_str(), 0, KEY_READ, &hkey) != ERROR_SUCCESS) return false;
+    RegCloseKey(hkey);
+    return true;
 }
 
 } // namespace
@@ -490,9 +521,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     MFStartup(MF_VERSION);
 
     ComPtr<IMFVirtualCamera> vcam;
-    HRESULT vcamHr = CreateVirtualCamera(vcam);
+    HRESULT vcamHr;
+    if (IsWindows11OrGreater()) {
+        vcamHr = CreateVirtualCamera(vcam);
+        g_backendName = L"Frame Server";
+    } else {
+        vcamHr = IsDShowCameraRegistered() ? S_OK : HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND);
+        g_backendName = L"DirectShow";
+    }
     g_vcamOk = SUCCEEDED(vcamHr);
-    Log("companion started; virtual camera -> 0x%08X", unsigned(vcamHr));
+    Log("companion started; virtual camera (%ls) -> 0x%08X", g_backendName.c_str(), unsigned(vcamHr));
 
     WNDCLASSW wc = {};
     wc.lpfnWndProc = WndProc;
@@ -544,6 +582,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     SettingsModel model;
     model.status = CurrentStatus;
     model.cameraRegistered = [] { return g_vcamOk; };
+    model.backendName = [] { return g_backendName; };
     model.mirror = [] { return g_mirror; };
     model.setMirror = SetMirror;
     model.autostart = AutostartEnabled;

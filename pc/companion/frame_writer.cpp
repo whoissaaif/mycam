@@ -1,5 +1,6 @@
 #include "frame_writer.h"
 
+#include <sddl.h>
 #include <string.h>
 
 #include "../common/shared_frame.h"
@@ -22,6 +23,22 @@ bool FrameWriter::EnsureMapping() {
     lastAttempt_ = now;
 
     mapping_ = OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, kSharedFrameName);
+    if (!mapping_) {
+        // Windows 10 (docs/WINDOWS10-SUPPORT.md): the DirectShow camera is hosted inside whatever
+        // ordinary app opened it (not a privileged service like Frame Server), so neither it nor this
+        // companion can create or see the Global\ section above (see frame_reader.cpp). Create/open the
+        // session-local fallback instead — unlike Global\, either side can create this one, so it
+        // doesn't matter which one gets there first.
+        PSECURITY_DESCRIPTOR sd = nullptr;
+        SECURITY_ATTRIBUTES sa = {sizeof(sa), nullptr, FALSE};
+        if (ConvertStringSecurityDescriptorToSecurityDescriptorW(kSharedSddl, SDDL_REVISION_1, &sd, nullptr)) {
+            sa.lpSecurityDescriptor = sd;
+        }
+        mapping_ = CreateFileMappingW(INVALID_HANDLE_VALUE, sd ? &sa : nullptr, PAGE_READWRITE, 0, kSharedBytes,
+                                      kSharedFrameNameLocal);
+        if (!mapping_) mapping_ = OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, kSharedFrameNameLocal);
+        if (sd) LocalFree(sd);
+    }
     if (!mapping_) return false;
     view_ = MapViewOfFile(mapping_, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, kSharedBytes);
     if (!view_) {

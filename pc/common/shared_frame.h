@@ -9,6 +9,9 @@
 namespace mycam {
 
 constexpr wchar_t kSharedFrameName[] = L"Global\\MyCamFrame";
+// Fallback when kSharedFrameName can't be created or opened (see frame_reader.cpp / frame_writer.cpp):
+// no "Global\" prefix, so it lives in the caller's own session and needs no special privilege.
+constexpr wchar_t kSharedFrameNameLocal[] = L"MyCamFrame";
 constexpr uint32_t kSharedMagic = 0x4D434652; // 'MCFR'
 constexpr uint32_t kSharedVersion = 1;
 constexpr uint32_t kHeaderBytes = 4096;

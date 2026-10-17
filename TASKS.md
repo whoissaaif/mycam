@@ -70,6 +70,13 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
       verified on the CMF Phone 1 (2026-10-14): fresh QR pairing holds the camera off until Allow, then
       streams normally. A multi-line phone name still wants a run on the device
 
+- [~] Windows 10 support before launch: DirectShow camera, installer picks per Windows version
+      [10, docs/WINDOWS10-SUPPORT.md]: confirmed working on a friend's real Windows 10 PC — Discord shows
+      live video, pause/resume, zoom/EV, camera switch, 0 decode errors over a ~7 min session. Zoom, OBS,
+      a Chromium browser, and an upgrade install from a Windows-11-targeted previous version still untried
+- [ ] Linux support before launch: headless CLI daemon first (USB → v4l2loopback), Wi-Fi/iPhone/GUI
+      phased in after (needs a Linux test machine) [13, docs/LINUX-SUPPORT.md]
+
 ## Backlog
 
 - [~] Lower phone-side latency (capture→encoded 150–230 ms on the test phone) [3.4]: camera/encoder tweaks and a camera-vs-encoder split in the log built; measure on the phone
@@ -82,7 +89,6 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [ ] Test a clean install on a different PC (Sandbox needs CPU virtualization enabled in firmware) [2.3]
 - [x] Decide public vs. private repo before sharing builds [8]: public since 1.4.0
 - [ ] iPhone native app + usbmux transport on the PC (only if a Mac and the developer program become available) [9.2]
-- [ ] Windows 10 support: DirectShow camera for Windows 10, installer picks per Windows version (needs a Windows 10 PC to test) [10]
 ## Done
 
 - [x] Adaptive-bitrate Int overflow fix at 4K (`WebcamService.kt`), shipped in 1.3.2

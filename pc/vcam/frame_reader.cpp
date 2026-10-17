@@ -32,8 +32,19 @@ bool FrameReader::EnsureMapping() {
     }
     mapping_ = CreateFileMappingW(INVALID_HANDLE_VALUE, sd ? &sa : nullptr, PAGE_READWRITE, 0, kSharedBytes,
                                   kSharedFrameName);
-    if (sd) LocalFree(sd);
     if (!mapping_) mapping_ = OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, kSharedFrameName);
+    // Global\ needs SeCreateGlobalPrivilege to create — services such as Frame Server have it and create
+    // it there on Windows 11, and this side can only open it if a privileged process got there first. On
+    // Windows 10 the DirectShow filter runs inside whatever ordinary app opened the camera, and the
+    // companion is an ordinary process too, both in the same session — neither can create or see a
+    // Global section. Fall back to a session-local one that needs no special privilege (and that
+    // pc/companion/frame_writer.cpp falls back to the same way).
+    if (!mapping_) {
+        mapping_ = CreateFileMappingW(INVALID_HANDLE_VALUE, sd ? &sa : nullptr, PAGE_READWRITE, 0, kSharedBytes,
+                                      kSharedFrameNameLocal);
+    }
+    if (!mapping_) mapping_ = OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, kSharedFrameNameLocal);
+    if (sd) LocalFree(sd);
     if (!mapping_) return false;
 
     view_ = MapViewOfFile(mapping_, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, kSharedBytes);

@@ -23,6 +23,7 @@
 #include "../companion/ui_model.h"
 #include "../companion/ui_motion.h"
 #include "../vcam/frame_transform.h"
+#include "../vcam-dshow/dshow_media_types.h"
 
 #include <cmath>
 
@@ -393,6 +394,57 @@ void TestBgraToNV12() {
     uint8_t out[6] = {};
     BgraToNV12(mixed, 8, 2, 2, out);
     CHECK(out[0] == 16 && out[1] == 235 && out[4] == 128 && out[5] == 128);
+}
+
+// --- pc/vcam-dshow: AM_MEDIA_TYPE helpers (format negotiation, no DirectShow graph needed) ----------
+
+void TestDShowMediaTypes() {
+    for (const auto& format : kDShowFormats) {
+        AM_MEDIA_TYPE* mt = NewMediaType(format);
+        CHECK(mt != nullptr);
+        CHECK(mt->majortype == MEDIATYPE_Video);
+        CHECK(mt->subtype == kSubtypeNV12);
+        CHECK(mt->formattype == FORMAT_VideoInfo);
+        CHECK(mt->bFixedSizeSamples == TRUE && mt->bTemporalCompression == FALSE);
+        CHECK(mt->lSampleSize == LONG(FrameBytes(format.width, format.height)));
+        CHECK(mt->cbFormat == sizeof(VIDEOINFOHEADER) && mt->pbFormat != nullptr);
+        const auto* info = reinterpret_cast<const VIDEOINFOHEADER*>(mt->pbFormat);
+        CHECK(UINT32(info->bmiHeader.biWidth) == format.width);
+        CHECK(UINT32(info->bmiHeader.biHeight) == format.height);
+        CHECK(info->AvgTimePerFrame == 10'000'000LL / format.fps);
+
+        DShowFormat matched{};
+        CHECK(MatchesKnownFormat(*mt, &matched));
+        CHECK(matched.width == format.width && matched.height == format.height && matched.fps == format.fps);
+
+        VIDEO_STREAM_CONFIG_CAPS caps{};
+        FillStreamCaps(format, &caps);
+        CHECK(caps.InputSize.cx == LONG(format.width) && caps.InputSize.cy == LONG(format.height));
+        CHECK(caps.MinFrameInterval == caps.MaxFrameInterval && caps.MinFrameInterval == 10'000'000LL / format.fps);
+
+        AM_MEDIA_TYPE copy{};
+        CHECK(CopyMediaTypeInto(*mt, &copy));
+        CHECK(copy.pbFormat != mt->pbFormat); // Deep copy: distinct allocations.
+        CHECK(memcmp(copy.pbFormat, mt->pbFormat, copy.cbFormat) == 0);
+        FreeMediaType(&copy);
+        CHECK(copy.pbFormat == nullptr && copy.cbFormat == 0);
+
+        FreeMediaType(mt);
+        CHECK(mt->pbFormat == nullptr);
+        CoTaskMemFree(mt);
+    }
+
+    // A resolution/fps combination not in the list (or the wrong subtype) is rejected.
+    AM_MEDIA_TYPE* mt = NewMediaType(kDShowFormats[0]);
+    auto* info = reinterpret_cast<VIDEOINFOHEADER*>(mt->pbFormat);
+    info->bmiHeader.biWidth = 1234;
+    DShowFormat ignored{};
+    CHECK(!MatchesKnownFormat(*mt, &ignored));
+    mt->subtype.Data1 ^= 1; // Any other subtype: no named GUID constant needed for this check.
+    info->bmiHeader.biWidth = LONG(kDShowFormats[0].width);
+    CHECK(!MatchesKnownFormat(*mt, &ignored));
+    FreeMediaType(mt);
+    CoTaskMemFree(mt);
 }
 
 // --- Waiting-picture marquee ----------------------------------------------------------------------
@@ -800,6 +852,19 @@ void TestStatusText() {
     s.phoneName = L"iPhone";
     s.webAway = true; // The page is locked or in the background: it, not the PC, can resume.
     CHECK(DescribeStatus(s, true).hint.find(L"Open it again") != std::wstring::npos);
+
+    // Windows 10 (docs/WINDOWS10-SUPPORT.md): a neutral not-registered message (no OS claimed), and the
+    // DirectShow backend tagged onto the facts line but not the headline or tray tooltip.
+    s.state = LinkState::Streaming;
+    s.web = false;
+    s.webAway = false;
+    s.wireless = false;
+    CHECK(DescribeStatus(s, false).headline == L"Camera not registered");
+    CHECK(DescribeStatus(s, false).detail.find(L"Windows 11") == std::wstring::npos);
+    v = DescribeStatus(s, true, L"DirectShow");
+    CHECK(v.facts == L"Back camera · 1920 × 1080 · USB (DirectShow)");
+    CHECK(v.detail == L"Back camera · 1920 × 1080");
+    CHECK(DescribeStatus(s, true).facts == L"Back camera · 1920 × 1080 · USB"); // Frame Server: no tag.
 }
 
 // --- iPhone web camera (web_proto.h) -------------------------------------------------------------------
@@ -1138,6 +1203,7 @@ int main() {
     printf("transform downscale\n");       TestDownscale();
     printf("transform pitch\n");           TestPitch();
     printf("bgra to nv12\n");              TestBgraToNV12();
+    printf("dshow media types\n");         TestDShowMediaTypes();
     printf("marquee geometry\n");          TestMarqueeGeometry();
     printf("marquee chunk positions\n");   TestMarqueeChunkPositions();
     printf("marquee pause\n");             TestMarqueePause();

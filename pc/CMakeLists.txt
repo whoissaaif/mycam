@@ -35,6 +35,19 @@ add_library(MyCamVCam SHARED
 )
 target_link_libraries(MyCamVCam PRIVATE mfplat mfuuid advapi32 runtimeobject)
 
+# --- DirectShow virtual camera (Windows 10 fallback; see docs/WINDOWS10-SUPPORT.md) ---------------
+add_library(MyCamVCamDShow SHARED
+    vcam-dshow/dllmain.cpp
+    vcam-dshow/filter.cpp
+    vcam-dshow/output_pin.cpp
+    vcam-dshow/dshow_media_types.cpp
+    vcam-dshow/dshow_log.cpp
+    vcam/frame_reader.cpp
+    vcam/frame_transform.cpp
+    vcam-dshow/MyCamVCamDShow.def
+)
+target_link_libraries(MyCamVCamDShow PRIVATE strmiids ole32 oleaut32 advapi32 runtimeobject)
+
 # --- Companion tray app ---------------------------------------------------------------------------
 add_executable(MyCamCompanion WIN32
     companion/main.cpp
@@ -66,7 +79,7 @@ add_executable(MyCamCompanion WIN32
     companion/companion.rc
     companion/companion.manifest
 )
-target_link_libraries(MyCamCompanion PRIVATE usb mfplat mfuuid mfsensorgroup ole32 shell32 advapi32 setupapi newdev cfgmgr32
+target_link_libraries(MyCamCompanion PRIVATE usb mfplat mfuuid ole32 shell32 advapi32 setupapi newdev cfgmgr32
     comctl32 d2d1 dwrite windowscodecs dwmapi wtsapi32 taskschd ws2_32 iphlpapi bcrypt crypt32 ncrypt secur32 d3d11 dxgi dcomp dxguid uiautomationcore)
 
 # --- Developer tools (not shipped; install.ps1 copies only the two binaries above) -------------------
@@ -88,8 +101,9 @@ option(MYCAM_BUILD_TESTS "Build unit tests" ON)
 if(MYCAM_BUILD_TESTS)
     enable_testing()
     add_executable(mycam_tests tests/tests.cpp companion/packet_parser.cpp companion/wifi_crypto.cpp companion/marquee.cpp
-        companion/preview_convert.cpp companion/status_text.cpp companion/web_proto.cpp vcam/frame_transform.cpp)
-    target_link_libraries(mycam_tests PRIVATE bcrypt)
+        companion/preview_convert.cpp companion/status_text.cpp companion/web_proto.cpp vcam/frame_transform.cpp
+        vcam-dshow/dshow_media_types.cpp)
+    target_link_libraries(mycam_tests PRIVATE bcrypt strmiids ole32)
     target_compile_definitions(mycam_tests PRIVATE MYCAM_GOLDEN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../protocol/golden.txt")
     add_test(NAME mycam_tests COMMAND mycam_tests)
     # The iPhone page's protocol code against the same golden vectors (needs Node.js; skipped without it).
