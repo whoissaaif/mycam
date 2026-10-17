@@ -24,8 +24,10 @@ DisableDirPage=auto
 PrivilegesRequired=admin
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
-; Windows 11 is required for the virtual camera API.
-MinVersion=10.0.22000
+; Windows 11 uses the Frame Server virtual camera API (MyCamVCam.dll); Windows 10 1809+ falls back to a
+; DirectShow camera (MyCamVCamDShow.dll) — see docs/WINDOWS10-SUPPORT.md. IsWindows11 in [Code] below
+; picks which one to register.
+MinVersion=10.0.17763
 OutputDir=output
 OutputBaseFilename=MyCam-Setup-{#AppVersion}
 SetupIconFile=..\pc\companion\res\app.ico
@@ -36,7 +38,12 @@ WizardImageFile=art\wizard-100.bmp,art\wizard-150.bmp,art\wizard-200.bmp
 WizardSmallImageFile=art\small-100.bmp,art\small-150.bmp,art\small-200.bmp
 Compression=lzma2
 SolidCompression=yes
-CloseApplications=no
+; On Windows 10, MyCamVCamDShow.dll can be loaded into any app that opened the camera (Discord, OBS, a
+; browser), not just the OS-managed Frame Server service MyCamVCam.dll uses on Windows 11 (which the
+; installer already stops explicitly). Let Setup detect that with Restart Manager and offer to close and
+; reopen it, instead of failing to replace a locked file.
+CloseApplications=yes
+RestartApplications=yes
 ; The Run entry for "Start with Windows" is per user (the companion's own toggle writes the same value).
 UsedUserAreasWarning=no
 #ifdef SIGN
@@ -53,6 +60,7 @@ Name: "autostart"; Description: "Start MyCam when I sign in to Windows (recommen
 [Files]
 Source: "{#BuildDir}\MyCamCompanion.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#BuildDir}\MyCamVCam.dll"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#BuildDir}\MyCamVCamDShow.dll"; DestDir: "{app}"; Flags: ignoreversion
 ; Kept after install so the uninstaller can remove UsbDk if the user asks.
 Source: "redist\{#UsbDkMsi}"; DestDir: "{app}\redist"; Flags: ignoreversion
 Source: "redist\UsbDk-LICENSE.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
@@ -63,10 +71,10 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
     ValueData: """{app}\MyCamCompanion.exe"""; Tasks: autostart; Flags: uninsdeletevalue
 
 [Run]
-Filename: "{sys}\msiexec.exe"; Parameters: "/i ""{app}\redist\{#UsbDkMsi}"" /qn /norestart"; \
-    StatusMsg: "Installing the UsbDk USB driver..."; Check: not UsbDkInstalled; Flags: runhidden waituntilterminated
 Filename: "{sys}\regsvr32.exe"; Parameters: "/s ""{app}\MyCamVCam.dll"""; \
-    StatusMsg: "Registering the MyCam camera..."; Flags: runhidden waituntilterminated
+    StatusMsg: "Registering the MyCam camera..."; Flags: runhidden waituntilterminated; Check: IsWindows11
+Filename: "{sys}\regsvr32.exe"; Parameters: "/s ""{app}\MyCamVCamDShow.dll"""; \
+    StatusMsg: "Registering the MyCam camera..."; Flags: runhidden waituntilterminated; Check: not IsWindows11
 ; Lets new phones get Windows' WinUSB driver later without a UAC prompt (a SYSTEM task users may only start).
 Filename: "{app}\MyCamCompanion.exe"; Parameters: "--register-task"; \
     StatusMsg: "Setting up phone drivers..."; Flags: runhidden waituntilterminated
@@ -84,6 +92,10 @@ Filename: "{app}\MyCamCompanion.exe"; Parameters: "--settings"; Description: "Op
 Filename: "{app}\MyCamCompanion.exe"; Parameters: "--quit"; RunOnceId: "QuitMyCam"; Flags: runhidden waituntilterminated
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM MyCamCompanion.exe"; RunOnceId: "KillMyCam"; Flags: runhidden waituntilterminated
 Filename: "{sys}\regsvr32.exe"; Parameters: "/s /u ""{app}\MyCamVCam.dll"""; RunOnceId: "UnregisterMyCam"; Flags: runhidden waituntilterminated
+; Unregister both regardless of which one is actually registered (DllUnregisterServer on the inactive
+; DLL is a harmless no-op): simpler than tracking which backend an install picked, and correct across an
+; in-place Windows 10 -> 11 upgrade that never re-ran this installer.
+Filename: "{sys}\regsvr32.exe"; Parameters: "/s /u ""{app}\MyCamVCamDShow.dll"""; RunOnceId: "UnregisterMyCamDShow"; Flags: runhidden waituntilterminated
 Filename: "{sys}\schtasks.exe"; Parameters: "/Delete /TN ""MyCam phone driver"" /F"; RunOnceId: "DeleteDriverTask"; Flags: runhidden waituntilterminated
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""MyCam iPhone camera"""; RunOnceId: "DeleteFirewallRule"; Flags: runhidden waituntilterminated
 ; Windows' camera service may still have the DLL loaded; restart it so the file can be deleted.
@@ -96,6 +108,53 @@ Type: dirifempty; Name: "{app}"
 function UsbDkInstalled: Boolean;
 begin
   Result := FileExists(ExpandConstant('{sys}\UsbDkHelper.dll'));
+end;
+
+// Which virtual-camera backend to register: Frame Server (Windows 11, build 22000+) or the DirectShow
+// fallback (Windows 10; see docs/WINDOWS10-SUPPORT.md). GetWindowsVersionEx reports the true build
+// number regardless of app-compat shims.
+function IsWindows11: Boolean;
+var
+  Version: TWindowsVersion;
+begin
+  GetWindowsVersionEx(Version);
+  Result := Version.Build >= 22000;
+end;
+
+// Installs the UsbDk driver if it's missing. A plain [Run] entry can't check msiexec's exit code, so a
+// silent failure here (seen after uninstalling an older MyCam without a restart in between — the prior
+// driver removal can still be settling) used to leave USB broken with no explanation. One retry after a
+// short pause covers that race; if it still fails, the user gets a clear next step instead of silence.
+procedure InstallUsbDk;
+var
+  ResultCode, Attempt: Integer;
+  Params: String;
+begin
+  if UsbDkInstalled then exit;
+  Params := '/i "' + ExpandConstant('{app}\redist\{#UsbDkMsi}') + '" /qn /norestart';
+  ResultCode := -1;
+  for Attempt := 1 to 2 do begin
+    if not Exec(ExpandConstant('{sys}\msiexec.exe'), Params, '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+      ResultCode := -1;
+    if (ResultCode = 0) or UsbDkInstalled then begin
+      ResultCode := 0;
+      break;
+    end;
+    if Attempt = 1 then Sleep(3000); // Give a just-prior uninstall's driver cleanup a moment to settle.
+  end;
+  if WizardSilent then exit; // Don't pop dialogs during an unattended install.
+  if ResultCode = 3010 then
+    MsgBox('MyCam needs to finish setting up the USB driver. Please restart your PC before connecting a phone over USB.' + #13#10#13#10 +
+           'Wi-Fi and iPhone (Safari) don''t need a restart.', mbInformation, MB_OK)
+  else if ResultCode <> 0 then
+    MsgBox('Setting up the USB driver didn''t finish (error ' + IntToStr(ResultCode) + '). Phones over USB won''t ' +
+           'work until this is fixed — try restarting your PC and running this installer again.' + #13#10#13#10 +
+           'Wi-Fi and iPhone (Safari) don''t need the USB driver.', mbError, MB_OK);
+end;
+
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then InstallUsbDk;
 end;
 
 procedure RunHidden(const FileName, Params: String);

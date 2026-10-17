@@ -25,6 +25,10 @@ Camera2 → H.264 encoder ──────────────────
 * **Wi-Fi (Android)** carries the same packets over an encrypted TCP link after a one-time pairing. See
   "Wireless transport" in [protocol/PROTOCOL.md](../protocol/PROTOCOL.md).
 * **One phone at a time.** A phone on the cable always wins over Wi-Fi and the iPhone.
+* **Windows 10 (build 17763+):** the last hop is a DirectShow source filter (`pc/vcam-dshow/`) instead
+  of `pc/vcam/`'s Frame Server media source — `MFCreateVirtualCamera` is Windows 11-only. It reads the
+  same `Global\MyCamFrame` shared memory; the installer registers whichever one the Windows build
+  supports. See [docs/WINDOWS10-SUPPORT.md](WINDOWS10-SUPPORT.md).
 
 ## iPhone
 
@@ -80,8 +84,9 @@ are in [iphone-wired.md](iphone-wired.md). The full server/route/token reference
 | `pc/companion/` | Tray app: the AOA switch (libusb + UsbDk), streaming over WinUSB, Wi-Fi, the iPhone server, H.264 decode, the frame hand-off. |
 | `pc/companion/web/` | The iPhone page (`index.html`, `app.js`, `protocol.js`, `style.css`), embedded in the exe through `companion.rc`. |
 | `pc/companion/web_server.cpp`, `tls_server.cpp`, `web_proto.cpp`, `phone_link_web.cpp` | The iPhone server: HTTPS + WebSocket, the Schannel TLS and certificate, the pure parsing and token code (unit-tested), and the transport in `SessionLoop`. |
-| `pc/vcam/` | Virtual camera media source DLL loaded by Windows Frame Server. |
-| `pc/common/` | Shared memory layout and the COM CLSID. |
+| `pc/vcam/` | Virtual camera media source DLL loaded by Windows Frame Server (Windows 11). |
+| `pc/vcam-dshow/` | DirectShow source filter DLL, the Windows 10 fallback for `pc/vcam/`. See [WINDOWS10-SUPPORT.md](WINDOWS10-SUPPORT.md). |
+| `pc/common/` | Shared memory layout and the COM CLSIDs. |
 | `pc/third_party/` | Vendored libusb (trimmed to the Windows backend), and [qrcodegen](https://www.nayuki.io/page/qr-code-generator-library) for the iPhone QR code. |
 | `installer/` | Inno Setup installer (`mycam.iss`) and its build script (`build.ps1`). |
 | `pc/install.ps1` / `uninstall.ps1` | Developer install/removal without building the installer. |

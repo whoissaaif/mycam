@@ -297,38 +297,17 @@ Continuity Camera (Apple's built-in iPhone webcam) only works with Macs, so it d
 
 ---
 
-## 10. Windows 10 support (M): ⏳
+## 10. Windows 10 support (M): 🟡 confirmed working in Discord on a friend's real Windows 10 PC; Zoom/OBS/browser and an upgrade install still untried
 
 Today the installer requires Windows 11, because the PC shows "MyCam" through `MFCreateVirtualCamera`,
 which only exists on Windows 11 (build 22000+). Everything else (USB, WinUSB binding, decoding, tray,
-settings window, installer) already works on Windows 10.
+settings window, installer) already works on Windows 10. Pre-launch item; full plan, work items and
+test history are in [docs/WINDOWS10-SUPPORT.md](docs/WINDOWS10-SUPPORT.md).
 
-**Plan: a DirectShow camera for Windows 10 (the approach OBS Virtual Camera uses)**
-- A second small COM DLL registered as a DirectShow video capture source. It reads the same shared memory
-  (`Global\MyCamFrame`), so the phone app, protocol and USB code don't change.
-- The installer picks by Windows version: Windows 11 keeps the current virtual camera, Windows 10 gets
-  the DirectShow one. `MinVersion` drops to Windows 10 (1809 or newer).
-- No driver and no driver signing.
-
-**What works on Windows 10 with it**
-
-| Works | Doesn't work |
-|---|---|
-| Zoom, Discord, Skype, OBS, most desktop video-call apps | The built-in Windows Camera app |
-| Chrome, Edge, Firefox (Google Meet, web Teams, etc.) | Some newer Store (UWP) apps that only see real cameras |
-
-**Rejected alternative:** a kernel camera driver (AVStream). It would appear in every app, but needs
-kernel code plus a Microsoft-approved signature (paid EV certificate, attestation process). Too much
-cost and risk for this project.
-
-**Work items**
-- [ ] DirectShow source filter (formats 1080p/720p/4K, 30/60/120; status pictures; pause), reusing
-      `frame_reader` and `frame_transform`
-- [ ] Installer: register the right camera per Windows version, lower `MinVersion`, uninstall both
-- [ ] Settings window: "camera registered" check for the DirectShow camera
-- [ ] Test on a real Windows 10 PC (this dev PC can't run Sandbox or VMs): Zoom, Chrome/Meet, OBS, Discord
-
-**Needs before starting:** a Windows 10 PC for testing.
+**Plan, in short:** a second small COM DLL registered as a DirectShow video capture source (the approach
+OBS Virtual Camera uses), reading the same `Global\MyCamFrame` shared memory `pc/vcam/` does today. The
+installer picks which one to register by Windows version; `MinVersion` drops to Windows 10 1809. No
+kernel driver, no driver signing.
 
 ---
 
@@ -523,6 +502,22 @@ existed read as "not allowed", which is what closes the silent-reconnect case fo
   explicit "Don't allow" is permanent now, which limits the blast radius.
 - **An on-path attacker can still delay a QR pairing** by replaying invites. They could drop the packets
   instead, so authenticating the invite (which would break 1.4.2 phones) buys nothing.
+
+---
+
+## 13. Linux support (L): ⏳
+
+Pre-launch item alongside §10. Unlike Windows 10, there's no existing Linux code to extend — the PC
+companion is a Win32 app end to end (UsbDk/WinUSB, Media Foundation decode, a COM virtual camera,
+Schannel TLS, Win32 GUI). Full plan, phased work items and the open design question are in
+[docs/LINUX-SUPPORT.md](docs/LINUX-SUPPORT.md).
+
+**Plan, in short:** a phased port starting with a headless CLI daemon (USB only, writing decoded frames
+into a `v4l2loopback` device) before any GUI work — that alone covers Zoom/OBS/browsers on Linux. Wi-Fi
+and the iPhone web server follow in later phases; the tray/settings/pairing-dialog GUI is deliberately
+last, pending a design decision on whether it keeps the Windows XP Luna look or goes native.
+
+**Needs before starting:** a Linux test machine or VM, and `v4l2loopback` available on it.
 
 ---
 

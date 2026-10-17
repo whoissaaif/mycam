@@ -270,7 +270,7 @@ struct SettingsWindow::Impl {
     void UpdateStatus() {
         const uint64_t now = Now();
         const LinkStatus s = Status();
-        const StatusView v = DescribeStatus(s, model->cameraRegistered());
+        const StatusView v = DescribeStatus(s, model->cameraRegistered(), model->backendName());
         if (!viewShown) {
             view = v;
             viewShown = true;

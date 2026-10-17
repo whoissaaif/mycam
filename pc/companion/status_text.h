@@ -30,6 +30,8 @@ struct StatusView {
     StatusProgress progress = StatusProgress::None;
 };
 
-StatusView DescribeStatus(const LinkStatus& status, bool cameraRegistered);
+// backend: "DirectShow" on Windows 10 (docs/WINDOWS10-SUPPORT.md) adds a "(DirectShow)" tag to the
+// ready/streaming facts line, useful for support requests; "" (Windows 11, Frame Server) adds nothing.
+StatusView DescribeStatus(const LinkStatus& status, bool cameraRegistered, const std::wstring& backend = L"");
 
 } // namespace mycam
