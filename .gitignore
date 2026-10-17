@@ -53,4 +53,4 @@ pc/tools/webtest/results/
 node_modules/
 
 # Impeccable local detector config (per-developer tooling)
-/.impeccable/
+.impeccable/
