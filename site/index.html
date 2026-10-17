@@ -1,0 +1,785 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MyCam — your phone is your webcam on Windows 11</title>
+<meta name="description" content="MyCam turns an Android phone or iPhone into a webcam for Windows 11. Plug in over USB, or go wireless. Free, open source, no account.">
+<meta name="theme-color" content="#0b0c0e">
+<link rel="canonical" href="https://whoissaaif.github.io/mycam/">
+
+<meta property="og:type" content="website">
+<meta property="og:title" content="MyCam — your phone is your webcam">
+<meta property="og:description" content="Your phone is already a better camera than your laptop's. MyCam makes Windows see it as a webcam.">
+<meta property="og:image" content="assets/img/og.png">
+<meta property="og:url" content="https://whoissaaif.github.io/mycam/">
+<meta name="twitter:card" content="summary_large_image">
+
+<link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:wdth,wght@150,900&family=Arimo:wght@400;700&display=swap">
+
+<link rel="stylesheet" href="assets/css/tokens.css">
+<link rel="stylesheet" href="assets/css/base.css">
+<link rel="stylesheet" href="assets/css/home.css">
+<link rel="stylesheet" href="assets/css/app-screen.css">
+</head>
+<body>
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<!-- Loading is focusing (§7). Removed by main.js; never blocks content for
+     more than 1.5s, and is skipped on repeat visits and reduced motion. -->
+<div class="loader" id="loader" aria-hidden="true">
+  <div class="loader-finder">
+    <span class="bracket tl"></span><span class="bracket tr"></span>
+    <span class="bracket bl"></span><span class="bracket br"></span>
+    <div class="loader-ring"></div>
+  </div>
+  <p class="hud loader-pct"><span id="loader-pct">0</span>%</p>
+</div>
+
+<div class="focus-cursor" id="focus-cursor" aria-hidden="true">
+  <span></span><span></span><span></span><span></span>
+</div>
+
+<header class="site-head" id="site-head">
+  <div class="wrap site-head-inner">
+    <a class="brand" href="./" aria-label="MyCam home">
+      <svg class="brand-mark" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+        <rect x="1.5" y="6" width="21" height="14" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M7 6 8.5 3.5h7L17 6" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <circle cx="12" cy="13" r="4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <circle cx="12" cy="13" r="1.4" fill="var(--rec)"/>
+      </svg>
+      <span class="brand-word">MyCam</span>
+    </a>
+
+    <nav class="nav" aria-label="Main">
+      <a href="get-started.html">Get started</a>
+      <a href="#see-the-app">The app</a>
+      <a href="#faq">FAQ</a>
+      <a href="https://github.com/whoissaaif/mycam">GitHub</a>
+    </nav>
+
+    <a class="btn btn-sm js-download" href="https://github.com/whoissaaif/mycam/releases/latest">
+      Download
+    </a>
+  </div>
+</header>
+
+<main id="main">
+
+  <!-- 1. HERO ---------------------------------------------------------- -->
+  <section class="hero framed" id="hero">
+    <span class="bracket tl"></span><span class="bracket tr"></span>
+    <span class="bracket bl"></span><span class="bracket br"></span>
+
+    <div class="wrap">
+      <div class="hero-top">
+        <p class="eyebrow"><span class="num">00</span> / Phone to webcam</p>
+        <p class="hud rec-readout">
+          <span class="rec-dot" aria-hidden="true"></span>
+          <span class="timecode" id="timecode">00:00:00</span>
+        </p>
+      </div>
+
+      <h1 class="display hero-title">
+        Your phone<br>
+        is a better camera<br>
+        <span class="dim">than your laptop.</span>
+      </h1>
+
+      <div class="hero-foot grid">
+        <div class="col-6">
+          <p class="lede">
+            MyCam makes Windows see it as a webcam. Plug in a cable or go wireless,
+            then pick <strong>MyCam</strong> in Zoom, Teams, Meet, OBS or Discord.
+          </p>
+
+          <div class="btn-row hero-cta">
+            <a class="btn js-download" href="https://github.com/whoissaaif/mycam/releases/latest">
+              Download for Windows
+            </a>
+            <a class="btn btn-ghost" href="#how">How it works</a>
+          </div>
+
+          <p class="hud hero-meta">
+            <span class="js-version">v1.4.3</span>
+            <span class="sep">/</span>
+            <span class="js-size">12.1 MB</span>
+            <span class="sep">/</span>
+            <span>Windows 11</span>
+            <span class="sep">/</span>
+            <span>MIT, free</span>
+          </p>
+
+          <!-- §8: a phone can't install a Windows app. Shown only on small
+               screens / touch, by main.js. -->
+          <div class="pc-handoff" id="pc-handoff" hidden>
+            <p class="hud">On a phone? MyCam installs on your PC.</p>
+            <div class="btn-row">
+              <button class="btn btn-ghost btn-sm" id="copy-link">Copy link for your PC</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="col-6 hero-demo">
+          <figure class="demo-frame framed">
+            <span class="bracket tl"></span><span class="bracket tr"></span>
+            <span class="bracket bl"></span><span class="bracket br"></span>
+            <!-- The source GIF is 11 MB; as H.264 it is 641 KB. A video also
+                 lets reduced-motion visitors keep the poster still. -->
+            <video id="demo-video" width="800" height="450" poster="assets/img/mycam-demo-poster.jpg"
+                   autoplay muted loop playsinline preload="metadata"
+                   aria-label="A phone is plugged into a PC and becomes the webcam in the Windows Camera app.">
+              <source src="assets/img/mycam-demo.mp4" type="video/mp4">
+            </video>
+            <figcaption class="hud">Plug in. That's the setup.</figcaption>
+          </figure>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2. BEFORE / AFTER ------------------------------------------------ -->
+  <section class="section-line" id="compare">
+    <div class="wrap">
+      <p class="eyebrow"><span class="num">01</span> / The difference</p>
+
+      <div class="grid">
+        <div class="col-7">
+          <h2 class="display section-title">
+            Same call.<br><span class="dim">Different camera.</span>
+          </h2>
+        </div>
+        <div class="col-5">
+          <p class="body-text">
+            A laptop webcam is a tiny sensor behind a plastic lid. The camera in your
+            pocket has a bigger sensor, a real lens and years of image processing.
+            Drag to compare.
+          </p>
+        </div>
+      </div>
+
+      <div class="compare framed" id="compare-widget">
+        <span class="bracket tl"></span><span class="bracket tr"></span>
+        <span class="bracket bl"></span><span class="bracket br"></span>
+
+        <div class="compare-pane compare-after">
+          <img src="assets/img/compare-phone.svg" alt="Placeholder image standing in for video from a phone camera through MyCam." width="1280" height="720" loading="lazy">
+          <p class="hud compare-tag compare-tag-right">Phone via MyCam</p>
+        </div>
+
+        <div class="compare-pane compare-before" id="compare-before">
+          <img src="assets/img/compare-laptop.svg" alt="Placeholder image standing in for video from a built-in laptop webcam." width="1280" height="720" loading="lazy">
+          <p class="hud compare-tag compare-tag-left">Laptop webcam</p>
+        </div>
+
+        <div class="compare-handle" id="compare-handle" role="separator" aria-orientation="vertical" aria-valuenow="50" aria-valuemin="0" aria-valuemax="100" aria-label="Compare laptop webcam with phone camera" tabindex="0">
+          <span class="compare-handle-line"></span>
+          <span class="compare-handle-grip" aria-hidden="true"></span>
+        </div>
+      </div>
+      <p class="hud compare-note">Drag, or use the arrow keys.</p>
+    </div>
+  </section>
+
+  <!-- 3. HOW IT WORKS -------------------------------------------------- -->
+  <section class="section-line" id="how">
+    <div class="wrap">
+      <p class="eyebrow"><span class="num">02</span> / How it works</p>
+
+      <h2 class="display section-title">
+        Three steps.<br><span class="dim">Once.</span>
+      </h2>
+
+      <ol class="steps grid">
+        <li class="step col-4 reveal">
+          <p class="step-num hud">Step 01</p>
+          <h3 class="sub-title display">Install on the PC</h3>
+          <p class="body-text">
+            One installer. It registers the MyCam camera with Windows and adds a
+            tray icon. No account, no driver hunting.
+          </p>
+        </li>
+        <li class="step col-4 reveal">
+          <p class="step-num hud">Step 02</p>
+          <h3 class="sub-title display">Connect the phone</h3>
+          <p class="body-text">
+            Android: plug in the cable and tap <strong>Always</strong> once, or pair
+            over Wi-Fi by scanning a QR code. iPhone: scan the code and Safari opens
+            the camera page — nothing to install.
+          </p>
+        </li>
+        <li class="step col-4 reveal">
+          <p class="step-num hud">Step 03</p>
+          <h3 class="sub-title display">Pick MyCam</h3>
+          <p class="body-text">
+            In Zoom, Teams, Meet, OBS, Discord or the Camera app, choose
+            <strong>MyCam</strong> as the camera. The phone's camera turns on only
+            while an app is using it.
+          </p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- 4. WORKS IN EVERY APP -------------------------------------------- -->
+  <section class="section-line apps" id="apps">
+    <div class="wrap">
+      <p class="eyebrow"><span class="num">03</span> / Compatibility</p>
+      <div class="grid">
+        <div class="col-6">
+          <h2 class="display section-title">
+            It's just<br>a webcam.<br><span class="dim">Everything sees it.</span>
+          </h2>
+        </div>
+        <div class="col-6">
+          <p class="body-text">
+            MyCam registers as a real camera through the Windows Frame Server, the
+            same path your built-in webcam uses. Anything that can open a camera can
+            open MyCam — no plugin, no per-app setup.
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="marquee" aria-hidden="true">
+      <div class="marquee-track" id="marquee-track">
+        <span>Zoom</span><span class="dot">/</span>
+        <span>Microsoft Teams</span><span class="dot">/</span>
+        <span>Google Meet</span><span class="dot">/</span>
+        <span>OBS Studio</span><span class="dot">/</span>
+        <span>Discord</span><span class="dot">/</span>
+        <span>Windows Camera</span><span class="dot">/</span>
+        <span>Chrome</span><span class="dot">/</span>
+        <span>Edge</span><span class="dot">/</span>
+        <span>Firefox</span><span class="dot">/</span>
+        <span>Slack</span><span class="dot">/</span>
+      </div>
+    </div>
+    <p class="visually-hidden">
+      Works in Zoom, Microsoft Teams, Google Meet, OBS Studio, Discord, the Windows
+      Camera app, Chrome, Edge, Firefox and Slack.
+    </p>
+  </section>
+
+  <!-- 5. FEATURES ------------------------------------------------------ -->
+  <section class="section-line" id="features">
+    <div class="wrap">
+      <p class="eyebrow"><span class="num">04</span> / What you get</p>
+
+      <div class="grid">
+        <div class="col-5">
+          <h2 class="display section-title">
+            Every control<br><span class="dim">on the PC.</span>
+          </h2>
+          <p class="body-text feature-intro">
+            The phone stays in your pocket or on a stand. You change the camera,
+            resolution, frame rate, zoom and torch from the MyCam window on Windows —
+            and every option comes from what your phone actually reports it can do.
+          </p>
+        </div>
+
+        <div class="col-7">
+          <div class="accordion" id="feature-accordion">
+            <details class="acc-item" open>
+              <summary>
+                <span class="acc-title">Wired over USB</span>
+                <span class="acc-sign" aria-hidden="true"></span>
+              </summary>
+              <div class="acc-body">
+                <p>
+                  Plug the phone in and it works. MyCam uses Android Open Accessory,
+                  so there's no Developer Options, no USB debugging and no ADB. The
+                  cable carries the video, so there's nothing to go wrong on your
+                  Wi-Fi.
+                </p>
+              </div>
+            </details>
+
+            <details class="acc-item">
+              <summary>
+                <span class="acc-title">Wireless over Wi-Fi</span>
+                <span class="acc-sign" aria-hidden="true"></span>
+              </summary>
+              <div class="acc-body">
+                <p>
+                  Scan the QR code on the PC once and the phone pairs itself. The
+                  session is encrypted, the pairing is remembered, and a phone on the
+                  cable always takes priority over a wireless one.
+                </p>
+              </div>
+            </details>
+
+            <details class="acc-item">
+              <summary>
+                <span class="acc-title">iPhone through Safari</span>
+                <span class="acc-sign" aria-hidden="true"></span>
+              </summary>
+              <div class="acc-body">
+                <p>
+                  There's no app to install on an iPhone. The PC serves a page over
+                  HTTPS; you scan a QR code, tap Start, and the iPhone encodes video
+                  in hardware and sends it over the local network. Add it to your home
+                  screen and it reconnects without the code.
+                </p>
+              </div>
+            </details>
+
+            <details class="acc-item">
+              <summary>
+                <span class="acc-title">Front and back cameras</span>
+                <span class="acc-sign" aria-hidden="true"></span>
+              </summary>
+              <div class="acc-body">
+                <p>
+                  Switch between them mid-call from either end. Turn the phone any way
+                  you like, including upside down — the picture stays upright for
+                  everyone else.
+                </p>
+              </div>
+            </details>
+
+            <details class="acc-item">
+              <summary>
+                <span class="acc-title">Pause that actually pauses</span>
+                <span class="acc-sign" aria-hidden="true"></span>
+              </summary>
+              <div class="acc-body">
+                <p>
+                  Pause from the phone, its notification or the PC tray, and apps see a
+                  "Camera paused" picture instead of you. The camera also switches
+                  itself off while Windows is locked.
+                </p>
+              </div>
+            </details>
+
+            <details class="acc-item">
+              <summary>
+                <span class="acc-title">Quality, frame rate, zoom, torch</span>
+                <span class="acc-sign" aria-hidden="true"></span>
+              </summary>
+              <div class="acc-body">
+                <p>
+                  Up to 4K, with 30, 60 or 120 fps where the phone supports it — many
+                  phones only manage 30 at 4K, and MyCam only offers what yours
+                  reports. Zoom, brightness, focus and the torch are on the PC too,
+                  each with an Auto option.
+                </p>
+              </div>
+            </details>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 6. SEE THE APP (§9) ---------------------------------------------- -->
+  <section class="section-line" id="see-the-app">
+    <div class="wrap">
+      <p class="eyebrow"><span class="num">05</span> / See the app</p>
+
+      <div class="grid">
+        <div class="col-6">
+          <h2 class="display section-title">
+            One screen.<br><span class="dim">Three places.</span>
+          </h2>
+        </div>
+        <div class="col-6">
+          <p class="body-text">
+            The PC app, the Android app and the iPhone page are the same screen in
+            three frames. It's live below — not a screenshot. Watch it connect,
+            stream and pause.
+          </p>
+        </div>
+      </div>
+
+      <div class="app-demo" id="app-demo">
+        <div class="app-demo-bar">
+          <div class="tabs" role="tablist" aria-label="Where MyCam is running">
+            <button class="tab is-active" role="tab" aria-selected="true" aria-controls="frame-pc" id="tab-pc" data-frame="pc">Windows PC</button>
+            <button class="tab" role="tab" aria-selected="false" aria-controls="frame-android" id="tab-android" data-frame="android">Android</button>
+            <button class="tab" role="tab" aria-selected="false" aria-controls="frame-iphone" id="tab-iphone" data-frame="iphone">iPhone</button>
+          </div>
+
+          <div class="app-demo-state">
+            <p class="hud" id="state-readout">Not connected</p>
+            <button class="btn btn-ghost btn-sm" id="state-next">Next state</button>
+          </div>
+        </div>
+
+        <p class="hud app-demo-label">Illustration of the app</p>
+
+        <div class="app-stage" id="app-stage" data-state="idle">
+
+          <!-- PC: Windows XP Luna window -->
+          <div class="frame frame-pc is-active" id="frame-pc" role="tabpanel" aria-labelledby="tab-pc">
+            <div class="xp-window">
+              <div class="xp-titlebar">
+                <span class="xp-title-icon" aria-hidden="true"></span>
+                <span class="xp-title">MyCam</span>
+                <span class="xp-buttons" aria-hidden="true">
+                  <span class="xp-btn xp-min"></span>
+                  <span class="xp-btn xp-max"></span>
+                  <span class="xp-btn xp-close"></span>
+                </span>
+              </div>
+
+              <div class="xp-body">
+                <div class="xp-pane">
+                  <p class="xp-pane-head">Camera</p>
+                  <ul class="xp-list">
+                    <li class="is-current"><span class="xp-radio" aria-hidden="true"></span>Back camera</li>
+                    <li><span class="xp-radio" aria-hidden="true"></span>Front camera</li>
+                  </ul>
+                  <p class="xp-pane-head">Quality</p>
+                  <ul class="xp-list">
+                    <li class="is-current"><span class="xp-radio" aria-hidden="true"></span>1080p · 30 fps</li>
+                    <li><span class="xp-radio" aria-hidden="true"></span>4K · 30 fps</li>
+                  </ul>
+                </div>
+
+                <div class="xp-main">
+                  <div class="xp-preview" data-preview>
+                    <div class="xp-preview-idle">
+                      <div class="pixel-cable" aria-hidden="true"></div>
+                      <p>Waiting for a phone</p>
+                    </div>
+                    <div class="xp-preview-live" aria-hidden="true"></div>
+                    <div class="xp-preview-paused">
+                      <p>Camera paused</p>
+                    </div>
+                  </div>
+
+                  <div class="xp-controls">
+                    <button class="xp-orb xp-orb-play" type="button" aria-label="Resume the camera"></button>
+                    <button class="xp-orb xp-orb-pause" type="button" aria-label="Pause the camera"></button>
+                    <p class="xp-status" data-status>Not connected</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Android phone -->
+          <div class="frame frame-android" id="frame-android" role="tabpanel" aria-labelledby="tab-android" hidden>
+            <div class="phone-shell">
+              <div class="phone-screen app-android">
+                <div class="and-head">
+                  <p class="and-app">MyCam</p>
+                  <p class="and-state" data-status>Not connected</p>
+                </div>
+
+                <p class="and-hint" data-hint>Plug this phone into a PC running MyCam.</p>
+
+                <div class="and-card">
+                  <button class="xp-orb xp-orb-pause" type="button" aria-label="Pause the camera"></button>
+                  <div>
+                    <p class="and-card-title">Pause the camera</p>
+                    <p class="and-card-sub">Turns the camera off until you resume, here or on the PC.</p>
+                  </div>
+                </div>
+
+                <div class="and-card and-card-stack">
+                  <p class="and-card-title">Camera</p>
+                  <ul class="and-choice">
+                    <li class="is-current"><span class="xp-radio" aria-hidden="true"></span>Back camera</li>
+                    <li><span class="xp-radio" aria-hidden="true"></span>Front camera</li>
+                  </ul>
+                  <p class="and-card-sub">The camera turns on only while an app on the PC is using it.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- iPhone in Safari -->
+          <div class="frame frame-iphone" id="frame-iphone" role="tabpanel" aria-labelledby="tab-iphone" hidden>
+            <div class="phone-shell phone-shell-ios">
+              <div class="phone-screen app-ios">
+                <div class="ios-bar">
+                  <span class="ios-lock" aria-hidden="true"></span>
+                  <span class="ios-url">192.168.1.24</span>
+                </div>
+
+                <div class="ios-body">
+                  <p class="ios-state" data-status>Paused</p>
+                  <p class="ios-hint" data-hint>The camera is off. Apps see a "Camera paused" picture.</p>
+
+                  <div class="ios-preview" data-preview>
+                    <div class="xp-preview-live" aria-hidden="true"></div>
+                    <div class="xp-preview-paused"><p>Camera paused</p></div>
+                  </div>
+
+                  <button class="ios-action" type="button">Resume the camera</button>
+                  <p class="ios-sub">The camera turns back on if an app on the PC still uses it.</p>
+                  <p class="ios-sub">Resolution, frame rate, zoom and torch are chosen on the PC.</p>
+
+                  <div class="ios-row">
+                    <span>Dim the screen</span>
+                    <span class="ios-switch" aria-hidden="true"></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 7. INSTALL AND TRUST -------------------------------------------- -->
+  <section class="section-line" id="trust">
+    <div class="wrap">
+      <p class="eyebrow"><span class="num">06</span> / Install and trust</p>
+
+      <div class="grid">
+        <div class="col-6">
+          <h2 class="display section-title">
+            Not signed yet.<br><span class="dim">Here's the truth.</span>
+          </h2>
+          <p class="body-text">
+            MyCam doesn't have a code-signing certificate yet, so Windows will show
+            <strong>"Windows protected your PC"</strong> the first time you run the
+            installer. That warning is about the missing signature, not about
+            anything found in the file. Here's exactly what to expect, and how to
+            check the download yourself.
+          </p>
+          <p class="body-text">
+            A certificate is in progress. Until it lands, verify the hash — the
+            number below comes straight from the GitHub release.
+          </p>
+        </div>
+
+        <div class="col-6">
+          <div class="trust-card framed">
+            <span class="bracket tl"></span><span class="bracket tr"></span>
+            <span class="bracket bl"></span><span class="bracket br"></span>
+
+            <dl class="trust-list">
+              <div>
+                <dt class="hud">Installer</dt>
+                <dd class="js-filename">MyCam-Setup-1.4.3.exe</dd>
+              </div>
+              <div>
+                <dt class="hud">Size</dt>
+                <dd class="js-size">12.1 MB</dd>
+              </div>
+              <div>
+                <dt class="hud">Version</dt>
+                <dd class="js-version">v1.4.3</dd>
+              </div>
+              <div>
+                <dt class="hud">SHA-256</dt>
+                <dd class="mono js-sha">33dd90260e1d8bb2b0ab35726bcfcbf59d18698ecb5a71c126a9ae38c19737c6</dd>
+              </div>
+            </dl>
+
+            <p class="hud trust-verify">Verify in PowerShell</p>
+            <pre class="code"><code>Get-FileHash .\MyCam-Setup-1.4.3.exe -Algorithm SHA256</code></pre>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid trust-grid">
+        <div class="col-6">
+          <h3 class="sub-title display">Getting past SmartScreen</h3>
+          <ol class="numbered body-text">
+            <li>Run the installer. Windows shows "Windows protected your PC".</li>
+            <li>Click <strong>More info</strong>.</li>
+            <li>Click <strong>Run anyway</strong>.</li>
+          </ol>
+          <p class="body-text">
+            Prefer not to? Build it from source instead — it's MIT, and the build
+            steps are in the repo.
+          </p>
+        </div>
+
+        <div class="col-6">
+          <h3 class="sub-title display">What the installer does</h3>
+          <ul class="ticks body-text">
+            <li>Registers the MyCam camera with Windows.</li>
+            <li>Installs the UsbDk driver if it isn't already there — it's needed to
+              switch an Android phone into accessory mode. Signed by Red Hat, and the
+              download is hash-checked.</li>
+            <li>Adds a Windows Firewall rule for the iPhone page, on private networks
+              only.</li>
+            <li>Offers to start MyCam with Windows. Your choice.</li>
+            <li>Uninstalls from Settings → Apps like anything else.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 8. FAQ ----------------------------------------------------------- -->
+  <section class="section-line" id="faq">
+    <div class="wrap">
+      <p class="eyebrow"><span class="num">07</span> / Questions</p>
+
+      <div class="grid">
+        <div class="col-5">
+          <h2 class="display section-title">Straight<br>answers.</h2>
+        </div>
+
+        <div class="col-7">
+          <div class="accordion">
+            <details class="acc-item">
+              <summary><span class="acc-title">Does it work on Windows 10?</span><span class="acc-sign" aria-hidden="true"></span></summary>
+              <div class="acc-body"><p>
+                No. MyCam uses a Windows 11 API for virtual cameras
+                (<code>MFCreateVirtualCamera</code>) that Windows 10 doesn't have.
+                Windows 10 support would need a different, older camera path — it's on
+                the list, not built.
+              </p></div>
+            </details>
+
+            <details class="acc-item">
+              <summary><span class="acc-title">Is there a Mac version?</span><span class="acc-sign" aria-hidden="true"></span></summary>
+              <div class="acc-body"><p>
+                No. MyCam is a Windows 11 app. macOS already has Continuity Camera
+                built in for iPhones.
+              </p></div>
+            </details>
+
+            <details class="acc-item">
+              <summary><span class="acc-title">Do I need Developer Options or ADB?</span><span class="acc-sign" aria-hidden="true"></span></summary>
+              <div class="acc-body"><p>
+                No. That's the whole point of the USB path. Android asks once whether
+                to open MyCam when you plug in; tick <strong>Always</strong> and you're
+                done. Windows asks for admin once per new phone, to give the phone's
+                accessory mode its built-in driver.
+              </p></div>
+            </details>
+
+            <details class="acc-item">
+              <summary><span class="acc-title">Is my video sent anywhere?</span><span class="acc-sign" aria-hidden="true"></span></summary>
+              <div class="acc-body"><p>
+                No. Video goes from your phone to your PC — over the cable, or over your
+                own network — and nowhere else. There's no account, no server and no
+                telemetry. Wireless sessions are encrypted, and the PC stores only a
+                hash of each paired device's token.
+              </p></div>
+            </details>
+
+            <details class="acc-item">
+              <summary><span class="acc-title">What about Windows 11 N editions?</span><span class="acc-sign" aria-hidden="true"></span></summary>
+              <div class="acc-body"><p>
+                N editions ship without the media features MyCam needs to decode video.
+                Install Microsoft's <strong>Media Feature Pack</strong> and it works.
+              </p></div>
+            </details>
+
+            <details class="acc-item">
+              <summary><span class="acc-title">Can I still transfer files over the cable?</span><span class="acc-sign" aria-hidden="true"></span></summary>
+              <div class="acc-body"><p>
+                Not while MyCam is running. Any Android phone you plug in switches to
+                webcam mode, which takes the place of file transfer. Exit MyCam from the
+                tray and the cable behaves normally again.
+              </p></div>
+            </details>
+
+            <details class="acc-item">
+              <summary><span class="acc-title">Does it drain the battery?</span><span class="acc-sign" aria-hidden="true"></span></summary>
+              <div class="acc-body"><p>
+                Over USB the phone charges while it streams. Wirelessly it does use
+                power, and the phone can get warm — there's a "Dim the screen" option to
+                help, and MyCam warns you if it heats up.
+              </p></div>
+            </details>
+
+            <details class="acc-item">
+              <summary><span class="acc-title">What does it cost?</span><span class="acc-sign" aria-hidden="true"></span></summary>
+              <div class="acc-body"><p>
+                Nothing. It's free and open source under the MIT license. No trial, no
+                watermark, no upgrade.
+              </p></div>
+            </details>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 9. DOWNLOAD BAND ------------------------------------------------- -->
+  <section class="section-line download-band" id="download">
+    <div class="wrap">
+      <div class="dl-inner">
+        <p class="eyebrow"><span class="num">08</span> / Get it</p>
+        <h2 class="display section-title">
+          Make your phone<br><span class="dim">the camera.</span>
+        </h2>
+
+        <div class="btn-row dl-cta">
+          <a class="btn btn-lg js-download" href="https://github.com/whoissaaif/mycam/releases/latest">
+            Download for Windows
+          </a>
+          <a class="btn btn-ghost btn-lg" href="get-started.html">Read the setup guide</a>
+        </div>
+
+        <p class="hud dl-meta">
+          <span class="js-version">v1.4.3</span>
+          <span class="sep">/</span>
+          <span class="js-size">12.1 MB</span>
+          <span class="sep">/</span>
+          <span>Windows 11 only</span>
+          <span class="sep">/</span>
+          <span>Android app also on the release page</span>
+        </p>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <p class="display foot-word" aria-hidden="true">MyCam</p>
+
+    <div class="foot-rows grid">
+      <div class="col-4">
+        <p class="hud">The app</p>
+        <ul class="foot-list">
+          <li><a href="get-started.html">Get started</a></li>
+          <li><a href="#features">Features</a></li>
+          <li><a href="#faq">FAQ</a></li>
+          <li><a class="js-download" href="https://github.com/whoissaaif/mycam/releases/latest">Download</a></li>
+        </ul>
+      </div>
+      <div class="col-4">
+        <p class="hud">Project</p>
+        <ul class="foot-list">
+          <li><a href="https://github.com/whoissaaif/mycam">Source on GitHub</a></li>
+          <li><a href="https://github.com/whoissaaif/mycam/issues">Report a problem</a></li>
+          <li><a href="https://github.com/whoissaaif/mycam/releases">All releases</a></li>
+          <li><a href="https://github.com/whoissaaif/mycam/blob/main/LICENSE">MIT license</a></li>
+        </ul>
+      </div>
+      <div class="col-4">
+        <p class="hud">Legal</p>
+        <ul class="foot-list">
+          <li><a href="privacy.html">Privacy</a></li>
+          <li><a href="privacy.html#signing">Code signing policy</a></li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="foot-note">
+      Free and open source, MIT. Not affiliated with Microsoft, Google or Apple.
+      The Windows XP look inside the app is drawn from scratch.
+    </p>
+  </div>
+</footer>
+
+<script>document.documentElement.classList.remove('no-js');</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js" defer></script>
+<script src="assets/js/release.js" defer></script>
+<script src="assets/js/main.js" defer></script>
+</body>
+</html>

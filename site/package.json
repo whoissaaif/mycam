@@ -1,0 +1,20 @@
+{
+  "name": "mycam-site",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Marketing and download site for MyCam (docs/mycam-website.md)",
+  "license": "MIT",
+  "scripts": {
+    "dev": "python -m http.server 8745",
+    "check": "node tools/check-links.mjs"
+  },
+  "comment": "The site is plain HTML/CSS/JS with no build step (brief section 11). GSAP and Lenis load from a CDN at pinned versions. The dependencies below were installed while choosing a stack and are NOT used by any file in this folder: remove them with `npm uninstall gsap animejs three @react-three/fiber react react-dom` once the 3D-phone question in section 10 is settled.",
+  "dependencies": {
+    "@react-three/fiber": "^9.8.2",
+    "animejs": "^4.5.0",
+    "gsap": "^3.15.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "three": "^0.186.1"
+  }
+}

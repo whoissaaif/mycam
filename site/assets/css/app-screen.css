@@ -1,0 +1,562 @@
+/* MyCam site — "See the app" (§9).
+ *
+ * One recreated app screen shown in three frames: a Windows XP Luna window,
+ * an Android phone and an iPhone in Safari. This is the ONLY place the XP look
+ * appears on the site (§1) — the site itself is the dark viewfinder theme.
+ *
+ * All of it is drawn here with gradients and borders: no Microsoft artwork,
+ * no icon sets, nothing lifted (CLAUDE.md: art is original).
+ */
+
+.app-demo {
+  margin-top: 56px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+
+.app-demo-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+
+.tabs {
+  display: flex;
+  gap: 6px;
+}
+
+.tab {
+  padding: 9px 16px;
+  font-family: var(--font-ui);
+  font-weight: 700;
+  font-size: var(--fs-label);
+  letter-spacing: var(--ui-tracking);
+  text-transform: uppercase;
+  color: var(--muted);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: color var(--t-fast) var(--ease),
+              border-color var(--t-fast) var(--ease);
+}
+
+.tab:hover { color: var(--text); }
+
+.tab.is-active {
+  color: var(--text);
+  border-color: var(--line-hi);
+}
+
+.app-demo-state {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.app-demo-state .hud { margin: 0; color: var(--text); }
+
+.app-demo-label {
+  margin: 0;
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.app-stage {
+  display: grid;
+  place-items: center;
+  position: relative;
+  padding: 48px 24px;
+  background: var(--ink);
+}
+
+/* A focusing-screen crosshair behind the device, rather than the two-axis
+ * grid every generated page uses. Two hairlines, centred, barely there. */
+.app-stage::before,
+.app-stage::after {
+  content: "";
+  position: absolute;
+  background: var(--line);
+  pointer-events: none;
+}
+
+.app-stage::before {
+  top: 50%;
+  left: 24px;
+  right: 24px;
+  height: 1px;
+}
+
+.app-stage::after {
+  left: 50%;
+  top: 24px;
+  bottom: 24px;
+  width: 1px;
+}
+
+.frame { position: relative; z-index: 1; }
+
+.frame { display: none; width: 100%; }
+.frame.is-active { display: flex; justify-content: center; }
+
+/* ===== Windows XP Luna window ========================================= */
+.xp-window {
+  width: 100%;
+  max-width: 680px;
+  font-family: Tahoma, Verdana, Arimo, Arial, sans-serif;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #10233f;
+  background: #ece9d8;
+  border: 1px solid #0a3d91;
+  border-radius: 7px 7px 2px 2px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+/* Luna's title bar: deep blue at the edges, brighter through the middle,
+ * with a highlight along the top. */
+.xp-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 6px 0 8px;
+  /* The two bright stops are a step deeper than Luna's so that white title
+   * text clears 4.5:1 against every band of the gradient, not just the dark
+   * middle (#2f7bea was 4.08:1, #2a74e0 was 4.49:1; both are 4.62:1 now).
+   * Still reads as the glossy Luna bar. */
+  background:
+    linear-gradient(180deg,
+      #2a72dd 0%, #1152c6 8%, #0a49b8 42%,
+      #0f55c9 76%, #2a72dd 93%, #1b5fd0 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.xp-title {
+  flex: 1;
+  font-weight: 700;
+  font-size: 12px;
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.55);
+}
+
+/* The app's own mark, redrawn: a compact camera whose lens shows hills. */
+.xp-title-icon {
+  width: 16px;
+  height: 14px;
+  border: 1px solid #0b2d5e;
+  border-radius: 2px;
+  background:
+    radial-gradient(circle at 50% 62%, #cfe6ff 0 2.2px, transparent 2.3px),
+    linear-gradient(180deg, #f2f6ff, #b9cbe6);
+}
+
+.xp-buttons { display: flex; gap: 2px; }
+
+.xp-btn {
+  width: 21px;
+  height: 21px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  border-radius: 3px;
+  background: linear-gradient(180deg, #5b9bf0, #1b5bc4);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.xp-btn.xp-close {
+  background: linear-gradient(180deg, #f08a72, #c93b22);
+}
+
+.xp-body {
+  display: grid;
+  grid-template-columns: 190px 1fr;
+  gap: 10px;
+  padding: 10px;
+}
+
+/* XP task pane: light blue, rounded, with a header band. */
+.xp-pane {
+  padding: 10px;
+  background: linear-gradient(180deg, #f4f8fe, #dfe8f8);
+  border: 1px solid #b6c7e3;
+  border-radius: 4px;
+}
+
+.xp-pane-head {
+  margin: 0 0 8px;
+  font-weight: 700;
+  color: #1f4e9c;
+}
+
+.xp-pane-head + .xp-list { margin-bottom: 14px; }
+
+.xp-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+}
+
+.xp-list li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #22365a;
+}
+
+/* Green radio dot, XP style. */
+.xp-radio {
+  flex: 0 0 auto;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  border: 1px solid #8ea4c6;
+  background: radial-gradient(circle at 36% 32%, #fff, #dde6f3);
+}
+
+.is-current > .xp-radio {
+  border-color: #3f7a24;
+  background:
+    radial-gradient(circle at 50% 50%, #5dbb35 0 3px, transparent 3.2px),
+    radial-gradient(circle at 36% 30%, #fff, #e6f2dd);
+}
+
+.xp-main { display: grid; gap: 10px; }
+
+.xp-preview {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: #0d1016;
+  border: 1px solid #93a7c4;
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.xp-preview > * {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  padding: 14px;
+  justify-items: center;
+  text-align: center;
+  opacity: 0;
+  transition: opacity var(--t-mid) var(--ease);
+}
+
+.xp-preview p {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  color: #cfd8e6;
+}
+
+/* Which layer is visible follows the stage state. */
+[data-state="idle"] .xp-preview-idle,
+[data-state="live"] .xp-preview-live,
+[data-state="paused"] .xp-preview-paused { opacity: 1; }
+
+/* "Live" picture: an abstract moving field, not a fake video still. It only
+ * animates while the section is on screen (§5), via .is-rolling. */
+.xp-preview-live {
+  background:
+    radial-gradient(120% 90% at 30% 20%, rgba(93, 187, 53, 0.16), transparent 60%),
+    radial-gradient(120% 90% at 78% 72%, rgba(42, 116, 224, 0.22), transparent 62%),
+    linear-gradient(180deg, #16202f, #0b1017);
+}
+
+.is-rolling .xp-preview-live {
+  animation: roll 9s linear infinite alternate;
+}
+
+@keyframes roll {
+  from { background-position: 0% 0%, 100% 100%, 0 0; }
+  to { background-position: 18% 8%, 76% 86%, 0 0; }
+}
+
+.xp-preview-paused { background: #11151d; }
+
+.xp-preview-paused p { color: #9aa6b8; }
+
+/* A pixel cable that plugs in as the state changes (§4: pixel art, steps()). */
+.pixel-cable {
+  width: 72px;
+  height: 10px;
+  background:
+    linear-gradient(90deg, #6d7686 0 60%, transparent 60%),
+    linear-gradient(90deg, #aab3c2 0 8px, transparent 8px);
+  background-repeat: no-repeat;
+  image-rendering: pixelated;
+  transform: translateX(-26px);
+}
+
+.is-rolling .pixel-cable {
+  animation: plug 1600ms steps(6, end) infinite alternate;
+}
+
+@keyframes plug {
+  from { transform: translateX(-26px); }
+  to { transform: translateX(0); }
+}
+
+.xp-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px;
+  background: linear-gradient(180deg, #fdfdfb, #e7e3d2);
+  border: 1px solid #c3bda6;
+  border-radius: 4px;
+}
+
+/* Glossy orbs. Green = play/resume, orange = pause. Original shapes. */
+.xp-orb {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 1px solid #3d6b22;
+  background:
+    radial-gradient(circle at 38% 28%, rgba(255, 255, 255, 0.95) 0 16%, transparent 52%),
+    linear-gradient(0deg, #2f6b18 0%, rgba(47, 107, 24, 0) 46%),
+    linear-gradient(180deg, #7fd14e, #3f8c22);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  transition: transform var(--t-fast) var(--ease), filter var(--t-fast) var(--ease);
+}
+
+.xp-orb-pause {
+  border-color: #9c5a12;
+  background:
+    radial-gradient(circle at 38% 28%, rgba(255, 255, 255, 0.95) 0 16%, transparent 52%),
+    linear-gradient(0deg, #8a4a0c 0%, rgba(138, 74, 12, 0) 46%),
+    linear-gradient(180deg, #ffc266, #e07f12);
+}
+
+.xp-orb:hover { transform: scale(1.06); filter: brightness(1.06); }
+
+.xp-status {
+  margin: 0;
+  font-weight: 700;
+  color: #1f4e9c;
+}
+
+/* The pause orb is the live control while streaming; play while paused. */
+[data-state="live"] .xp-orb-play,
+[data-state="paused"] .xp-orb-pause { opacity: 0.4; pointer-events: none; }
+
+[data-state="idle"] .xp-orb { opacity: 0.4; pointer-events: none; }
+
+/* ===== Phone shells =================================================== */
+.phone-shell {
+  width: 100%;
+  max-width: 320px;
+  padding: 10px;
+  background: #15181d;
+  border: 1px solid #2c3139;
+  border-radius: 34px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+}
+
+.phone-screen {
+  border-radius: 26px;
+  overflow: hidden;
+  min-height: 560px;
+  font-family: Arimo, Arial, Helvetica, sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+/* ---- Android: XP Luna, phone layout ---------------------------------- */
+.app-android {
+  padding: 18px 16px 22px;
+  background: linear-gradient(180deg, #eef3fc 0%, #e3eaf7 100%);
+  color: #16294a;
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.and-head { display: grid; gap: 4px; }
+
+.and-app {
+  margin: 0;
+  font-family: Tahoma, Verdana, Arimo, Arial, sans-serif;
+  font-weight: 700;
+  font-size: 19px;
+  color: #10377d;
+}
+
+.and-state {
+  margin: 0;
+  font-weight: 700;
+  color: #1f4e9c;
+}
+
+.and-hint { margin: 0; color: #46587a; }
+
+.and-card {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 13px;
+  background: linear-gradient(180deg, #ffffff, #f2f6fd);
+  border: 1px solid #c3d2ea;
+  border-radius: 6px;
+}
+
+.and-card-stack { display: grid; gap: 9px; }
+
+.and-card-title {
+  margin: 0;
+  font-weight: 700;
+  color: #16294a;
+}
+
+.and-card-sub { margin: 0; font-size: 12px; color: #5a6c8c; }
+
+.and-choice {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.and-choice li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #22365a;
+}
+
+/* ---- iPhone: the served page in Safari -------------------------------- */
+.phone-shell-ios { border-radius: 42px; }
+
+.app-ios {
+  background: #0e1218;
+  color: #e8ecf2;
+  display: grid;
+  grid-template-rows: auto 1fr;
+}
+
+.ios-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 11px;
+  background: #1c2129;
+  border-bottom: 1px solid #2b3240;
+  font-size: 11px;
+  color: #9aa6b8;
+}
+
+.ios-lock {
+  width: 8px;
+  height: 10px;
+  border: 1px solid #9aa6b8;
+  border-radius: 1px;
+  position: relative;
+}
+
+.ios-lock::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: 1px;
+  width: 4px;
+  height: 4px;
+  border: 1px solid #9aa6b8;
+  border-bottom: 0;
+  border-radius: 2px 2px 0 0;
+}
+
+.ios-body {
+  padding: 20px 16px 24px;
+  display: grid;
+  gap: 12px;
+  align-content: start;
+}
+
+.ios-state {
+  margin: 0;
+  font-family: Tahoma, Verdana, Arimo, Arial, sans-serif;
+  font-weight: 700;
+  font-size: 19px;
+}
+
+.ios-hint { margin: 0; font-size: 12px; color: #9aa6b8; }
+
+.ios-preview {
+  position: relative;
+  aspect-ratio: 4 / 3;
+  border: 1px solid #2b3240;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #0b0f14;
+}
+
+.ios-preview > * {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  padding: 14px;
+  opacity: 0;
+  transition: opacity var(--t-mid) var(--ease);
+}
+
+.ios-preview p { margin: 0; font-size: 11px; color: #9aa6b8; }
+
+.ios-action {
+  padding: 13px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(180deg, #3f8c22, #2f6b18);
+  border: 1px solid #27570f;
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.ios-sub { margin: 0; font-size: 11.5px; color: #8893a5; }
+
+.ios-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 1px solid #2b3240;
+  font-size: 12.5px;
+}
+
+.ios-switch {
+  width: 40px;
+  height: 23px;
+  border-radius: 12px;
+  background: #3a4252;
+  position: relative;
+}
+
+.ios-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: #e8ecf2;
+}
+
+@media (max-width: 719px) {
+  .app-stage { padding: 28px 12px; }
+  .xp-body { grid-template-columns: 1fr; }
+  .xp-window { font-size: 11px; }
+}

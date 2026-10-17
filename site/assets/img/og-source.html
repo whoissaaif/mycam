@@ -1,0 +1,117 @@
+<!doctype html>
+<!-- Source for og.png. Render at exactly 1200x630 and screenshot:
+     node shoot.mjs "http://127.0.0.1:8745/assets/img/og-source.html" og.png
+     Kept in the repo so the card can be regenerated when the wording changes. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:wdth,wght@150,900&family=Arimo:wght@400;700&display=swap">
+<link rel="stylesheet" href="../css/tokens.css">
+<style>
+  html, body { margin: 0; padding: 0; }
+
+  body {
+    width: 1200px;
+    height: 630px;
+    background: var(--ink);
+    color: var(--text);
+    font-family: var(--font-ui);
+    overflow: hidden;
+    position: relative;
+  }
+
+  .card {
+    position: absolute;
+    inset: 48px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+  }
+
+  .bracket {
+    position: absolute;
+    width: 34px;
+    height: 34px;
+    border: 2px solid var(--line-hi);
+  }
+
+  .tl { top: 0; left: 0; border-right: 0; border-bottom: 0; }
+  .tr { top: 0; right: 0; border-left: 0; border-bottom: 0; }
+  .bl { bottom: 0; left: 0; border-right: 0; border-top: 0; }
+  .br { bottom: 0; right: 0; border-left: 0; border-top: 0; }
+
+  .top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 6px 18px 0;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .rec { display: flex; align-items: center; gap: 10px; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--rec); }
+
+  h1 {
+    margin: 0;
+    padding: 0 18px;
+    font-family: var(--font-display);
+    font-weight: 900;
+    font-variation-settings: "wdth" 150, "wght" 900;
+    font-size: 80px;
+    line-height: 0.9;
+    letter-spacing: -0.01em;
+    text-transform: uppercase;
+  }
+
+  h1 .dim { color: var(--muted); }
+
+  .foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 18px 6px;
+  }
+
+  .tag {
+    margin: 0;
+    font-size: 21px;
+    color: var(--muted);
+    max-width: 640px;
+  }
+
+  .pill {
+    padding: 14px 24px;
+    background: var(--rec-solid);
+    color: #fff;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    text-transform: uppercase;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <span class="bracket tl"></span><span class="bracket tr"></span>
+    <span class="bracket bl"></span><span class="bracket br"></span>
+
+    <div class="top">
+      <span>MyCam — phone to webcam</span>
+      <span class="rec"><span class="dot"></span>REC</span>
+    </div>
+
+    <h1>Your phone<br>is a better camera<br><span class="dim">than your laptop.</span></h1>
+
+    <div class="foot">
+      <p class="tag">Turn an Android phone or iPhone into a webcam for Windows 11. Free and open source.</p>
+      <span class="pill">Download</span>
+    </div>
+  </div>
+</body>
+</html>

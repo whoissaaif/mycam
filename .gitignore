@@ -48,3 +48,9 @@ local.properties
 
 pc/tools/webtest/cert/
 pc/tools/webtest/results/
+
+# Node modules (website build deps)
+node_modules/
+
+# Impeccable local detector config (per-developer tooling)
+/.impeccable/

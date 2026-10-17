@@ -1,0 +1,88 @@
+/* MyCam site — design tokens
+ * Spec: docs/mycam-website.md §4 (Look), §5 (Motion)
+ * Viewfinder / HUD theme. Dark only, by design — no light mode.
+ */
+
+:root {
+  /* ---- Color (§4) ------------------------------------------------------ */
+  --ink: #0b0c0e;    /* page background                                    */
+  --panel: #14161a;  /* cards, device frames                               */
+  --line: #2a2d33;   /* borders, grid lines                                */
+  --text: #ecedef;   /* headlines, body                                    */
+  --muted: #9aa0a9;  /* captions, secondary text (~7.4:1 on ink)           */
+  --rec: #ff3b30;    /* THE accent. REC dot, brackets, focus box, red text */
+                     /* Budget: under 5% of any screen.                    */
+  /* Same red, one step deeper, used ONLY as a fill behind white text.
+   * #FFF on #ff3b30 is 3.55:1 — it fails WCAG AA for button text, which is
+   * bold 15px (under the 18.66px "large text" threshold). This passes at
+   * 4.66:1 and is indistinguishable at a glance. §8 requires AA contrast. */
+  --rec-solid: #df2b1f;
+
+  /* Derived surfaces — kept few on purpose. */
+  --panel-hi: #1b1e23;
+  --line-hi: #3a3f47;
+  --rec-dim: rgba(255, 59, 48, 0.14);
+  --ink-veil: rgba(11, 12, 14, 0.82);
+
+  /* ---- Type (§4) ------------------------------------------------------- */
+  /* Display: Epic Pro is licensed — stand-in is Anybody at max width/weight
+   * until that license is cleared (§10). Both are wide, ultra-heavy, caps. */
+  --font-display: "Anybody", "Arial Black", "Arial Bold", Arial, sans-serif;
+  --font-ui: Arial, Arimo, Helvetica, sans-serif;
+
+  --display-tracking: -0.01em;
+  --display-leading: 0.9;
+  --ui-tracking: -0.02em;
+
+  /* Fluid display sizes. Few words per line is the point. */
+  --fs-hero: clamp(2.75rem, 8.2vw, 7.25rem);
+  --fs-section: clamp(1.875rem, 4.4vw, 3.5rem);
+  --fs-sub: clamp(1.5rem, 3vw, 2.25rem);
+  --fs-body: 1.0625rem;   /* 17px, inside the 16–18 band */
+  --fs-small: 0.875rem;
+  --fs-label: 0.75rem;    /* 01 / HOW IT WORKS */
+  --fs-hud: 0.6875rem;    /* readouts */
+
+  /* ---- Layout (§4) ----------------------------------------------------- */
+  --unit: 8px;
+  --maxw: 1280px;
+  --gutter: 24px;
+  --cols: 12;
+  --section-pad: 128px;
+  --gutter-page: 24px;  /* page side gutter, widened at larger sizes */
+
+  /* ---- Motion (§5) ----------------------------------------------------- */
+  --ease: cubic-bezier(0.625, 0.05, 0, 1);
+  --t-fast: 200ms;
+  --t-mid: 500ms;
+  --t-slow: 900ms;
+
+  /* Pixel art cadence: steps() at 8–12 fps (§4). */
+  --pixel-fps: 10;
+}
+
+@media (min-width: 720px) {
+  :root { --gutter-page: 40px; }
+}
+
+@media (min-width: 1100px) {
+  :root { --gutter-page: 56px; }
+}
+
+/* Tighter rhythm on small screens — 128px between sections is a desktop
+ * figure; keeping it on a phone reads as a bug, not as white space. */
+@media (max-width: 719px) {
+  :root {
+    --section-pad: 76px;
+    --display-leading: 0.92;
+  }
+}
+
+/* §5: reduced motion turns effects off and keeps the layout. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t-fast: 1ms;
+    --t-mid: 1ms;
+    --t-slow: 1ms;
+  }
+}

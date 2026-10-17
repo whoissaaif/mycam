@@ -1,0 +1,678 @@
+/* MyCam site — home page sections.
+ * Spec: docs/mycam-website.md §2 (sections), §4 (Look), §5 (Motion)
+ */
+
+/* ---- Loading: "loading is focusing" (§7) ------------------------------ */
+.loader {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: grid;
+  place-content: center;
+  gap: 24px;
+  justify-items: center;
+  background: var(--ink);
+  transition: opacity 320ms var(--ease);
+}
+
+.loader.is-done { opacity: 0; pointer-events: none; }
+
+.loader-finder {
+  position: relative;
+  width: 132px;
+  height: 92px;
+}
+
+.loader-finder .bracket {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--line-hi);
+}
+
+.loader-finder .bracket.tl { top: 0; left: 0; border-right: 0; border-bottom: 0; }
+.loader-finder .bracket.tr { top: 0; right: 0; border-left: 0; border-bottom: 0; }
+.loader-finder .bracket.bl { bottom: 0; left: 0; border-right: 0; border-top: 0; }
+.loader-finder .bracket.br { bottom: 0; right: 0; border-left: 0; border-top: 0; }
+
+/* The ring hunts back and forth, like autofocus searching. steps() keeps it
+ * mechanical rather than smooth — it is pixel-adjacent art (§4). */
+.loader-finder .loader-ring {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  border: 1.5px solid var(--rec);
+  animation: hunt 1100ms steps(8, end) infinite alternate;
+}
+
+@keyframes hunt {
+  from { transform: translateX(-28px) scale(0.86); }
+  to { transform: translateX(28px) scale(1.06); }
+}
+
+.loader.is-locked .loader-ring {
+  animation: none;
+  transform: none;
+  border-color: var(--rec);
+  box-shadow: 0 0 0 3px var(--rec-dim);
+}
+
+.loader-pct {
+  font-size: 0.8125rem;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  margin: 0;
+}
+
+/* The page itself starts soft and snaps sharp when the ring locks (§1). */
+body.is-focusing main,
+body.is-focusing .site-head,
+body.is-focusing .site-foot {
+  filter: blur(14px);
+  opacity: 0.5;
+}
+
+body.is-sharp main,
+body.is-sharp .site-head,
+body.is-sharp .site-foot {
+  filter: blur(0);
+  opacity: 1;
+  transition: filter var(--t-slow) var(--ease), opacity var(--t-slow) var(--ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .loader { display: none; }
+  body.is-focusing main,
+  body.is-focusing .site-head,
+  body.is-focusing .site-foot { filter: none; opacity: 1; }
+}
+
+/* ---- Header ----------------------------------------------------------- */
+.site-head {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 80;
+  background: var(--ink-veil);
+  border-bottom: 1px solid transparent;
+  backdrop-filter: blur(10px);
+  transition: border-color var(--t-fast) var(--ease),
+              transform var(--t-mid) var(--ease);
+}
+
+.site-head.is-stuck { border-bottom-color: var(--line); }
+
+.site-head-inner {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  min-height: 68px;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-right: auto;
+}
+
+.brand-mark { color: var(--text); }
+
+.brand-word {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-variation-settings: "wdth" 150, "wght" 900;
+  text-transform: uppercase;
+  font-size: 1.0625rem;
+  letter-spacing: 0;
+}
+
+.nav {
+  display: flex;
+  gap: 28px;
+}
+
+.nav a {
+  font-size: var(--fs-label);
+  color: var(--muted);
+  transition: color var(--t-fast) var(--ease);
+}
+
+.nav a:hover { color: var(--text); }
+
+.btn-sm { min-height: 40px; padding: 0 18px; font-size: var(--fs-label); }
+.btn-lg { min-height: 64px; padding: 0 36px; font-size: 1rem; }
+
+@media (max-width: 899px) {
+  .nav { display: none; }
+}
+
+/* ---- Hero ------------------------------------------------------------- */
+.hero {
+  padding-top: calc(68px + var(--section-pad));
+  padding-bottom: var(--section-pad);
+}
+
+.hero > .bracket {
+  width: 40px;
+  height: 40px;
+  margin: 18px;
+  border-color: var(--line-hi);
+}
+
+.hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.hero-top .eyebrow { margin-bottom: 0; flex: 1; }
+
+.hero-title { margin: 32px 0 48px; }
+
+.hero-foot { align-items: start; }
+
+.hero-cta { margin-top: 32px; }
+
+.hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 24px 0 0;
+}
+
+.hero-meta .sep { color: var(--line-hi); }
+
+.pc-handoff {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.pc-handoff .hud { margin: 0 0 12px; }
+
+.hero-demo { align-self: end; }
+
+.demo-frame {
+  margin: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+
+.demo-frame img,
+.demo-frame video { width: 100%; height: auto; aspect-ratio: 16 / 9; background: #0d1016; }
+
+.demo-frame figcaption {
+  padding: 12px 14px;
+  border-top: 1px solid var(--line);
+}
+
+.demo-frame > .bracket { margin: 8px; }
+
+@media (max-width: 899px) {
+  .hero-demo { margin-top: 48px; }
+}
+
+/* ---- Before / after (§2) ---------------------------------------------- */
+.compare {
+  position: relative;
+  margin-top: 56px;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  touch-action: pan-y;        /* let the page still scroll vertically */
+  user-select: none;
+}
+
+.compare > .bracket { margin: 10px; z-index: 4; }
+
+.compare-pane {
+  position: absolute;
+  inset: 0;
+}
+
+.compare-pane img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* The "before" pane is clipped by the handle position. */
+.compare-before {
+  clip-path: inset(0 50% 0 0);
+  z-index: 2;
+}
+
+.compare-tag {
+  position: absolute;
+  bottom: 16px;
+  margin: 0;
+  padding: 7px 11px;
+  background: var(--ink-veil);
+  border: 1px solid var(--line);
+  color: var(--text);
+}
+
+.compare-tag-left { left: 16px; }
+.compare-tag-right { right: 16px; }
+
+.compare-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 44px;
+  margin-left: -22px;
+  z-index: 3;
+  cursor: ew-resize;
+  display: grid;
+  place-items: center;
+}
+
+.compare-handle-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--rec);
+}
+
+.compare-handle-grip {
+  width: 34px;
+  height: 34px;
+  border: 1.5px solid var(--rec);
+  background: var(--ink-veil);
+}
+
+.compare-note { margin: 14px 0 0; }
+
+/* ---- How it works ----------------------------------------------------- */
+.steps {
+  list-style: none;
+  margin: 64px 0 0;
+  padding: 0;
+}
+
+.step {
+  padding-top: 24px;
+  border-top: 1px solid var(--line);
+}
+
+.step-num { margin: 0 0 20px; color: var(--rec); }
+
+.step .sub-title { margin: 0 0 16px; }
+
+@media (max-width: 899px) {
+  .step { margin-bottom: 40px; }
+}
+
+/* ---- Works in every app ----------------------------------------------- */
+.apps { padding-bottom: 0; }
+
+.marquee {
+  margin-top: 72px;
+  padding: 28px 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.marquee-track {
+  display: flex;
+  gap: 28px;
+  align-items: center;
+  width: max-content;
+  will-change: transform;
+}
+
+.marquee-track span {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-variation-settings: "wdth" 150, "wght" 900;
+  text-transform: uppercase;
+  font-size: clamp(1.75rem, 4vw, 3rem);
+  line-height: 1;
+  color: var(--text);
+  white-space: nowrap;
+}
+
+.marquee-track .dot { color: var(--rec); }
+
+@media (prefers-reduced-motion: reduce) {
+  .marquee-track { animation: none !important; transform: none !important; }
+  .marquee { overflow-x: auto; }
+}
+
+/* ---- Features / FAQ accordion ----------------------------------------- */
+.feature-intro { margin-top: 24px; }
+
+.accordion {
+  margin-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.acc-item { border-bottom: 1px solid var(--line); }
+
+.acc-item summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 24px 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.acc-item summary::-webkit-details-marker { display: none; }
+
+.acc-title {
+  font-family: var(--font-ui);
+  font-weight: 700;
+  letter-spacing: var(--ui-tracking);
+  font-size: 1.0625rem;
+  color: var(--text);
+}
+
+/* A plus that becomes a minus. Two spans would be more markup for no gain,
+ * so it is drawn with the box's own borders. */
+.acc-sign {
+  position: relative;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+}
+
+.acc-sign::before,
+.acc-sign::after {
+  content: "";
+  position: absolute;
+  background: var(--rec);
+  transition: transform var(--t-fast) var(--ease), opacity var(--t-fast) var(--ease);
+}
+
+.acc-sign::before { top: 6px; left: 0; width: 14px; height: 1.5px; }
+.acc-sign::after { left: 6px; top: 0; width: 1.5px; height: 14px; }
+
+.acc-item[open] .acc-sign::after { transform: scaleY(0); opacity: 0; }
+
+.acc-body {
+  padding: 0 0 28px;
+  max-width: 62ch;
+}
+
+.acc-body p { margin: 0; color: var(--muted); }
+
+.acc-body code {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.9em;
+  color: var(--text);
+}
+
+/* ---- Install and trust ------------------------------------------------ */
+.trust-card {
+  padding: 32px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+
+.trust-card > .bracket { margin: 10px; }
+
+.trust-list {
+  margin: 0;
+  display: grid;
+  gap: 20px;
+}
+
+.trust-list > div {
+  display: grid;
+  gap: 6px;
+}
+
+.trust-list dt { margin: 0; }
+
+.trust-list dd {
+  margin: 0;
+  color: var(--text);
+  font-weight: 700;
+  letter-spacing: var(--ui-tracking);
+}
+
+.trust-list dd.mono {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-weight: 400;
+  font-size: 0.8125rem;
+  letter-spacing: 0;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.trust-verify { margin: 28px 0 10px; }
+
+.code {
+  margin: 0;
+  padding: 14px 16px;
+  background: var(--ink);
+  border: 1px solid var(--line);
+  overflow-x: auto;
+}
+
+.code code {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 0.8125rem;
+  color: var(--text);
+}
+
+.trust-grid { margin-top: 72px; }
+
+.numbered,
+.ticks {
+  margin: 20px 0 0;
+  padding: 0 0 0 1.25em;
+}
+
+.numbered li,
+.ticks li { margin-bottom: 12px; }
+
+.ticks { list-style: none; padding-left: 0; }
+
+.ticks li {
+  position: relative;
+  padding-left: 26px;
+}
+
+.ticks li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.55em;
+  width: 10px;
+  height: 10px;
+  border: 1px solid var(--rec);
+}
+
+/* ---- Download band ---------------------------------------------------- */
+.download-band { text-align: left; }
+
+.dl-inner { max-width: 48rem; }
+
+.dl-cta { margin-top: 40px; }
+
+.dl-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 24px 0 0;
+}
+
+.dl-meta .sep { color: var(--line-hi); }
+
+/* ---- Footer ----------------------------------------------------------- */
+.site-foot {
+  padding-block: 72px 48px;
+  border-top: 1px solid var(--line);
+}
+
+/* The giant wordmark (§2.9). Clipped tight so it reads as a mark, not text. */
+.foot-word {
+  /* One line, always: "MYC / AM" wrapped is not a wordmark. */
+  font-size: clamp(3.5rem, 15.5vw, 13rem);
+  line-height: 0.82;
+  white-space: nowrap;
+  margin: 0 0 56px;
+  /* 3.43:1 on ink. WCAG AA for large text is 3:1 and this is ~272px display
+   * type, so it clears the bar that applies — and a footer wordmark you can
+   * actually see is the point (section 2.9). It is aria-hidden either way. */
+  color: #5f6774;
+  user-select: none;
+}
+
+.foot-rows { margin-bottom: 56px; }
+
+.foot-rows .hud { margin: 0 0 16px; }
+
+.foot-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.foot-list a {
+  color: var(--muted);
+  transition: color var(--t-fast) var(--ease);
+}
+
+.foot-list a:hover { color: var(--text); }
+
+.foot-note {
+  margin: 0;
+  padding-top: 28px;
+  border-top: 1px solid var(--line);
+  max-width: 62ch;
+  font-size: var(--fs-small);
+  color: var(--muted);
+}
+
+@media (max-width: 899px) {
+  .foot-rows .col-4 { margin-bottom: 36px; }
+}
+
+/* ---- Inner pages (get started, privacy, 404) -------------------------- */
+.page-head {
+  padding-top: calc(68px + 96px);
+  padding-bottom: 56px;
+}
+
+.page-head .section-title { margin-bottom: 24px; }
+
+.prose { max-width: 68ch; }
+
+.prose h2 {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-variation-settings: "wdth" 150, "wght" 900;
+  text-transform: uppercase;
+  font-size: clamp(1.5rem, 3vw, 2.25rem);
+  line-height: 1;
+  margin: 64px 0 20px;
+}
+
+.prose h3 {
+  font-family: var(--font-ui);
+  font-weight: 700;
+  letter-spacing: var(--ui-tracking);
+  font-size: 1.0625rem;
+  margin: 40px 0 12px;
+}
+
+.prose p,
+.prose li { color: var(--muted); }
+
+.prose strong { color: var(--text); }
+
+.prose ul,
+.prose ol { padding-left: 1.25em; }
+
+.prose li { margin-bottom: 10px; }
+
+.prose a {
+  color: var(--text);
+  border-bottom: 1px solid var(--rec);
+}
+
+.prose hr {
+  margin: 64px 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+
+.callout {
+  margin: 32px 0;
+  padding: 24px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 2px solid var(--rec);
+}
+
+.callout p { margin: 0; }
+
+.callout p + p { margin-top: 12px; }
+
+/* 404 (§7) */
+.nosignal {
+  min-height: 70vh;
+  display: grid;
+  place-content: center;
+  justify-items: start;
+  gap: 24px;
+}
+
+.pixel-scene {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 16px;
+}
+
+/* ---- Easter egg: XP skin (§6) ----------------------------------------- */
+/* The Konami code flips the whole site to the app's Luna palette for a few
+ * seconds. It swaps tokens only, so every component follows along without
+ * a second set of rules. */
+html.xp-mode {
+  --ink: #5a7edc;
+  --panel: #ece9d8;
+  --line: #9db1d6;
+  --line-hi: #4a6fb5;
+  --text: #10233f;
+  --muted: #2f4a7a;
+  --rec: #d64418;
+  --rec-solid: #b8350f;
+  --panel-hi: #dfe6f5;
+  --ink-veil: rgba(236, 233, 216, 0.88);
+}
+
+html.xp-mode body {
+  background:
+    linear-gradient(180deg, #6f93e6 0%, #3f6ac4 60%, #2b5bb5 100%) fixed;
+}
+
+html.xp-mode .display,
+html.xp-mode .brand-word {
+  font-family: Tahoma, Verdana, Arimo, Arial, sans-serif;
+  font-stretch: normal;
+  font-variation-settings: normal;
+  letter-spacing: -0.01em;
+}
+
+html.xp-mode .foot-word { color: #7f9fe4; }
+
+html.xp-mode .btn { border-radius: 4px; }

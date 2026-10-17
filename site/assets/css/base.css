@@ -1,0 +1,366 @@
+/* MyCam site — base layer: reset, grid, type, HUD marks, controls.
+ * Spec: docs/mycam-website.md §3 (five rules), §4 (Look), §5 (Motion)
+ */
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+html {
+  background: var(--ink);
+  /* Lenis drives scrolling; native smooth would fight it. */
+  scroll-behavior: auto;
+  -webkit-text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--text);
+  font-family: var(--font-ui);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  overflow-x: hidden;
+}
+
+img,
+svg,
+canvas,
+video {
+  display: block;
+  max-width: 100%;
+}
+
+/* Width/height attributes are kept for layout stability, so height must be
+ * released or the element letterboxes inside its own box. */
+img[width][height],
+video[width][height] { height: auto; }
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+
+::selection {
+  background: var(--rec-solid);
+  color: #fff;
+}
+
+/* Keyboard focus must stay obvious — the custom cursor (§5) is mouse-only,
+ * so the focus ring is the only affordance a keyboard user gets. */
+:focus-visible {
+  outline: 2px solid var(--rec);
+  outline-offset: 3px;
+}
+
+/* ---- Lenis ------------------------------------------------------------- */
+html.lenis,
+html.lenis body { height: auto; }
+
+.lenis.lenis-smooth { scroll-behavior: auto !important; }
+.lenis.lenis-stopped { overflow: hidden; }
+
+/* ---- Grid (§4: 12 cols, 24px gutter, 1280 max) ------------------------- */
+.wrap {
+  width: 100%;
+  max-width: var(--maxw);
+  margin-inline: auto;
+  padding-inline: var(--gutter-page);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols), minmax(0, 1fr));
+  gap: var(--gutter);
+}
+
+/* Column spans. Everything snaps; left edges line up (§3 Alignment). */
+.col-4 { grid-column: span 4; }
+.col-5 { grid-column: span 5; }
+.col-6 { grid-column: span 6; }
+.col-7 { grid-column: span 7; }
+.col-8 { grid-column: span 8; }
+.col-12 { grid-column: 1 / -1; }
+
+@media (max-width: 899px) {
+  .col-4,
+  .col-5,
+  .col-6,
+  .col-7,
+  .col-8 { grid-column: 1 / -1; }
+}
+
+section {
+  padding-block: var(--section-pad);
+  position: relative;
+}
+
+/* A hairline between sections carries the HUD feel without adding color. */
+.section-line { border-top: 1px solid var(--line); }
+
+/* ---- Type ------------------------------------------------------------- */
+.display {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-stretch: 150%;      /* Anybody is variable on width */
+  font-variation-settings: "wdth" 150, "wght" 900;
+  text-transform: uppercase;
+  line-height: var(--display-leading);
+  letter-spacing: var(--display-tracking);
+  margin: 0;
+  /* Never hyphenate or split a word: ultra-wide caps broken mid-word
+   * ("DIFFEREN / T CAMERA") is the worst thing this typeface can do.
+   * Sizes are chosen so the longest word fits its column instead. */
+  overflow-wrap: normal;
+  word-break: keep-all;
+  hyphens: none;
+  text-wrap: balance;
+}
+
+/* Only the very narrowest screens may break a word, as the alternative
+ * there is horizontal overflow. */
+@media (max-width: 400px) {
+  .display { overflow-wrap: break-word; }
+}
+
+.hero-title { font-size: var(--fs-hero); }
+.section-title { font-size: var(--fs-section); }
+.sub-title { font-size: var(--fs-sub); }
+
+/* §4 tone hierarchy: first words white, the rest muted, same headline. */
+.display .dim { color: var(--muted); }
+
+.lede {
+  font-size: clamp(1.0625rem, 1.6vw, 1.25rem);
+  color: var(--muted);
+  max-width: 54ch;
+  margin: 0;
+}
+
+.body-text {
+  color: var(--muted);
+  max-width: 62ch;
+}
+
+.body-text strong { color: var(--text); font-weight: 700; }
+
+/* Small caps-y UI text: nav, buttons, labels, captions, readouts. */
+.ui-label,
+.hud,
+.btn,
+.nav a,
+.eyebrow {
+  font-family: var(--font-ui);
+  font-weight: 700;
+  letter-spacing: var(--ui-tracking);
+  text-transform: uppercase;
+}
+
+/* §4: caption row — "01 / HOW IT WORKS" */
+.eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: var(--fs-label);
+  color: var(--muted);
+  margin: 0 0 28px;
+}
+
+.eyebrow .num { color: var(--rec); }
+
+.eyebrow::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.hud {
+  font-size: var(--fs-hud);
+  color: var(--muted);
+  letter-spacing: 0.04em;
+}
+
+/* ---- Framing marks (§4) ------------------------------------------------ */
+/* Viewfinder brackets. Drawn with borders on four corner spans so they stay
+ * crisp at any size and cost nothing to animate. */
+.framed { position: relative; }
+
+.framed > .bracket {
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--line-hi);
+  pointer-events: none;
+}
+
+.framed > .bracket.tl { top: 0; left: 0; border-right: 0; border-bottom: 0; }
+.framed > .bracket.tr { top: 0; right: 0; border-left: 0; border-bottom: 0; }
+.framed > .bracket.bl { bottom: 0; left: 0; border-right: 0; border-top: 0; }
+.framed > .bracket.br { bottom: 0; right: 0; border-left: 0; border-top: 0; }
+
+.framed.rec > .bracket { border-color: var(--rec); }
+
+/* REC dot + timecode */
+.rec-readout {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.rec-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--rec);
+  box-shadow: 0 0 0 0 var(--rec-dim);
+  animation: rec-blink 1.2s steps(2, end) infinite;
+}
+
+@keyframes rec-blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0.25; }
+}
+
+/* §5: every animation honours reduced motion. The dot stays, it just stops
+ * blinking — the timecode beside it still carries the "live" meaning. */
+@media (prefers-reduced-motion: reduce) {
+  .rec-dot { animation: none; }
+}
+
+.timecode {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* ---- Controls ---------------------------------------------------------- */
+.btn {
+  --btn-bg: var(--rec-solid);
+  --btn-fg: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 0 28px;
+  font-size: 0.9375rem;
+  background: var(--btn-bg);
+  color: var(--btn-fg);
+  border: 1px solid var(--btn-bg);
+  cursor: pointer;
+  transition: transform var(--t-fast) var(--ease),
+              background-color var(--t-fast) var(--ease),
+              border-color var(--t-fast) var(--ease);
+}
+
+.btn:hover { transform: translateY(-2px); }
+.btn:active { transform: translateY(0); }
+
+.btn-ghost {
+  --btn-bg: transparent;
+  --btn-fg: var(--text);
+  border-color: var(--line-hi);
+}
+
+.btn-ghost:hover { border-color: var(--text); }
+
+.btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+/* ---- Autofocus cursor (§5) -------------------------------------------- */
+/* A focus box that locks onto what the pointer is over. Pointer-devices
+ * only: it is decorative, and touch/keyboard never see it. */
+.focus-cursor {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  pointer-events: none;
+  z-index: 90;
+  opacity: 0;
+  will-change: transform;
+}
+
+.focus-cursor span {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border: 1.5px solid var(--rec);
+}
+
+.focus-cursor span:nth-child(1) { top: 0; left: 0; border-right: 0; border-bottom: 0; }
+.focus-cursor span:nth-child(2) { top: 0; right: 0; border-left: 0; border-bottom: 0; }
+.focus-cursor span:nth-child(3) { bottom: 0; left: 0; border-right: 0; border-top: 0; }
+.focus-cursor span:nth-child(4) { bottom: 0; right: 0; border-left: 0; border-top: 0; }
+
+.focus-cursor.is-locked span { border-color: var(--rec); }
+
+@media (hover: none), (prefers-reduced-motion: reduce) {
+  .focus-cursor { display: none; }
+}
+
+/* ---- Reveals (§5) ----------------------------------------------------- */
+/* GSAP drives these; the CSS fallback guarantees content is visible if JS
+ * never runs — a marketing page that needs JS to show text is broken. */
+.reveal {
+  opacity: 0;
+  transform: translateY(18px);
+}
+
+html.no-js .reveal,
+html.gsap-failed .reveal {
+  opacity: 1;
+  transform: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; }
+}
+
+/* ---- Pixel art (§4) --------------------------------------------------- */
+.pixel {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+/* ---- Helpers ---------------------------------------------------------- */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: 16px;
+  top: -64px;
+  z-index: 200;
+  padding: 12px 18px;
+  background: var(--rec-solid);
+  color: #fff;
+  transition: top var(--t-fast) var(--ease);
+}
+
+.skip-link:focus { top: 16px; }

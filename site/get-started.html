@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Get started — MyCam</title>
+<meta name="description" content="Set up MyCam: install on Windows 11, connect an Android phone over USB or Wi-Fi, or use an iPhone through Safari. Plus troubleshooting.">
+<meta name="theme-color" content="#0b0c0e">
+<link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:wdth,wght@150,900&family=Arimo:wght@400;700&display=swap">
+<link rel="stylesheet" href="assets/css/tokens.css">
+<link rel="stylesheet" href="assets/css/base.css">
+<link rel="stylesheet" href="assets/css/home.css">
+</head>
+<body class="is-sharp">
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="focus-cursor" id="focus-cursor" aria-hidden="true">
+  <span></span><span></span><span></span><span></span>
+</div>
+
+<header class="site-head" id="site-head">
+  <div class="wrap site-head-inner">
+    <a class="brand" href="./" aria-label="MyCam home">
+      <svg class="brand-mark" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+        <rect x="1.5" y="6" width="21" height="14" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M7 6 8.5 3.5h7L17 6" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <circle cx="12" cy="13" r="4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <circle cx="12" cy="13" r="1.4" fill="var(--rec)"/>
+      </svg>
+      <span class="brand-word">MyCam</span>
+    </a>
+    <nav class="nav" aria-label="Main">
+      <a href="./">Home</a>
+      <a href="#android">Android</a>
+      <a href="#iphone">iPhone</a>
+      <a href="#trouble">Troubleshooting</a>
+      <a href="https://github.com/whoissaaif/mycam">GitHub</a>
+    </nav>
+    <a class="btn btn-sm js-download" href="https://github.com/whoissaaif/mycam/releases/latest">Download</a>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap page-head">
+    <p class="eyebrow"><span class="num">01</span> / Setup</p>
+    <h1 class="display section-title">Get started.<br><span class="dim">Ten minutes, once.</span></h1>
+    <p class="lede">
+      Install on the PC, connect the phone, pick MyCam in your app. After the first
+      time, plugging in is the whole process.
+    </p>
+  </div>
+
+  <div class="wrap">
+    <div class="prose">
+
+      <h2 id="pc">1. Install on Windows</h2>
+      <p>
+        MyCam needs <strong>Windows 11</strong>. It uses a Windows 11 API for virtual
+        cameras, so Windows 10 won't work.
+      </p>
+      <ol>
+        <li>
+          Download <span class="js-filename">MyCam-Setup-1.4.3.exe</span>
+          (<span class="js-size">12.1 MB</span>).
+        </li>
+        <li>
+          Windows will say <strong>"Windows protected your PC"</strong> because the
+          installer isn't signed yet. Click <strong>More info</strong>, then
+          <strong>Run anyway</strong>. You can check the download's SHA-256 against
+          the <a href="./#trust">hash on the home page</a> first.
+        </li>
+        <li>Run through the installer. It registers the MyCam camera, installs the
+          UsbDk driver if it isn't already present, and adds a firewall rule for the
+          iPhone page on private networks.</li>
+        <li>MyCam appears in the system tray. Left-click for the window, right-click
+          for the quick menu.</li>
+      </ol>
+
+      <div class="callout">
+        <p><strong>Windows 11 N editions:</strong> install Microsoft's Media Feature
+        Pack first. N editions ship without the media components MyCam needs to
+        decode video.</p>
+      </div>
+
+      <hr>
+
+      <h2 id="android">2a. Android over USB</h2>
+      <p>No Developer Options, no USB debugging, no ADB.</p>
+      <ol>
+        <li>Install the MyCam app on the phone. The APK is on the
+          <a href="https://github.com/whoissaaif/mycam/releases/latest">release page</a>.</li>
+        <li>Plug the phone into the PC.</li>
+        <li>The phone asks whether to open MyCam. Tick <strong>Always</strong> and tap
+          <strong>OK</strong>, then allow camera access.</li>
+        <li>Windows asks for admin <strong>once per new phone</strong>, to give the
+          phone's accessory mode its built-in driver.</li>
+        <li>In any app, choose <strong>MyCam</strong> as the camera.</li>
+      </ol>
+      <p>
+        While MyCam is running, any Android phone you plug in switches to webcam mode,
+        so file transfer isn't available at the same time. Exit MyCam from the tray to
+        move files.
+      </p>
+
+      <h2 id="wifi">2b. Android over Wi-Fi</h2>
+      <ol>
+        <li>Put the phone and the PC on the same network.</li>
+        <li>On the PC, open MyCam and choose <strong>Generate QR</strong>.</li>
+        <li>In the phone app, scan the code. It pairs and connects — there's no code to
+          compare and nothing to set to Private.</li>
+        <li>Both screens say <strong>Paired with …</strong>, and the camera follows.</li>
+      </ol>
+      <p>
+        A phone on the cable always wins over a wireless one. Pairings are remembered,
+        so the phone reconnects by itself next time.
+      </p>
+
+      <h2 id="iphone">2c. iPhone or iPad</h2>
+      <p>Nothing to install. The PC serves a page and Safari opens it.</p>
+      <ol>
+        <li>Put the iPhone and the PC on the same network, and make sure Windows calls
+          that network <strong>Private</strong> — the firewall rule is private-only.</li>
+        <li>On the PC, open MyCam and choose <strong>Connect an iPhone</strong>. A QR
+          code appears. If the PC is on several networks, pick the one the iPhone is
+          on.</li>
+        <li>Point the iPhone's Camera app at the code and tap the link.</li>
+        <li>The first time, Safari says the connection isn't private — the certificate
+          is self-signed, made on your own PC. Tap <strong>Show Details</strong>, then
+          <strong>visit this website</strong>.</li>
+        <li>Tap <strong>Start</strong>, then allow the camera and motion sensors.</li>
+      </ol>
+      <p>
+        The iPhone is remembered afterwards. Open the page from history, or use
+        <strong>Share → Add to Home Screen</strong>, and there's no code to scan again.
+        Keep the page open and in front: iOS stops the camera when Safari goes to the
+        background.
+      </p>
+
+      <hr>
+
+      <h2 id="trouble">Troubleshooting</h2>
+
+      <h3>The phone never connects</h3>
+      <p>
+        Exit MyCam from the tray rather than killing it — a killed companion can leave
+        the phone stuck until you replug it. If you have USB debugging switched on, the
+        phone shows up as accessory + ADB and MyCam can't bind to it; turn debugging
+        off.
+      </p>
+
+      <h3>The iPhone link doesn't open</h3>
+      <p>
+        Both devices need to be on the same network, and Windows must call it
+        <strong>Private</strong>. Some guest and office networks block devices from
+        reaching each other entirely.
+      </p>
+
+      <h3>"Couldn't start its iPhone page on port 47900"</h3>
+      <p>Another program is using that port. The log says which.</p>
+
+      <h3>The page says the PC is busy</h3>
+      <p>Another phone has MyCam. A phone on the cable always takes priority.</p>
+
+      <h3>The picture freezes when the phone locks</h3>
+      <p>
+        Expected. The camera stops in the background and the PC waits five minutes for
+        you to come back, showing "Camera paused" to apps in the meantime.
+      </p>
+
+      <h3>Nothing above helped</h3>
+      <p>
+        MyCam writes a log to <code>%LOCALAPPDATA%\MyCam\mycam.log</code>, including
+        the phone's own messages. Tray → settings → <strong>Open log folder</strong>.
+        Attach it to a
+        <a href="https://github.com/whoissaaif/mycam/issues">GitHub issue</a> and
+        describe what you plugged in.
+      </p>
+
+      <hr>
+
+      <h2>Want to build it yourself?</h2>
+      <p>
+        It's MIT. The Android app builds with Gradle, the Windows side with Visual
+        Studio 2022 and CMake, and both test suites run against the same protocol
+        vectors. See the
+        <a href="https://github.com/whoissaaif/mycam#build">build instructions</a>.
+      </p>
+    </div>
+  </div>
+
+  <section class="section-line download-band">
+    <div class="wrap">
+      <div class="dl-inner">
+        <h2 class="display section-title">Ready?</h2>
+        <div class="btn-row dl-cta">
+          <a class="btn btn-lg js-download" href="https://github.com/whoissaaif/mycam/releases/latest">Download for Windows</a>
+        </div>
+        <p class="hud dl-meta">
+          <span class="js-version">v1.4.3</span>
+          <span class="sep">/</span>
+          <span class="js-size">12.1 MB</span>
+          <span class="sep">/</span>
+          <span>Windows 11 only</span>
+        </p>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-rows grid">
+      <div class="col-4">
+        <p class="hud">The app</p>
+        <ul class="foot-list">
+          <li><a href="./">Home</a></li>
+          <li><a href="./#features">Features</a></li>
+          <li><a href="./#faq">FAQ</a></li>
+        </ul>
+      </div>
+      <div class="col-4">
+        <p class="hud">Project</p>
+        <ul class="foot-list">
+          <li><a href="https://github.com/whoissaaif/mycam">Source on GitHub</a></li>
+          <li><a href="https://github.com/whoissaaif/mycam/issues">Report a problem</a></li>
+        </ul>
+      </div>
+      <div class="col-4">
+        <p class="hud">Legal</p>
+        <ul class="foot-list">
+          <li><a href="privacy.html">Privacy</a></li>
+          <li><a href="privacy.html#signing">Code signing policy</a></li>
+        </ul>
+      </div>
+    </div>
+    <p class="foot-note">Free and open source, MIT. Not affiliated with Microsoft, Google or Apple.</p>
+  </div>
+</footer>
+
+<script>document.documentElement.classList.remove('no-js');</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js" defer></script>
+<script src="assets/js/release.js" defer></script>
+<script src="assets/js/main.js" defer></script>
+</body>
+</html>

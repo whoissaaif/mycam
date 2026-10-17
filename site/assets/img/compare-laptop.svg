@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" role="img" aria-label="Placeholder for a laptop webcam capture: soft, dim and noisy.">
+  <defs>
+    <filter id="soft"><feGaussianBlur stdDeviation="5"/></filter>
+    <filter id="grain">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="3" result="n"/>
+      <feColorMatrix in="n" type="saturate" values="0"/>
+      <feComponentTransfer><feFuncA type="linear" slope="0.22"/></feComponentTransfer>
+    </filter>
+    <linearGradient id="dim" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3b4049"/><stop offset="1" stop-color="#21252b"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#dim)"/>
+  <g filter="url(#soft)" opacity="0.85">
+    <ellipse cx="640" cy="430" rx="190" ry="235" fill="#5b5f68"/>
+    <circle cx="640" cy="268" r="118" fill="#6a6e77"/>
+    <rect x="0" y="560" width="1280" height="160" fill="#2b2f36"/>
+  </g>
+  <rect width="1280" height="720" filter="url(#grain)" opacity="0.6"/>
+  <g font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="bold" fill="#c8ccd3" letter-spacing="1.5">
+    <text x="48" y="74">PLACEHOLDER</text>
+    <text x="48" y="104" font-size="15" fill="#9aa0a9">Replace with a real laptop-webcam still (brief section 10)</text>
+  </g>
+</svg>

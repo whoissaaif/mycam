@@ -1,0 +1,269 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Privacy and code signing — MyCam</title>
+<meta name="description" content="What MyCam does and does not collect: no account, no server, no telemetry. Video never leaves your own devices. Plus the code signing policy.">
+<meta name="theme-color" content="#0b0c0e">
+<link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:wdth,wght@150,900&family=Arimo:wght@400;700&display=swap">
+<link rel="stylesheet" href="assets/css/tokens.css">
+<link rel="stylesheet" href="assets/css/base.css">
+<link rel="stylesheet" href="assets/css/home.css">
+</head>
+<body class="is-sharp">
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="focus-cursor" id="focus-cursor" aria-hidden="true">
+  <span></span><span></span><span></span><span></span>
+</div>
+
+<header class="site-head" id="site-head">
+  <div class="wrap site-head-inner">
+    <a class="brand" href="./" aria-label="MyCam home">
+      <svg class="brand-mark" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+        <rect x="1.5" y="6" width="21" height="14" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M7 6 8.5 3.5h7L17 6" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <circle cx="12" cy="13" r="4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <circle cx="12" cy="13" r="1.4" fill="var(--rec)"/>
+      </svg>
+      <span class="brand-word">MyCam</span>
+    </a>
+    <nav class="nav" aria-label="Main">
+      <a href="./">Home</a>
+      <a href="get-started.html">Get started</a>
+      <a href="#signing">Code signing</a>
+      <a href="https://github.com/whoissaaif/mycam">GitHub</a>
+    </nav>
+    <a class="btn btn-sm js-download" href="https://github.com/whoissaaif/mycam/releases/latest">Download</a>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap page-head">
+    <p class="eyebrow"><span class="num">02</span> / Privacy</p>
+    <h1 class="display section-title">Your video<br><span class="dim">stays yours.</span></h1>
+    <p class="lede">
+      MyCam has no account, no server and no analytics. Video travels from your phone
+      to your PC and stops there.
+    </p>
+  </div>
+
+  <div class="wrap">
+    <div class="prose">
+
+      <div class="callout">
+        <p><strong>Draft — not published yet.</strong> This wording has to match the
+        Data Safety declaration on the Google Play listing exactly, so it needs sign-off
+        from the project owner before it goes live. Every statement below is drawn from
+        what the code actually does; the open questions are listed at the bottom.</p>
+      </div>
+
+      <h2>The short version</h2>
+      <ul>
+        <li>MyCam does <strong>not</strong> collect, transmit or store your video,
+          audio or images anywhere outside your own devices.</li>
+        <li>There is <strong>no account</strong> and <strong>no sign-in</strong>.</li>
+        <li>There is <strong>no analytics, telemetry or crash reporting</strong> of any
+          kind in the app or the companion.</li>
+        <li>Nothing is sold or shared, because nothing is collected.</li>
+      </ul>
+
+      <h2>Where the video goes</h2>
+      <p>
+        Over USB, video travels down the cable between your phone and your PC. Over
+        Wi-Fi, it travels across your own local network, encrypted, directly between the
+        two devices. An iPhone sends it to the page your own PC is serving, over TLS.
+      </p>
+      <p>
+        In every case the stream terminates on your PC, where Windows hands it to
+        whichever app you pointed at the MyCam camera. No part of it reaches the
+        internet, and the project operates no server that could receive it.
+      </p>
+
+      <h2>What is stored, and where</h2>
+
+      <h3>On your PC</h3>
+      <ul>
+        <li><strong>Settings</strong> — your camera, quality, frame rate and mirror
+          choices, in the Windows registry under your own user account.</li>
+        <li><strong>Paired phones</strong> — for Wi-Fi pairing, a key per phone, stored
+          encrypted with Windows DPAPI under your user account.</li>
+        <li><strong>Paired iPhones and Android browsers</strong> — only the
+          <strong>SHA-256 hash</strong> of each device's token, never the token itself.
+          "Forget" removes it and ends that device's session.</li>
+        <li><strong>A log file</strong> in <code>%LOCALAPPDATA%\MyCam\</code>, which
+          records connection events and messages from the phone to help with
+          troubleshooting. It stays on your machine. Nothing uploads it, and you can
+          delete it at any time.</li>
+      </ul>
+
+      <h3>On your phone</h3>
+      <ul>
+        <li>Your preferences, and the list of PCs you have paired with.</li>
+        <li>A per-PC permission flag recording whether you let that PC use the camera.
+          Scanning a pairing code is treated as consent to pair, not consent to be
+          watched: a PC that hasn't been allowed gets a session with the camera off
+          until you say otherwise.</li>
+      </ul>
+
+      <h3>Camera and microphone</h3>
+      <ul>
+        <li>MyCam uses the <strong>camera</strong> only while an app on your PC has the
+          MyCam camera open, and switches it off a few seconds after that app closes
+          it.</li>
+        <li>The camera also switches off by itself while Windows is locked.</li>
+        <li>You can pause from the phone, its notification or the PC tray. While paused,
+          apps see a "Camera paused" picture instead of you.</li>
+        <li>Opening your phone's own camera app stops the MyCam stream.</li>
+      </ul>
+
+      <h2>Permissions, and why</h2>
+      <ul>
+        <li><strong>Camera</strong> — to capture the video. That's the product.</li>
+        <li><strong>Notifications</strong> (Android) — to show the streaming state and
+          offer Pause while the service runs.</li>
+        <li><strong>Local network</strong> — for the Wi-Fi and iPhone paths, to reach
+          your PC. Only your own network, never the internet.</li>
+        <li><strong>Motion sensors</strong> (iPhone page) — to tell which way up the
+          phone is, so the picture arrives upright.</li>
+        <li>MyCam does not request location, contacts, storage or microphone access.</li>
+      </ul>
+
+      <h2>This website</h2>
+      <p>
+        The site itself is static and sets no cookies, runs no analytics and has no
+        tracking of any kind. Being honest about what it does load from elsewhere:
+      </p>
+      <ul>
+        <li><strong>GitHub</strong> serves the pages and the installer download, and
+          the page asks GitHub's API for the current version. GitHub receives your IP
+          address as part of serving any request, under
+          <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement">their
+          privacy statement</a>.</li>
+        <li><strong>Google Fonts</strong> serves the display typeface, and
+          <strong>cdnjs</strong> and <strong>jsDelivr</strong> serve two animation
+          libraries. Those requests expose your IP address to those providers.</li>
+      </ul>
+      <div class="callout">
+        <p><strong>Planned change:</strong> these files will be self-hosted so the site
+        makes no third-party requests at all. A privacy-first product shouldn't ship a
+        marketing page that phones elsewhere.</p>
+      </div>
+
+      <h2>Children</h2>
+      <p>
+        MyCam is a general-purpose utility, is not directed at children, and collects
+        nothing from anyone.
+      </p>
+
+      <h2>Changes</h2>
+      <p>
+        If this policy changes, the new version is published here and in the repository's
+        history, which is public — so every past version stays inspectable.
+      </p>
+
+      <h2>Contact</h2>
+      <p>
+        Questions, or something here that doesn't match what you observe? Open an issue
+        on <a href="https://github.com/whoissaaif/mycam/issues">GitHub</a>. You can also
+        read the source: it's MIT, and every claim on this page is checkable against it.
+      </p>
+
+      <hr>
+
+      <h2 id="signing">Code signing policy</h2>
+
+      <div class="callout">
+        <p><strong>Draft.</strong> A published signing policy is a requirement for
+        SignPath's free certificates for open-source projects. The roles and names below
+        need confirming before this is submitted.</p>
+      </div>
+
+      <h3>Current state</h3>
+      <p>
+        Windows installers for MyCam are <strong>not yet code signed</strong>. Until a
+        certificate is in place, Windows SmartScreen shows "Windows protected your PC"
+        on first run. Verify your download by comparing its SHA-256 with the hash
+        published beside the installer on the <a href="./#trust">home page</a> and on the
+        GitHub release.
+      </p>
+
+      <h3>How releases are produced</h3>
+      <ul>
+        <li>All source is public at
+          <a href="https://github.com/whoissaaif/mycam">github.com/whoissaaif/mycam</a>
+          under the MIT license.</li>
+        <li>Releases are built from a tagged commit by the project owner, and published
+          as GitHub release assets with their hashes.</li>
+        <li>Continuous integration builds and tests both the Android app and the Windows
+          components on every change.</li>
+      </ul>
+
+      <h3>Who may authorise a signed release</h3>
+      <p>
+        Only the project owner may tag a version and publish release binaries.
+        Signing credentials are never committed to the repository and are held outside
+        it.
+      </p>
+
+      <hr>
+
+      <h2>Open items before publishing</h2>
+      <p>For the two of us, not for visitors — this list goes away before launch.</p>
+      <ul>
+        <li>Owner sign-off on the wording above, matched word-for-word against the Play
+          Data Safety declaration.</li>
+        <li>Confirm the registry paths and log location named here are still accurate at
+          release time.</li>
+        <li>Names and roles for the signing policy, as SignPath's application asks for
+          them.</li>
+        <li>Self-host the fonts and the two libraries, then delete the third-party
+          request disclosure above.</li>
+        <li>An effective date, once this is approved.</li>
+      </ul>
+    </div>
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <div class="foot-rows grid">
+      <div class="col-4">
+        <p class="hud">The app</p>
+        <ul class="foot-list">
+          <li><a href="./">Home</a></li>
+          <li><a href="get-started.html">Get started</a></li>
+        </ul>
+      </div>
+      <div class="col-4">
+        <p class="hud">Project</p>
+        <ul class="foot-list">
+          <li><a href="https://github.com/whoissaaif/mycam">Source on GitHub</a></li>
+          <li><a href="https://github.com/whoissaaif/mycam/issues">Report a problem</a></li>
+        </ul>
+      </div>
+      <div class="col-4">
+        <p class="hud">Legal</p>
+        <ul class="foot-list">
+          <li><a href="privacy.html">Privacy</a></li>
+          <li><a href="#signing">Code signing policy</a></li>
+        </ul>
+      </div>
+    </div>
+    <p class="foot-note">Free and open source, MIT. Not affiliated with Microsoft, Google or Apple.</p>
+  </div>
+</footer>
+
+<script>document.documentElement.classList.remove('no-js');</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/lenis@1.1.13/dist/lenis.min.js" defer></script>
+<script src="assets/js/release.js" defer></script>
+<script src="assets/js/main.js" defer></script>
+</body>
+</html>

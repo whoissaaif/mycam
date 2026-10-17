@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>No signal — MyCam</title>
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#0b0c0e">
+<link rel="icon" href="assets/img/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anybody:wdth,wght@150,900&family=Arimo:wght@400;700&display=swap">
+<link rel="stylesheet" href="assets/css/tokens.css">
+<link rel="stylesheet" href="assets/css/base.css">
+<link rel="stylesheet" href="assets/css/home.css">
+<style>
+  /* A pixel phone and PC with the cable pulled out. Drawn as blocks on an
+     8px grid; the plug twitches on steps() so it reads as pixel art (§7). */
+  .ns-scene {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    margin-bottom: 40px;
+    image-rendering: pixelated;
+  }
+
+  .ns-phone,
+  .ns-pc {
+    background: var(--panel-hi);
+    border: 2px solid var(--line-hi);
+  }
+
+  .ns-phone { width: 40px; height: 72px; border-radius: 3px; }
+  .ns-pc { width: 104px; height: 72px; border-radius: 3px; }
+
+  .ns-cable {
+    position: relative;
+    width: 96px;
+    height: 2px;
+    background:
+      repeating-linear-gradient(90deg,
+        var(--line-hi) 0 8px, transparent 8px 14px);
+  }
+
+  /* The loose end. */
+  .ns-plug {
+    position: absolute;
+    top: -5px;
+    right: 0;
+    width: 12px;
+    height: 12px;
+    background: var(--rec);
+    animation: twitch 2.4s steps(3, end) infinite;
+  }
+
+  @keyframes twitch {
+    0%, 70% { transform: translate(0, 0); }
+    76% { transform: translate(-3px, -4px); }
+    82% { transform: translate(-1px, 3px); }
+    88% { transform: translate(-4px, 0); }
+    94%, 100% { transform: translate(0, 0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ns-plug { animation: none; }
+  }
+
+  .ns-gap { width: 26px; }
+</style>
+</head>
+<body class="is-sharp">
+
+<a class="skip-link" href="#main">Skip to content</a>
+
+<div class="focus-cursor" id="focus-cursor" aria-hidden="true">
+  <span></span><span></span><span></span><span></span>
+</div>
+
+<header class="site-head" id="site-head">
+  <div class="wrap site-head-inner">
+    <a class="brand" href="./" aria-label="MyCam home">
+      <svg class="brand-mark" viewBox="0 0 24 24" width="22" height="22" aria-hidden="true">
+        <rect x="1.5" y="6" width="21" height="14" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M7 6 8.5 3.5h7L17 6" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <circle cx="12" cy="13" r="4" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <circle cx="12" cy="13" r="1.4" fill="var(--rec)"/>
+      </svg>
+      <span class="brand-word">MyCam</span>
+    </a>
+    <nav class="nav" aria-label="Main">
+      <a href="./">Home</a>
+      <a href="get-started.html">Get started</a>
+      <a href="privacy.html">Privacy</a>
+      <a href="https://github.com/whoissaaif/mycam">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+  <div class="wrap nosignal">
+    <div class="ns-scene" aria-hidden="true">
+      <span class="ns-phone"></span>
+      <span class="ns-cable"><span class="ns-plug"></span></span>
+      <span class="ns-gap"></span>
+      <span class="ns-pc"></span>
+    </div>
+
+    <p class="eyebrow"><span class="num">404</span> / Not found</p>
+    <h1 class="display hero-title">No signal</h1>
+    <p class="lede">This page isn't connected.</p>
+
+    <div class="btn-row" style="margin-top:40px">
+      <a class="btn" href="./">Back to home</a>
+    </div>
+  </div>
+</main>
+
+<footer class="site-foot">
+  <div class="wrap">
+    <p class="foot-note">Free and open source, MIT. Not affiliated with Microsoft, Google or Apple.</p>
+  </div>
+</footer>
+
+<script>document.documentElement.classList.remove('no-js');</script>
+<script src="assets/js/main.js" defer></script>
+</body>
+</html>

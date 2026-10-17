@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720" width="1280" height="720" role="img" aria-label="Placeholder for a phone camera capture through MyCam: sharp, well exposed.">
+  <defs>
+    <linearGradient id="bg2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#4c5563"/><stop offset="1" stop-color="#1d2228"/>
+    </linearGradient>
+    <linearGradient id="skin" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#d8b79a"/><stop offset="1" stop-color="#a97f61"/>
+    </linearGradient>
+  </defs>
+  <rect width="1280" height="720" fill="url(#bg2)"/>
+  <ellipse cx="640" cy="430" rx="190" ry="235" fill="#2f6b9e"/>
+  <circle cx="640" cy="268" r="118" fill="url(#skin)"/>
+  <circle cx="604" cy="252" r="9" fill="#2b2118"/>
+  <circle cx="676" cy="252" r="9" fill="#2b2118"/>
+  <path d="M608 306 q32 22 64 0" stroke="#7d5a42" stroke-width="7" fill="none" stroke-linecap="round"/>
+  <rect x="0" y="560" width="1280" height="160" fill="#161a1f"/>
+  <g font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="bold" fill="#eef1f5" letter-spacing="1.5">
+    <text x="48" y="74">PLACEHOLDER</text>
+    <text x="48" y="104" font-size="15" fill="#c3c9d2">Replace with a real MyCam capture (brief section 10)</text>
+  </g>
+</svg>
