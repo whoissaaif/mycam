@@ -21,6 +21,11 @@ local.properties
 # Local scratch
 *.log
 
+# Internal project docs (planning notes, test logs, friend-testing details) — not meant to be public.
+# Files already tracked here before this line (e.g. ARCHITECTURE.md) stay tracked; this only stops new
+# ones from being swept in by a broad `git add`.
+/docs/
+
 # Installer build outputs and downloaded third-party packages
 /installer/redist/
 /installer/output/
