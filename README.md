@@ -39,8 +39,9 @@ code on an iPhone and nothing even needs installing.
 ## Screenshots
 
 <p align="center">
-  <img src="design/previews/phone-now-streaming.png" width="260" alt="The phone app while streaming, with camera and quality controls">
-  <img src="design/previews/phone-pairing.png" width="260" alt="A new PC asking to be allowed to use the camera">
+  <img src="docs/media/app-connect.png" width="240" alt="The Connect tab: waiting for the PC, with QR code, Wi-Fi search and USB options">
+  <img src="docs/media/app-camera.png" width="240" alt="The Camera tab: front or back camera, resolution, frame rate and zoom">
+  <img src="docs/media/app-settings.png" width="240" alt="The Settings tab: video quality, frame rate, preview and Wi-Fi">
 </p>
 
 ## Get MyCam
