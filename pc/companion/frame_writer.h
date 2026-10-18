@@ -26,6 +26,7 @@ private:
     HANDLE mapping_ = nullptr;
     void* view_ = nullptr;
     uint64_t lastAttempt_ = 0;
+    bool onLocal_ = false; // view_ is the session-local fallback, not Global\MyCamFrame (see EnsureMapping).
 };
 
 } // namespace mycam
