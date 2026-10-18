@@ -74,6 +74,8 @@ A new phone used to prompt twice: once at install, then again for WinUSB binding
 ### 2.3 Test the remaining scenarios (S–M): ⏳
 See "Still untested" above, plus phone low-battery mode and Android killing the service under memory
 pressure. Fix whatever breaks.
+- ✅ Android battery fix: the service wake lock is now released in `closeLink()`, so ending a session in
+  Wi-Fi mode no longer keeps the phone awake until the service is destroyed.
 
 ---
 

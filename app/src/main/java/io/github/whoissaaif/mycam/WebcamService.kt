@@ -1065,6 +1065,8 @@ class WebcamService : Service() {
         accessory = null
         wifiLock?.release()
         wifiLock = null
+        wakeLock?.release()
+        wakeLock = null
         orientationListener?.disable()
         cameraBlocked = false
         gatedPcId = null
