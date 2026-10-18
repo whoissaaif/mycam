@@ -146,6 +146,7 @@ private:
 
     bool SendCommand(uint8_t cmd, uint8_t arg = 0);
     void HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const uint8_t* payload, uint32_t length);
+    HRESULT InitDecoder(uint32_t width, uint32_t height, const char* why);
     void OnDecodedFrame(const H264Decoder::Nv12View& frame);
     void Publish();
     void OnInTransfer(libusb_transfer* transfer);
@@ -246,6 +247,7 @@ private:
     uint64_t lastStats_ = 0;
 
     H264Decoder decoder_;
+    bool gpuDecodeFailed_ = false; // Once the GPU has failed a key frame, the CPU decodes for the rest of this run.
     FrameWriter writer_;
     LinkStatus status_;
 };

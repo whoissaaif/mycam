@@ -528,8 +528,7 @@ void PhoneLink::HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const u
         if (!decoder_.Ready() || w != configWidth_ || h != configHeight_) {
             configWidth_ = w;
             configHeight_ = h;
-            HRESULT hr = decoder_.Init(w, h, [this](const H264Decoder::Nv12View& f) { OnDecodedFrame(f); });
-            Log("decoder: init %ux%u -> 0x%08X", w, h, unsigned(hr));
+            InitDecoder(w, h, "");
         }
         Log("phone: config %ux%u sensor=%d facing=%d csd=%u bytes", w, h, sensorOrientation_, int(payload[6]), unsigned(csd_.size()));
         waitKeyFrame_ = true;
@@ -554,9 +553,7 @@ void PhoneLink::HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const u
             // No config received (some encoders only put SPS/PPS inside key frames). The decoder reads
             // the real size from the SPS and reports a format change, so the size here is only a hint.
             uint32_t w = configWidth_ ? configWidth_ : 1920, h = configHeight_ ? configHeight_ : 1080;
-            HRESULT hr = decoder_.Init(w, h, [this](const H264Decoder::Nv12View& f) { OnDecodedFrame(f); });
-            Log("decoder: init without config (%ux%u hint) -> 0x%08X", w, h, unsigned(hr));
-            if (FAILED(hr)) return;
+            if (FAILED(InitDecoder(w, h, " without config (size is a hint)"))) return;
             waitKeyFrame_ = true;
         }
         uint64_t now = GetTickCount64();
@@ -584,6 +581,12 @@ void PhoneLink::HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const u
         if (FAILED(hr)) {
             if (statDecodeErrors_++ < 3) Log("decoder: frame (key=%d, %u bytes) failed 0x%08X", int(key), length, unsigned(hr));
             waitKeyFrame_ = true;
+            if (key && decoder_.OnGpu()) {
+                // A key frame comes with SPS/PPS, so it fails only when the GPU can't decode what the phone sends
+                // (some can't do 4K or high frame rates). The CPU can, if slowly.
+                gpuDecodeFailed_ = true;
+                InitDecoder(configWidth_ ? configWidth_ : 1920, configHeight_ ? configHeight_ : 1080, " after a GPU failure");
+            }
         } else if (key) {
             waitKeyFrame_ = false;
         }
@@ -623,6 +626,13 @@ void PhoneLink::HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const u
         Publish();
         break;
     }
+}
+
+HRESULT PhoneLink::InitDecoder(uint32_t width, uint32_t height, const char* why) {
+    HRESULT hr = decoder_.Init(width, height, [this](const H264Decoder::Nv12View& f) { OnDecodedFrame(f); },
+                               !gpuDecodeFailed_);
+    Log("decoder: init %ux%u%s on the %s -> 0x%08X", width, height, why, decoder_.OnGpu() ? "GPU" : "CPU", unsigned(hr));
+    return hr;
 }
 
 void PhoneLink::OnDecodedFrame(const H264Decoder::Nv12View& frame) {

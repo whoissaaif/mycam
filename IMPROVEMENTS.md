@@ -102,8 +102,8 @@ Zoom, tap-to-focus, exposure, torch, and lens choice (ultrawide / telephoto). Ph
 to PC apps through `IKsControl` is a stretch goal.
 
 ### 3.4 Lower latency (M): 🟡 PC side done (1.3–1.3.1): delivery on arrival, one less copy, adaptive bitrate when the USB link is the limit. Measured: PC decode+copy 3–12 ms; **phone capture→encoded 150–230 ms** (MediaTek encoder buffers ~3 frames). Next: try encoder low-latency vendor keys, fewer camera buffers, I-frame interval.
-Decode on the GPU (D3D11 / DXVA) instead of the CPU, cut extra frame copies, and add a latency
-measurement (timestamp in the frame header → log).
+Decode on the GPU (D3D11 / DXVA) instead of the CPU (built, see below), cut extra frame copies, and add a
+latency measurement (timestamp in the frame header → log).
 
 Phone-side round (built, needs a test on the phone):
 - The log splits the delay: `latency: ... (camera X ms, encoder ~Y ms)` (sensor → capture result vs.
@@ -114,6 +114,14 @@ Phone-side round (built, needs a test on the phone):
   on, and the full list is logged (`encoder vendor parameters: ...`) for further tuning.
 - PC: 16 queued USB reads (256 KB) instead of 4, so a 4K frame no longer stalls the phone's write while
   the previous frame decodes.
+
+GPU decode (#8, done, 4K30 tested with a phone): the Media Foundation decoder gets a Direct3D 11
+device and decodes through DXVA, falling back to the CPU when the decoder or GPU can't (logged as
+`decoder: init ... on the GPU/CPU`). If a key frame fails on the GPU, the CPU takes over for the rest of the
+run. Measured on an RTX 3050 with a synthetic 4K30 stream at 38 Mbps: decode+copy **36.3 ms on the CPU →
+13.7 ms on the GPU**, output bit-identical. The CPU was over the 33 ms a 30 fps frame has; the GPU
+leaves room. Still open from #8: the phone's bitrate control can't tell a busy PC from a full link, and
+decoding still runs on the USB thread.
 
 ---
 
