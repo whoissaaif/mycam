@@ -3,7 +3,7 @@
 </p>
 
 <h1 align="center">MyCam</h1>
-<p align="center"><b>Turn your phone into a webcam for Windows 11.</b></p>
+<p align="center"><b>Turn your phone into a webcam for Windows.</b></p>
 
 <p align="center">
   <a href="https://github.com/whoissaaif/mycam/releases/latest"><img src="https://img.shields.io/github/v/release/whoissaaif/mycam" alt="Latest release"></a>
@@ -15,9 +15,9 @@
   <img src="docs/media/mycam-demo.gif" alt="MyCam demo: plug in a phone (or scan a QR code on an iPhone) and it becomes your Windows webcam" width="800">
 </p>
 
-MyCam shows up as a camera called **MyCam** on your Windows 11 PC — in Zoom, Teams, OBS, browsers, and the
-Windows Camera app — fed live by your phone. Plug in an Android phone and it just works; scan a QR code on
-an iPhone and nothing even needs installing.
+MyCam shows up as a camera called **MyCam** on your Windows PC (10 or 11) — in Zoom, Teams, OBS, browsers,
+and the Windows Camera app — fed live by your phone. Plug in an Android phone and it just works; scan a QR
+code on an iPhone and nothing even needs installing.
 
 ## Why MyCam
 
@@ -102,7 +102,9 @@ until it's replugged.
 
 ## Known limits
 
-- Windows 11 only (it uses the `MFCreateVirtualCamera` API).
+- **Windows 10 (1809+) or 11.** On Windows 11, MyCam uses the `MFCreateVirtualCamera` Frame Server API;
+  on Windows 10, which has no equivalent, a DirectShow source filter instead (the same approach OBS
+  Virtual Camera uses) — the installer registers whichever one your PC needs.
 - **Android:** needs Android Open Accessory support (nearly all phones from the last 10+ years have it).
   While the companion is running, a plugged-in Android phone switches to webcam mode, so MTP file transfer
   isn't available — exit MyCam from the tray to transfer files.

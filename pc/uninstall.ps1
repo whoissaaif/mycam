@@ -15,7 +15,9 @@ $dest = "$env:ProgramFiles\MyCam"
 Get-Process MyCamCompanion -ErrorAction SilentlyContinue | Stop-Process -Force
 Remove-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run' -Name 'MyCam' -ErrorAction SilentlyContinue
 Remove-Item 'HKCU:\Software\MyCam' -Recurse -ErrorAction SilentlyContinue
-if (Test-Path "$dest\MyCamVCam.dll") { & regsvr32.exe /s /u "$dest\MyCamVCam.dll" }
+foreach ($dll in 'MyCamVCam.dll', 'MyCamVCamDShow.dll') {
+    if (Test-Path "$dest\$dll") { & regsvr32.exe /s /u "$dest\$dll" }
+}
 & schtasks.exe /Delete /TN 'MyCam phone driver' /F 2>$null | Out-Null
 & netsh.exe advfirewall firewall delete rule name="MyCam iPhone camera" 2>$null | Out-Null
 Restart-Service FrameServer -Force -ErrorAction SilentlyContinue

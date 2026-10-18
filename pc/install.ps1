@@ -1,10 +1,13 @@
 <#
-  One-time MyCam setup (Windows 11). Run from an elevated PowerShell, or just run it and accept the UAC prompt:
+  One-time MyCam setup (Windows 10 1809+ or 11). Run from an elevated PowerShell, or just run it and
+  accept the UAC prompt:
     powershell -ExecutionPolicy Bypass -File install.ps1
 
   1. Installs the UsbDk USB filter driver (Red Hat, signed). It lets MyCam switch your phone into
      accessory mode while Windows' own phone (MTP) driver is attached.
-  2. Copies MyCam to C:\Program Files\MyCam and registers the virtual camera with Windows.
+  2. Copies MyCam to C:\Program Files\MyCam and registers the virtual camera with Windows: the Frame
+     Server backend (MyCamVCam.dll) on Windows 11, or the DirectShow fallback (MyCamVCamDShow.dll) on
+     Windows 10 — see docs/WINDOWS10-SUPPORT.md.
   3. Starts the companion and makes it start with Windows.
 #>
 param([string]$BuildDir = "$PSScriptRoot\build\Release")
@@ -16,8 +19,10 @@ if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administra
     return
 }
 
-if ([Environment]::OSVersion.Version.Build -lt 22000) { throw 'MyCam needs Windows 11 (virtual camera API).' }
-foreach ($f in 'MyCamCompanion.exe', 'MyCamVCam.dll') {
+if ([Environment]::OSVersion.Version.Build -lt 17763) { throw 'MyCam needs Windows 10 1809 or later.' }
+$isWindows11 = [Environment]::OSVersion.Version.Build -ge 22000
+$vcamDll = if ($isWindows11) { 'MyCamVCam.dll' } else { 'MyCamVCamDShow.dll' }
+foreach ($f in 'MyCamCompanion.exe', $vcamDll) {
     if (-not (Test-Path "$BuildDir\$f")) { throw "$BuildDir\$f not found. Build first: cmake --build build --config Release" }
 }
 
@@ -41,14 +46,15 @@ if (-not (Test-Path "$env:WINDIR\System32\UsbDkHelper.dll")) {
 $dest = "$env:ProgramFiles\MyCam"
 Get-Process MyCamCompanion -ErrorAction SilentlyContinue | Stop-Process -Force
 New-Item -ItemType Directory -Force $dest | Out-Null
-if (Test-Path "$dest\MyCamVCam.dll") {
-    # Frame Server may still have the old DLL loaded; restart it so the file can be replaced.
-    & regsvr32.exe /s /u "$dest\MyCamVCam.dll"
-    Restart-Service FrameServer -Force -ErrorAction SilentlyContinue
+# Unregister whichever backend a previous install left (DllUnregisterServer on the inactive one is a
+# harmless no-op), so the files can be replaced.
+foreach ($dll in 'MyCamVCam.dll', 'MyCamVCamDShow.dll') {
+    if (Test-Path "$dest\$dll") { & regsvr32.exe /s /u "$dest\$dll" }
 }
-Copy-Item "$BuildDir\MyCamCompanion.exe", "$BuildDir\MyCamVCam.dll" $dest -Force
-$r = Start-Process regsvr32.exe -ArgumentList "/s `"$dest\MyCamVCam.dll`"" -Wait -PassThru
-if ($r.ExitCode -ne 0) { throw "Registering MyCamVCam.dll failed (regsvr32 exit $($r.ExitCode))." }
+if ($isWindows11) { Restart-Service FrameServer -Force -ErrorAction SilentlyContinue }
+Copy-Item "$BuildDir\MyCamCompanion.exe", "$BuildDir\$vcamDll" $dest -Force
+$r = Start-Process regsvr32.exe -ArgumentList "/s `"$dest\$vcamDll`"" -Wait -PassThru
+if ($r.ExitCode -ne 0) { throw "Registering $vcamDll failed (regsvr32 exit $($r.ExitCode))." }
 # Scheduled task that sets up new phones' USB driver without a UAC prompt.
 $r = Start-Process "$dest\MyCamCompanion.exe" -ArgumentList '--register-task' -Wait -PassThru
 if ($r.ExitCode -ne 0) { Write-Warning 'Could not register the phone driver task; new phones will ask for admin once.' }
