@@ -96,6 +96,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 
 - [x] Adaptive-bitrate Int overflow fix at 4K (`WebcamService.kt`), shipped in 1.3.2
 - [x] Wireless option: Wi-Fi transport with discovery, one-time pairing and encryption; cable stays the default [11], shipped in 1.4.0
+- [x] Security: exclude Wi-Fi pairing keys and `phone_id` (`mycam.xml`) from Android cloud backup and device transfer (closes #6)
 
 - [x] Assets complete: Play Store 512 px icon + 1024×500 feature graphic, dimmed streaming screen [7.3]
 

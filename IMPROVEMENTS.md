@@ -503,6 +503,13 @@ existed read as "not allowed", which is what closes the silent-reconnect case fo
 - **An on-path attacker can still delay a QR pairing** by replaying invites. They could drop the packets
   instead, so authenticating the invite (which would break 1.4.2 phones) buys nothing.
 
+### 12.2 Keep Wi-Fi pairing secrets out of Android backup (S): ✅ done (2026-10-18)
+
+`mycam.xml` stores the phone id and per-PC Wi-Fi pairing keys, so restoring that file to another handset
+clones trust with every paired PC. Android backup rules now exclude `sharedpref/mycam.xml` from both:
+- cloud backup and device transfer on Android 12+ (`data_extraction_rules.xml`);
+- Auto Backup on older Android versions (`backup_rules.xml`).
+
 ---
 
 ## 13. Linux support (L): ⏳
