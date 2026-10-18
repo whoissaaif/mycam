@@ -4,7 +4,7 @@
 
 #include <string>
 
-#include "phone_link.h"
+#include "link_status.h"
 
 namespace mycam {
 

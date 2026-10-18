@@ -74,8 +74,11 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
       [10, docs/WINDOWS10-SUPPORT.md]: shipped in 1.5.0; confirmed working on a friend's real Windows 10 PC —
       Discord shows live video, pause/resume, zoom/EV, camera switch, 0 decode errors over a ~7 min session.
       Zoom, OBS, a Chromium browser, and an upgrade install from a Windows-11-targeted previous version still untried
-- [ ] Linux support before launch: headless CLI daemon first (USB → v4l2loopback), Wi-Fi/iPhone/GUI
-      phased in after (needs a Linux test machine) [13, docs/LINUX-SUPPORT.md]
+- [~] Linux support before launch: headless CLI daemon first (USB → v4l2loopback), Wi-Fi/iPhone/GUI
+      phased in after [13, docs/LINUX-SUPPORT.md]. Test machine: Ubuntu 24.04, kernel 7.0 — v4l2loopback
+      works (a test pattern shows in a browser). Build seam landed: `mycam_tests` + `web_golden` pass on
+      Linux and in CI (OpenSSL in place of CNG). No Android phone on the Linux side yet, so the iPhone
+      path is next and USB stays unverified until someone with one tests it
 
 ## Backlog
 

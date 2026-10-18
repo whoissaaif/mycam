@@ -1,28 +1,17 @@
 #include "web_proto.h"
 
-#include <windows.h>
-#include <bcrypt.h>
-
 #include <algorithm>
 #include <cctype>
 #include <cwctype>
+
+#include "wifi_crypto.h"
 
 namespace mycam::web {
 
 namespace {
 
-Bytes Digest(const wchar_t* algorithm, size_t size, const std::string& s) {
-    Bytes out(size);
-    BCRYPT_ALG_HANDLE alg = nullptr;
-    if (BCryptOpenAlgorithmProvider(&alg, algorithm, nullptr, 0) != 0) return out;
-    BCryptHash(alg, nullptr, 0, reinterpret_cast<PUCHAR>(const_cast<char*>(s.data())), ULONG(s.size()), out.data(),
-               ULONG(out.size()));
-    BCryptCloseAlgorithmProvider(alg, 0);
-    return out;
-}
-
-Bytes Sha1(const std::string& s) { return Digest(BCRYPT_SHA1_ALGORITHM, 20, s); }
-Bytes Sha256(const std::string& s) { return Digest(BCRYPT_SHA256_ALGORITHM, 32, s); }
+Bytes Sha1(const std::string& s) { return wifi::Sha1(Bytes(s.begin(), s.end())); }
+Bytes Sha256(const std::string& s) { return wifi::Sha256(Bytes(s.begin(), s.end())); }
 
 std::string Lower(std::string s) {
     for (char& c : s) c = char(std::tolower(static_cast<unsigned char>(c)));

@@ -15,6 +15,7 @@ BCRYPT_ALG_HANDLE Provider(LPCWSTR id, ULONG flags = 0) {
     BCRYPT_ALG_HANDLE h = nullptr;
     return BCRYPT_SUCCESS(BCryptOpenAlgorithmProvider(&h, id, nullptr, flags)) ? h : nullptr;
 }
+BCRYPT_ALG_HANDLE Sha1Alg() { static BCRYPT_ALG_HANDLE h = Provider(BCRYPT_SHA1_ALGORITHM); return h; }
 BCRYPT_ALG_HANDLE ShaAlg() { static BCRYPT_ALG_HANDLE h = Provider(BCRYPT_SHA256_ALGORITHM); return h; }
 BCRYPT_ALG_HANDLE HmacAlg() { static BCRYPT_ALG_HANDLE h = Provider(BCRYPT_SHA256_ALGORITHM, BCRYPT_ALG_HANDLE_HMAC_FLAG); return h; }
 BCRYPT_ALG_HANDLE EcdhAlg() { static BCRYPT_ALG_HANDLE h = Provider(BCRYPT_ECDH_P256_ALGORITHM); return h; }
@@ -37,17 +38,15 @@ void Nonce(uint32_t dir, uint64_t counter, uint8_t out[12]) {
 
 } // namespace
 
-Bytes Concat(std::initializer_list<const Bytes*> parts) {
-    Bytes out;
-    for (const Bytes* p : parts) out.insert(out.end(), p->begin(), p->end());
-    return out;
-}
-
-Bytes Ascii(const char* s) { return Bytes(s, s + strlen(s)); }
-
 Bytes Random(size_t n) {
     Bytes out(n);
     BCryptGenRandom(nullptr, out.data(), ULONG(n), BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+    return out;
+}
+
+Bytes Sha1(const Bytes& data) {
+    Bytes out(20);
+    BCryptHash(Sha1Alg(), nullptr, 0, const_cast<PUCHAR>(data.data()), ULONG(data.size()), out.data(), 20);
     return out;
 }
 
@@ -61,66 +60,6 @@ Bytes HmacSha256(const Bytes& key, const Bytes& data) {
     Bytes out(32);
     BCryptHash(HmacAlg(), const_cast<PUCHAR>(key.data()), ULONG(key.size()), const_cast<PUCHAR>(data.data()),
                ULONG(data.size()), out.data(), 32);
-    return out;
-}
-
-Bytes Hkdf(const Bytes& ikm, const Bytes& salt, const Bytes& info, size_t length) {
-    const Bytes prk = HmacSha256(salt.empty() ? Bytes(32, 0) : salt, ikm);
-    Bytes out, t;
-    for (uint8_t i = 1; out.size() < length; ++i) {
-        Bytes block = t;
-        block.insert(block.end(), info.begin(), info.end());
-        block.push_back(i);
-        t = HmacSha256(prk, block);
-        out.insert(out.end(), t.begin(), t.end());
-    }
-    out.resize(length);
-    return out;
-}
-
-Bytes Commit(const Bytes& nb, const Bytes& phonePub, const Bytes& pcPub) {
-    const Bytes label = Ascii("MyCam commit v1");
-    return Sha256(Concat({&label, &nb, &phonePub, &pcPub}));
-}
-
-std::string Sas(const Bytes& pcPub, const Bytes& phonePub, const Bytes& na, const Bytes& nb) {
-    const Bytes h = Sha256(Concat({&pcPub, &phonePub, &na, &nb}));
-    const uint32_t v = uint32_t(h[0]) << 24 | uint32_t(h[1]) << 16 | uint32_t(h[2]) << 8 | h[3];
-    char code[8];
-    snprintf(code, sizeof(code), "%06u", unsigned(v % 1000000u));
-    return code;
-}
-
-Bytes PairKey(const Bytes& ecdh, const Bytes& na, const Bytes& nb) {
-    return Hkdf(ecdh, Concat({&na, &nb}), Ascii("MyCam pair v1"), 32);
-}
-
-Bytes SessionKeys(const Bytes& ecdh, const Bytes& pairKey, const Bytes& npc, const Bytes& nph) {
-    return Hkdf(Concat({&ecdh, &pairKey}), Concat({&npc, &nph}), Ascii("MyCam session v1"), 96);
-}
-
-Bytes Finished(const Bytes& kFin, const char* label, const Bytes& transcript) {
-    const Bytes l = Ascii(label);
-    return HmacSha256(kFin, Concat({&l, &transcript}));
-}
-
-bool SameMac(const Bytes& a, const Bytes& b) {
-    if (a.size() != b.size()) return false;
-    unsigned diff = 0;
-    for (size_t i = 0; i < a.size(); ++i) diff |= unsigned(a[i] ^ b[i]);
-    return diff == 0;
-}
-
-Bytes QrPairKey(const Bytes& ecdh, const Bytes& code, const Bytes& npc, const Bytes& nph) {
-    return Hkdf(Concat({&ecdh, &code}), Concat({&npc, &nph}), Ascii("MyCam qr pair v1"), 32);
-}
-
-std::string QrInviteProof(const Bytes& code, uint16_t tcpPort) {
-    const Bytes label = Ascii("MyCam qr invite v1"), p = {uint8_t(tcpPort >> 8), uint8_t(tcpPort)};
-    const Bytes mac = HmacSha256(code, Concat({&label, &p}));
-    static const char digits[] = "0123456789abcdef";
-    std::string out;
-    for (size_t i = 0; i < 16; ++i) { out += digits[mac[i] >> 4]; out += digits[mac[i] & 15]; }
     return out;
 }
 

@@ -1,6 +1,7 @@
 #pragma once
-// Crypto for the wireless link (PROTOCOL.md "Wireless security"), on Windows CNG (bcrypt): P-256 ECDH,
-// HKDF-SHA256 and AES-256-GCM records. Byte-compatible with the phone's WifiCrypto.kt; both are checked
+// Crypto for the wireless link (PROTOCOL.md "Wireless security"): P-256 ECDH, HKDF-SHA256 and AES-256-GCM
+// records. The primitives come from Windows CNG (wifi_crypto.cpp) or OpenSSL (wifi_crypto_openssl.cpp); the
+// handshake built on them is in wifi_crypto_common.cpp. Byte-compatible with the phone's WifiCrypto.kt; both are checked
 // against protocol/golden.txt "wifi.*", generated with the JDK.
 
 #include <stddef.h>
@@ -20,6 +21,7 @@ constexpr uint32_t kMaxRecord = 16 * 1024 * 1024;
 Bytes Concat(std::initializer_list<const Bytes*> parts);
 Bytes Ascii(const char* s);
 Bytes Random(size_t n);
+Bytes Sha1(const Bytes& data); // WebSocket handshake only (web_proto.cpp), not the wireless link.
 Bytes Sha256(const Bytes& data);
 Bytes HmacSha256(const Bytes& key, const Bytes& data);
 Bytes Hkdf(const Bytes& ikm, const Bytes& salt, const Bytes& info, size_t length); // RFC 5869
