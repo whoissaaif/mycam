@@ -82,7 +82,9 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
       `mycam-companion --daemon` builds and serves the iPhone page (platform.h / net.h seam; same
       PhoneLink as Windows). iPhone → Linux works end to end (2026-10-18, iPhone over Wi-Fi: paired by QR,
       66 frames, 0 decode errors, pause/resume from the phone); verified in Discord (Electron/Chromium) on
-      the real machine: picture shows, upright when the phone rotates, normal colours. No Android phone on the Linux side yet, so the iPhone
+      the real machine: picture shows, upright when the phone rotates, normal colours. Also verified in OBS
+      (PPA build; Ubuntu 24.04's packaged OBS 30.0.2 crashes on any v4l2loopback device, `free(): invalid
+      pointer`, even an ffmpeg test pattern: not MyCam). Slight delay reported, being measured. No Android phone on the Linux side yet, so the iPhone
       path is next and USB stays unverified until someone with one tests it
 
 ## Backlog
