@@ -106,4 +106,13 @@ void BgraToNV12(const uint8_t* bgra, ptrdiff_t stride, uint32_t width, uint32_t 
     }
 }
 
+void Nv12ToI420(const uint8_t* nv12, uint32_t width, uint32_t height, uint8_t* dst) {
+    const size_t luma = size_t(width) * height, chroma = luma / 4;
+    memcpy(dst, nv12, luma);
+    const uint8_t* uv = nv12 + luma;
+    uint8_t* u = dst + luma;
+    uint8_t* v = u + chroma;
+    for (size_t i = 0; i < chroma; ++i) { u[i] = uv[2 * i]; v[i] = uv[2 * i + 1]; }
+}
+
 } // namespace mycam
