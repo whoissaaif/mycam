@@ -59,6 +59,11 @@ LIVE pill, Selawik font, new launcher icon (adaptive, legacy and themed).
   UsbDk.
 - ⏳ The UsbDk fallback path (first connection, before the WinUSB driver is bound) can still leave the
   phone hidden until replugged. Detect it and reset the port, or tell the user to replug.
+- 🟡 USB debugging on (#9, built, needs a phone test): the accessory then enumerates as a composite device
+  (18d1:2d01, accessory + adb), and the driver binder skipped every `&MI_` interface, so the accessory
+  never got WinUSB and never connected. It now binds interface 0 (`MI_00`, always the accessory) of 2d01,
+  2d04 and 2d05, and leaves adb, audio and the audio-only products (2d02, 2d03) alone
+  (`IsAccessoryInstance`, unit-tested).
 
 ### 2.2 Fewer UAC prompts on first use (S): 🟡 built in 1.3.2, needs a new-phone test
 A new phone used to prompt twice: once at install, then again for WinUSB binding.

@@ -10,14 +10,23 @@
 
 namespace mycam {
 
-namespace {
-
 // Phones in Android Open Accessory mode enumerate as Google 18d1:2d00..2d05 and Windows has no driver for them.
+// With USB debugging on, the phone is a composite device instead (2d01, 2d04, 2d05: the accessory plus adb
+// and/or audio). Windows' composite driver splits it into one instance per interface, and the accessory is
+// always interface 0 (MI_00); the others (adb, audio) keep their own drivers. 2d02/2d03 are audio only.
 bool IsAccessoryInstance(const std::wstring& id) {
     std::wstring upper = id;
     for (auto& c : upper) c = towupper(c);
-    return upper.rfind(L"USB\\VID_18D1&PID_2D0", 0) == 0 && upper.find(L"&MI_") == std::wstring::npos;
+    const std::wstring prefix = L"USB\\VID_18D1&PID_2D0";
+    if (upper.rfind(prefix, 0) != 0 || upper.size() <= prefix.size()) return false;
+    wchar_t pid = upper[prefix.size()];
+    if (pid < L'0' || pid > L'5') return false;
+    size_t mi = upper.find(L"&MI_");
+    if (mi == std::wstring::npos) return true;
+    return (pid == L'1' || pid == L'4' || pid == L'5') && upper.compare(mi, 6, L"&MI_00") == 0;
 }
+
+namespace {
 
 bool NeedsDriver(DEVINST inst) {
     ULONG status = 0, problem = 0;
