@@ -115,7 +115,7 @@ Phone-side round (built, needs a test on the phone):
 - PC: 16 queued USB reads (256 KB) instead of 4, so a 4K frame no longer stalls the phone's write while
   the previous frame decodes.
 
-GPU decode (#8, built, needs a 4K test with a phone): the Media Foundation decoder gets a Direct3D 11
+GPU decode (#8, done, 4K30 tested with a phone): the Media Foundation decoder gets a Direct3D 11
 device and decodes through DXVA, falling back to the CPU when the decoder or GPU can't (logged as
 `decoder: init ... on the GPU/CPU`). If a key frame fails on the GPU, the CPU takes over for the rest of the
 run. Measured on an RTX 3050 with a synthetic 4K30 stream at 38 Mbps: decode+copy **36.3 ms on the CPU →

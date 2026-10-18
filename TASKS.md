@@ -22,7 +22,6 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 ## Next
 
 - [ ] Recover when the UsbDk fallback leaves the phone hidden [2.1]
-- [~] 4K: decode on the GPU (D3D11/DXVA), CPU as fallback [3.4, #8]: built, 36 → 14 ms a frame on a synthetic 4K stream; test 4K30 with a phone
 - [~] No UAC prompt for new phones (SYSTEM scheduled task from the installer) [2.2]: built and installed (1.3.2), test with a never-connected phone
 
 - [~] Dim the phone screen while streaming, with a heat warning [4.1]: built, test on the phone
@@ -96,6 +95,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [ ] iPhone native app + usbmux transport on the PC (only if a Mac and the developer program become available) [9.2]
 ## Done
 
+- [x] 4K: H.264 decodes on the GPU (D3D11/DXVA), CPU as fallback; 4K30 tested with a phone [3.4, #8]
 - [x] Pairing keys and the phone id are kept out of cloud backups and phone-to-phone transfers (own prefs file, migrated on upgrade) [12]
 - [x] Adaptive-bitrate Int overflow fix at 4K (`WebcamService.kt`), shipped in 1.3.2
 - [x] Wireless option: Wi-Fi transport with discovery, one-time pairing and encryption; cable stays the default [11], shipped in 1.4.0
