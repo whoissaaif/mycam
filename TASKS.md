@@ -71,9 +71,9 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
       streams normally. A multi-line phone name still wants a run on the device
 
 - [~] Windows 10 support before launch: DirectShow camera, installer picks per Windows version
-      [10, docs/WINDOWS10-SUPPORT.md]: confirmed working on a friend's real Windows 10 PC — Discord shows
-      live video, pause/resume, zoom/EV, camera switch, 0 decode errors over a ~7 min session. Zoom, OBS,
-      a Chromium browser, and an upgrade install from a Windows-11-targeted previous version still untried
+      [10, docs/WINDOWS10-SUPPORT.md]: shipped in 1.5.0; confirmed working on a friend's real Windows 10 PC —
+      Discord shows live video, pause/resume, zoom/EV, camera switch, 0 decode errors over a ~7 min session.
+      Zoom, OBS, a Chromium browser, and an upgrade install from a Windows-11-targeted previous version still untried
 - [ ] Linux support before launch: headless CLI daemon first (USB → v4l2loopback), Wi-Fi/iPhone/GUI
       phased in after (needs a Linux test machine) [13, docs/LINUX-SUPPORT.md]
 
@@ -116,6 +116,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 
 | Version | Date | What changed |
 |---|---|---|
+| **1.5.0** | 2026-10-18 | **Windows 10 support** [10]: a second COM DLL registers as a DirectShow video capture source (the OBS Virtual Camera approach) alongside the existing `MFCreateVirtualCamera` Frame Server backend; companion picks whichever matches the running Windows build. Installer registers the matching DLL and drops `MinVersion` to Windows 10 1809. Fixed an over-strict `QueryAccept` that rejected every DirectShow pin connection, and added a session-local shared-memory fallback for machines without a privileged service. Confirmed on a real Windows 10 PC: live video, pause/resume, zoom/EV, camera switch, 0 decode errors. Zoom, OBS, a Chromium browser, and an upgrade install from a Windows-11-targeted version are still untried. |
 | **1.4.3** | 2026-10-14 | **Security review of QR pairing** (IMPROVEMENTS.md 12.1): the camera gate (the phone asks once per PC before any video, naming it; "Don't allow" forgets the PC), phone names cleaned before they reach a window or the registry, a `MYCAM-1` refusal treated as a hint instead of an answer, the probe sweep using the adapter's real subnet, the one-time code claimed for the duration of a handshake, constant-time FINISHED comparison, and an unanswered Allow no longer banning the phone. Verified on a real device: fresh QR pairing holds the camera off until Allow, then streams normally. |
 | **1.4.2** | 2026-10-13 | **QR pairing for Android** (branch `qr-pairing`): scan the PC's QR code (the same one iPhones use) and it pairs and connects, with no code to compare and no "set the network to Private" step. "Paired with …" on both screens, then the camera. The 6-digit fallback now needs Allow on the PC too (closes the rogue-phone hole). The phone app stops when swiped away from recent apps. PC Home: "Generate QR". |
 | 1.4.1 | 2026-10-11 | **iPhone support** through a page in Safari served by the PC (QR pairing, remembered iPhones, rotation from the motion sensors, firewall rule on private networks). Camera and Resolution dropdowns draw their list again. PC only: the phone app stays 1.4.0. |

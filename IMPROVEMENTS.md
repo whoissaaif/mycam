@@ -297,7 +297,7 @@ Continuity Camera (Apple's built-in iPhone webcam) only works with Macs, so it d
 
 ---
 
-## 10. Windows 10 support (M): 🟡 confirmed working in Discord on a friend's real Windows 10 PC; Zoom/OBS/browser and an upgrade install still untried
+## 10. Windows 10 support (M): 🟡 shipped in 1.5.0; confirmed working in Discord on a friend's real Windows 10 PC; Zoom/OBS/browser and an upgrade install still untried
 
 Today the installer requires Windows 11, because the PC shows "MyCam" through `MFCreateVirtualCamera`,
 which only exists on Windows 11 (build 22000+). Everything else (USB, WinUSB binding, decoding, tray,
