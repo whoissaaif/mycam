@@ -203,6 +203,7 @@
     <string name="section_about">About</string>
     <string name="about_get_windows">Get MyCam for Windows</string>
     <string name="about_version">Version %1$s</string>
+    <string name="about_privacy">Privacy Policy</string>
     <string name="about_licences">Licences</string>
     <string name="about_licences_title">Licences</string>
     <string name="about_font">DejaVu Sans fonts</string>
