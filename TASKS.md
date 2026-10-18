@@ -109,6 +109,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [x] Auto-pause while Windows is locked or asleep [1.2] (1.1.0)
 - [x] Aero phone app and launcher icon [1.3] (1.1.0)
 - [x] Published to GitHub, email hidden, release v1.1.1 [8]
+- [x] The CPU wake lock is released when a link ends, so a phone left in wireless mode can sleep again [11]
 
 ---
 
