@@ -89,7 +89,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
       open (inotify + /proc scan), and the camera shows the Windows waiting/paused pictures. `.deb` via
       `cpack` (CI artifact): daemon, udev rule generated from kAndroidVendors[], v4l2loopback options +
       load at boot, systemd user service. Reader detection verified on hardware (STOP 4 s after the
-      last app closes MyCam). Android (USB + Wi-Fi) on Linux: deferred until an Android phone is at hand. No Android phone on the Linux side yet, so the iPhone
+      last app closes MyCam). `mycam-companion --pair` shows the iPhone QR code from the running service
+      (control socket in $XDG_RUNTIME_DIR). Android (USB + Wi-Fi) on Linux: deferred until an Android phone is at hand. No Android phone on the Linux side yet, so the iPhone
       path is next and USB stays unverified until someone with one tests it
 
 ## Backlog
