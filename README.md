@@ -4,6 +4,7 @@
 
 <h1 align="center">MyCam</h1>
 <p align="center"><b>Turn your phone into a webcam for Windows.</b></p>
+<p align="center"><a href="https://mycam.dev">mycam.dev</a></p>
 
 <p align="center">
   <a href="https://github.com/whoissaaif/mycam/releases/latest"><img src="https://img.shields.io/github/v/release/whoissaaif/mycam" alt="Latest release"></a>
