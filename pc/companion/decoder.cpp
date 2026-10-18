@@ -15,12 +15,37 @@ void H264Decoder::Reset() {
         transform_.Reset();
     }
     width_ = height_ = codedWidth_ = codedHeight_ = 0;
+    gpu_ = false;
 }
 
-HRESULT H264Decoder::Init(uint32_t width, uint32_t height, FrameCallback onFrame) {
+HRESULT H264Decoder::Init(uint32_t width, uint32_t height, FrameCallback onFrame, bool gpu) {
     Reset();
     onFrame_ = std::move(onFrame);
+    if (gpu && SUCCEEDED(Create(width, height, true))) return S_OK;
+    Reset();
+    return Create(width, height, false);
+}
 
+HRESULT H264Decoder::EnsureDevice() {
+    if (manager_) return S_OK;
+    ComPtr<ID3D11Device> device;
+    HRESULT hr = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
+                                   nullptr, 0, D3D11_SDK_VERSION, &device, nullptr, nullptr);
+    if (FAILED(hr)) return hr;
+    // Media Foundation needs this on any device it shares for DXVA.
+    ComPtr<ID3D10Multithread> multithread;
+    if (SUCCEEDED(device.As(&multithread))) multithread->SetMultithreadProtected(TRUE);
+    UINT token = 0;
+    ComPtr<IMFDXGIDeviceManager> manager;
+    hr = MFCreateDXGIDeviceManager(&token, &manager);
+    if (SUCCEEDED(hr)) hr = manager->ResetDevice(device.Get(), token);
+    if (FAILED(hr)) return hr;
+    device_ = device;
+    manager_ = manager;
+    return S_OK;
+}
+
+HRESULT H264Decoder::Create(uint32_t width, uint32_t height, bool gpu) {
     MFT_REGISTER_TYPE_INFO in = {MFMediaType_Video, MFVideoFormat_H264};
     MFT_REGISTER_TYPE_INFO out = {MFMediaType_Video, MFVideoFormat_NV12};
     IMFActivate** activates = nullptr;
@@ -40,6 +65,14 @@ HRESULT H264Decoder::Init(uint32_t width, uint32_t height, FrameCallback onFrame
     ComPtr<IMFAttributes> attrs;
     if (SUCCEEDED(transform_->GetAttributes(&attrs))) attrs->SetUINT32(MF_LOW_LATENCY, TRUE);
 
+    if (gpu) {
+        // Decoded frames then stay in GPU memory until EmitFrame reads them back (one copy, no CPU decode).
+        if (!attrs || !MFGetAttributeUINT32(attrs.Get(), MF_SA_D3D11_AWARE, FALSE)) { transform_.Reset(); return E_NOTIMPL; }
+        hr = EnsureDevice();
+        if (SUCCEEDED(hr)) hr = transform_->ProcessMessage(MFT_MESSAGE_SET_D3D_MANAGER, ULONG_PTR(manager_.Get()));
+        if (FAILED(hr)) { transform_.Reset(); return hr; }
+    }
+
     ComPtr<IMFMediaType> inType;
     hr = MFCreateMediaType(&inType);
     if (FAILED(hr)) return hr;
@@ -56,6 +89,7 @@ HRESULT H264Decoder::Init(uint32_t width, uint32_t height, FrameCallback onFrame
 
     transform_->ProcessMessage(MFT_MESSAGE_NOTIFY_BEGIN_STREAMING, 0);
     transform_->ProcessMessage(MFT_MESSAGE_NOTIFY_START_OF_STREAM, 0);
+    gpu_ = gpu;
     return S_OK;
 }
 
