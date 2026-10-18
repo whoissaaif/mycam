@@ -103,13 +103,14 @@ class MainActivity : ComponentActivity() {
         WebcamService.showIdleFacing(prefs.getInt(WebcamService.PREF_FACING, Protocol.FACING_BACK))
         WebcamService.showIdlePaused(prefs.getBoolean(WebcamService.PREF_PAUSED, false))
         WebcamService.showIdleCamera(WebcamService.loadCameraSettings(prefs))
-        WebcamService.showPairedPcs(PairedPcs(prefs).list())
+        val pairedPcs = PairedPcs.open(this)
+        WebcamService.showPairedPcs(pairedPcs.list())
         autoDim = prefs.getBoolean(WebcamService.PREF_AUTO_DIM, true)
         previewOn = prefs.getBoolean(WebcamService.PREF_PREVIEW, true)
         PhonePreview.setOn(previewOn)
         splash = savedInstanceState == null
         // First run: shown once, to a new user. Skip, Got it and the first connection end it for good.
-        firstRun = FirstRun.shouldShow(prefs) && savedInstanceState?.getBoolean(STATE_FIRST_RUN_HIDDEN) != true
+        firstRun = FirstRun.shouldShow(prefs, pairedPcs) && savedInstanceState?.getBoolean(STATE_FIRST_RUN_HIDDEN) != true
         ContextCompat.registerReceiver(
             this, usbPermissionReceiver, IntentFilter(ACTION_USB_PERMISSION), ContextCompat.RECEIVER_NOT_EXPORTED,
         )

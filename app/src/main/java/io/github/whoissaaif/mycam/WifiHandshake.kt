@@ -1,5 +1,6 @@
 package io.github.whoissaaif.mycam
 
+import android.content.Context
 import android.content.SharedPreferences
 import android.util.Base64
 import androidx.core.content.edit
@@ -242,7 +243,7 @@ class WifiHandshake(
 /** A paired PC as the UI shows it: [id] is the hex PC id (the storage key), [name] its name. */
 data class PairedPc(val id: String, val name: String)
 
-/** PCs this phone has paired with: their id, pairing key and name (app-private preferences). */
+/** PCs this phone has paired with: their id, pairing key and name (app-private preferences, [PREFS]). */
 class PairedPcs(private val prefs: SharedPreferences) {
     fun key(pcId: ByteArray): ByteArray? =
         prefs.getString(PREFIX + hex(pcId), null)?.substringBefore('|')?.let { Base64.decode(it, Base64.NO_WRAP) }
@@ -281,17 +282,37 @@ class PairedPcs(private val prefs: SharedPreferences) {
         }.apply()
     }
 
+    /** This phone's random id, made once. */
+    fun phoneId(): ByteArray {
+        prefs.getString(PHONE_ID, null)?.let { s -> return ByteArray(16) { s.substring(2 * it, 2 * it + 2).toInt(16).toByte() } }
+        val id = ByteArray(16).also { SecureRandom().nextBytes(it) }
+        prefs.edit().putString(PHONE_ID, hex(id)).apply()
+        return id
+    }
+
     companion object {
+        /**
+         * Its own preferences file, left out of cloud backup and device transfer (res/xml/backup_rules.xml,
+         * data_extraction_rules.xml): a restored or new phone pairs again instead of carrying the keys along.
+         */
+        const val PREFS = "mycam_pairing"
         private const val PREFIX = "paired_pc_"
         private const val ALLOW_PREFIX = "cam_ok_"
+        private const val PHONE_ID = "phone_id"
         private fun hex(b: ByteArray) = b.joinToString("") { "%02x".format(it) }
 
-        /** This phone's random id, made once. */
-        fun phoneId(prefs: SharedPreferences): ByteArray {
-            prefs.getString("phone_id", null)?.let { s -> return ByteArray(16) { s.substring(2 * it, 2 * it + 2).toInt(16).toByte() } }
-            val id = ByteArray(16).also { SecureRandom().nextBytes(it) }
-            prefs.edit().putString("phone_id", hex(id)).apply()
-            return id
+        fun open(context: Context): PairedPcs {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            migrate(context.getSharedPreferences(WebcamService.PREFS, Context.MODE_PRIVATE), prefs)
+            return PairedPcs(prefs)
+        }
+
+        /** Up to 1.5.0 these lived in the main preferences file, which is backed up: move them out, once. */
+        fun migrate(from: SharedPreferences, to: SharedPreferences) {
+            val old = from.all.filterKeys { it.startsWith(PREFIX) || it.startsWith(ALLOW_PREFIX) || it == PHONE_ID }
+            if (old.isEmpty()) return
+            to.edit(commit = true) { old.forEach { (k, v) -> if (v is Boolean) putBoolean(k, v) else putString(k, v as String) } }
+            from.edit(commit = true) { old.keys.forEach { remove(it) } }
         }
     }
 }

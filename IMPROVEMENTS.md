@@ -59,6 +59,11 @@ LIVE pill, Selawik font, new launcher icon (adaptive, legacy and themed).
   UsbDk.
 - ⏳ The UsbDk fallback path (first connection, before the WinUSB driver is bound) can still leave the
   phone hidden until replugged. Detect it and reset the port, or tell the user to replug.
+- 🟡 USB debugging on (#9, built, needs a phone test): the accessory then enumerates as a composite device
+  (18d1:2d01, accessory + adb), and the driver binder skipped every `&MI_` interface, so the accessory
+  never got WinUSB and never connected. It now binds interface 0 (`MI_00`, always the accessory) of 2d01,
+  2d04 and 2d05, and leaves adb, audio and the audio-only products (2d02, 2d03) alone
+  (`IsAccessoryInstance`, unit-tested).
 
 ### 2.2 Fewer UAC prompts on first use (S): 🟡 built in 1.3.2, needs a new-phone test
 A new phone used to prompt twice: once at install, then again for WinUSB binding.
@@ -102,8 +107,8 @@ Zoom, tap-to-focus, exposure, torch, and lens choice (ultrawide / telephoto). Ph
 to PC apps through `IKsControl` is a stretch goal.
 
 ### 3.4 Lower latency (M): 🟡 PC side done (1.3–1.3.1): delivery on arrival, one less copy, adaptive bitrate when the USB link is the limit. Measured: PC decode+copy 3–12 ms; **phone capture→encoded 150–230 ms** (MediaTek encoder buffers ~3 frames). Next: try encoder low-latency vendor keys, fewer camera buffers, I-frame interval.
-Decode on the GPU (D3D11 / DXVA) instead of the CPU, cut extra frame copies, and add a latency
-measurement (timestamp in the frame header → log).
+Decode on the GPU (D3D11 / DXVA) instead of the CPU (built, see below), cut extra frame copies, and add a
+latency measurement (timestamp in the frame header → log).
 
 Phone-side round (built, needs a test on the phone):
 - The log splits the delay: `latency: ... (camera X ms, encoder ~Y ms)` (sensor → capture result vs.
@@ -114,6 +119,14 @@ Phone-side round (built, needs a test on the phone):
   on, and the full list is logged (`encoder vendor parameters: ...`) for further tuning.
 - PC: 16 queued USB reads (256 KB) instead of 4, so a 4K frame no longer stalls the phone's write while
   the previous frame decodes.
+
+GPU decode (#8, done, 4K30 tested with a phone): the Media Foundation decoder gets a Direct3D 11
+device and decodes through DXVA, falling back to the CPU when the decoder or GPU can't (logged as
+`decoder: init ... on the GPU/CPU`). If a key frame fails on the GPU, the CPU takes over for the rest of the
+run. Measured on an RTX 3050 with a synthetic 4K30 stream at 38 Mbps: decode+copy **36.3 ms on the CPU →
+13.7 ms on the GPU**, output bit-identical. The CPU was over the 33 ms a 30 fps frame has; the GPU
+leaves room. Still open from #8: the phone's bitrate control can't tell a busy PC from a full link, and
+decoding still runs on the USB thread.
 
 ---
 
@@ -502,6 +515,14 @@ existed read as "not allowed", which is what closes the silent-reconnect case fo
   explicit "Don't allow" is permanent now, which limits the blast radius.
 - **An on-path attacker can still delay a QR pairing** by replaying invites. They could drop the packets
   instead, so authenticating the invite (which would break 1.4.2 phones) buys nothing.
+
+**Fixed after 1.5.0: pairing keys left the phone in backups.** `allowBackup` was on with empty rules, so
+every pairing key, "camera allowed" flag and the phone id went into Google's cloud backup and into a
+phone-to-phone transfer with the rest of `mycam.xml`. They now live in their own `mycam_pairing.xml`
+(`PairedPcs.PREFS`), which `backup_rules.xml` and `data_extraction_rules.xml` exclude. Settings still back
+up. An upgraded phone moves the old entries over the first time it opens the store (`PairedPcs.migrate`). A
+restored phone pairs again. Backups made before the fix still hold the old keys: Forget the PC on the PC
+side to make one useless.
 
 ---
 

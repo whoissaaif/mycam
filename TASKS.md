@@ -83,7 +83,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [~] 30 / 60 / 120 fps choice; 60 and 120 on the back camera through high-speed capture [3.2]: built, test on the phone
 - [~] Screen-reader support (UI Automation) for the settings window and pairing dialog [5.2]: built (`uia_provider.cpp`, checked with `pc/tools/uia_dump`); try with Narrator
 - [ ] Code-sign the installer and companion [5.3] — see [docs/AIYAN-WEBSITE.md](docs/AIYAN-WEBSITE.md)
-- [ ] USB debugging on: the accessory shows up as accessory+adb (composite), WinUSB isn't bound to its interface, so it never connects; bind the MI_00 interface too [2.1]
+- [~] USB debugging on: the accessory shows up as accessory+adb (composite), so WinUSB is now bound to its accessory interface (MI_00) too [2.1, #9]: built and unit-tested; test with a phone that has USB debugging on
 - [ ] Test the release APK (not just debug) on a phone before every release: R8 only runs on release builds
 - [ ] Uninstaller: remove UsbDk completely (service + UsbDk.sys stay behind after msiexec) [5.3]
 - [ ] Test a clean install on a different PC (Sandbox needs CPU virtualization enabled in firmware) [2.3]
@@ -91,6 +91,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [ ] iPhone native app + usbmux transport on the PC (only if a Mac and the developer program become available) [9.2]
 ## Done
 
+- [x] 4K: H.264 decodes on the GPU (D3D11/DXVA), CPU as fallback; 4K30 tested with a phone [3.4, #8]
+- [x] Pairing keys and the phone id are kept out of cloud backups and phone-to-phone transfers (own prefs file, migrated on upgrade) [12]
 - [x] Adaptive-bitrate Int overflow fix at 4K (`WebcamService.kt`), shipped in 1.3.2
 - [x] Wireless option: Wi-Fi transport with discovery, one-time pairing and encryption; cable stays the default [11], shipped in 1.4.0
 
