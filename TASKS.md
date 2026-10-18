@@ -86,7 +86,9 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
       (PPA build; Ubuntu 24.04's packaged OBS 30.0.2 crashes on any v4l2loopback device, `free(): invalid
       pointer`, even an ffmpeg test pattern: not MyCam). The slight delay went away after unticking "Use Buffering" in
       the OBS V4L2 source (tell Linux users that). The phone camera now runs only while an app has MyCam
-      open (inotify + /proc scan), and the camera shows the Windows waiting/paused pictures. No Android phone on the Linux side yet, so the iPhone
+      open (inotify + /proc scan), and the camera shows the Windows waiting/paused pictures. `.deb` via
+      `cpack` (CI artifact): daemon, udev rule generated from kAndroidVendors[], v4l2loopback options +
+      load at boot, systemd user service. No Android phone on the Linux side yet, so the iPhone
       path is next and USB stays unverified until someone with one tests it
 
 ## Backlog
