@@ -1,5 +1,7 @@
 #include "phone_link.h"
 
+#include "net.h" // Before libusb.h: on Windows that includes the old winsock.h, which clashes with winsock2.h.
+
 #include <libusb.h>
 #include <string.h>
 
@@ -7,7 +9,6 @@
 
 #include "log.h"
 #include "marquee.h"
-#include "net.h"
 #include "phone_state.h"
 #include "platform.h"
 #include "protocol.h"
