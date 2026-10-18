@@ -29,6 +29,16 @@ Camera2 → H.264 encoder ──────────────────
   of `pc/vcam/`'s Frame Server media source — `MFCreateVirtualCamera` is Windows 11-only. It reads the
   same `Global\MyCamFrame` shared memory; the installer registers whichever one the Windows build
   supports. See [docs/WINDOWS10-SUPPORT.md](WINDOWS10-SUPPORT.md).
+* **Linux (preview):** `mycam-companion --daemon` runs the same `PhoneLink` and `SessionLoop` as the tray
+  app, with FFmpeg in place of Media Foundation and a `v4l2loopback` device (`/dev/video10`, "MyCam") in
+  place of the Frame Server camera; the daemon writes frames into it directly. No GUI yet: a systemd user
+  service runs it, and `mycam-companion --pair` shows the iPhone QR code in a terminal. User guide:
+  [pc/linux/README.md](../pc/linux/README.md).
+* **Platform split.** Shared code never calls Win32 or POSIX directly: it goes through `platform.h`
+  (time, text, adapters, the settings store, secret protection, embedded files) and `net.h` (sockets), and
+  each platform supplies its own file for what differs (`*_win.cpp` / `*_posix.cpp`, `tls_server.cpp` /
+  `tls_server_openssl.cpp`, `wifi_crypto.cpp` / `wifi_crypto_openssl.cpp`, `decoder.cpp` /
+  `decoder_ffmpeg.cpp`, `frame_writer.cpp` / `frame_writer_v4l2.cpp`). No `#ifdef` in shared logic.
 
 ## iPhone
 
@@ -84,10 +94,13 @@ are in [iphone-wired.md](iphone-wired.md). The full server/route/token reference
 | `pc/companion/` | Tray app: the AOA switch (libusb + UsbDk), streaming over WinUSB, Wi-Fi, the iPhone server, H.264 decode, the frame hand-off. |
 | `pc/companion/web/` | The iPhone page (`index.html`, `app.js`, `protocol.js`, `style.css`), embedded in the exe through `companion.rc`. |
 | `pc/companion/web_server.cpp`, `tls_server.cpp`, `web_proto.cpp`, `phone_link_web.cpp` | The iPhone server: HTTPS + WebSocket, the Schannel TLS and certificate, the pure parsing and token code (unit-tested), and the transport in `SessionLoop`. |
+| `pc/companion/platform.h`, `net.h`, `platform_*.cpp` | The OS seam: what the shared code needs from Windows or Linux. Windows keeps the registry keys and DPAPI earlier versions wrote; Linux stores under `~/.config/mycam/`. |
+| `pc/companion/*_posix.cpp`, `*_openssl.cpp`, `*_ffmpeg.cpp`, `*_v4l2.cpp`, `main_linux.cpp` | The Linux side of the split, and the `mycam-companion` daemon (`control_posix.cpp`: its socket for `--pair`). |
+| `pc/linux/` | Linux packaging (systemd user unit, v4l2loopback options, postinst) and the [Linux user guide](../pc/linux/README.md). `pc/linux.cmake` builds it all; the udev rule is generated from `kAndroidVendors[]`. |
 | `pc/vcam/` | Virtual camera media source DLL loaded by Windows Frame Server (Windows 11). |
 | `pc/vcam-dshow/` | DirectShow source filter DLL, the Windows 10 fallback for `pc/vcam/`. See [WINDOWS10-SUPPORT.md](WINDOWS10-SUPPORT.md). |
 | `pc/common/` | Shared memory layout and the COM CLSIDs. |
-| `pc/third_party/` | Vendored libusb (trimmed to the Windows backend), and [qrcodegen](https://www.nayuki.io/page/qr-code-generator-library) for the iPhone QR code. |
+| `pc/third_party/` | Vendored libusb (trimmed to the Windows backend; Linux uses the distro's), and [qrcodegen](https://www.nayuki.io/page/qr-code-generator-library) for the iPhone QR code. |
 | `installer/` | Inno Setup installer (`mycam.iss`) and its build script (`build.ps1`). |
 | `pc/install.ps1` / `uninstall.ps1` | Developer install/removal without building the installer. |
 | `design/` | Art tools (`tools/*.ps1`) and previews. Style: Windows XP Luna Blue ([design/STYLE.md](../design/STYLE.md)). |
@@ -116,6 +129,16 @@ cmake -S pc -B pc/build -A x64         # add -DMYCAM_BUILD_TOOLS=ON for the dev 
 cmake --build pc/build --config Release
 ```
 
+**Linux** (Ubuntu 24.04; any distro with these libraries should do):
+```
+sudo apt install build-essential cmake pkg-config libusb-1.0-0-dev libssl-dev \
+     libavcodec-dev libavutil-dev libswscale-dev
+cmake -S pc -B pc/build-linux -DCMAKE_BUILD_TYPE=Release
+cmake --build pc/build-linux -j
+cd pc/build-linux && cpack                # mycam_<version>_amd64.deb (the version comes from app/build.gradle.kts)
+```
+FFmpeg is linked dynamically from the distro, never vendored: MyCam is MIT, FFmpeg LGPL/GPL.
+
 **Installer:** `powershell -ExecutionPolicy Bypass -File installer\build.ps1 -Version X.Y.Z` (needs
 [Inno Setup 6](https://jrsoftware.org/isinfo.php)). The output is in `installer\output`.
 
@@ -127,6 +150,7 @@ cmake --build pc/build --config Release
 ```
 gradlew testDebugUnitTest                      # Android: protocol encoding/parsing
 ctest --test-dir pc/build -C Release           # PC: mycam_tests, plus web_golden (the iPhone page's protocol.js)
+ctest --test-dir pc/build-linux                # Linux: the same two, plus tls_tests (OpenSSL TLS against a client)
 ```
 
 `web_golden` needs [Node.js](https://nodejs.org) and is skipped without it.
