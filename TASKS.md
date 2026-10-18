@@ -81,7 +81,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
       checked with `v4l2_play` (an H.264 file → /dev/video10, rotation/mirror/letterbox). TLS on OpenSSL.
       `mycam-companion --daemon` builds and serves the iPhone page (platform.h / net.h seam; same
       PhoneLink as Windows). iPhone → Linux works end to end (2026-10-18, iPhone over Wi-Fi: paired by QR,
-      66 frames, 0 decode errors, pause/resume from the phone). No Android phone on the Linux side yet, so the iPhone
+      66 frames, 0 decode errors, pause/resume from the phone); verified in Discord (Electron/Chromium) on
+      the real machine: picture shows, upright when the phone rotates, normal colours. No Android phone on the Linux side yet, so the iPhone
       path is next and USB stays unverified until someone with one tests it
 
 ## Backlog
