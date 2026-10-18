@@ -503,6 +503,14 @@ existed read as "not allowed", which is what closes the silent-reconnect case fo
 - **An on-path attacker can still delay a QR pairing** by replaying invites. They could drop the packets
   instead, so authenticating the invite (which would break 1.4.2 phones) buys nothing.
 
+**Fixed after 1.5.0: pairing keys left the phone in backups.** `allowBackup` was on with empty rules, so
+every pairing key, "camera allowed" flag and the phone id went into Google's cloud backup and into a
+phone-to-phone transfer with the rest of `mycam.xml`. They now live in their own `mycam_pairing.xml`
+(`PairedPcs.PREFS`), which `backup_rules.xml` and `data_extraction_rules.xml` exclude. Settings still back
+up. An upgraded phone moves the old entries over the first time it opens the store (`PairedPcs.migrate`). A
+restored phone pairs again. Backups made before the fix still hold the old keys: Forget the PC on the PC
+side to make one useless.
+
 ---
 
 ## 13. Linux support (L): ⏳
