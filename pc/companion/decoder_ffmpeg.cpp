@@ -12,14 +12,14 @@ namespace mycam {
 
 H264Decoder::~H264Decoder() { Reset(); }
 
-bool H264Decoder::Init(uint32_t width, uint32_t height, FrameCallback onFrame) {
+long H264Decoder::Init(uint32_t width, uint32_t height, FrameCallback onFrame, bool) {
     Reset();
     const AVCodec* codec = avcodec_find_decoder(AV_CODEC_ID_H264);
-    if (!codec) return false;
+    if (!codec) return AVERROR_DECODER_NOT_FOUND;
     ctx_ = avcodec_alloc_context3(codec);
     frame_ = av_frame_alloc();
     packet_ = av_packet_alloc();
-    if (!ctx_ || !frame_ || !packet_) { Reset(); return false; }
+    if (!ctx_ || !frame_ || !packet_) { Reset(); return AVERROR(ENOMEM); }
     ctx_->width = int(width);
     ctx_->height = int(height);
     // A live camera: output each frame as soon as it decodes. Frame threading would hold frames back to fill
@@ -27,9 +27,9 @@ bool H264Decoder::Init(uint32_t width, uint32_t height, FrameCallback onFrame) {
     ctx_->flags |= AV_CODEC_FLAG_LOW_DELAY;
     ctx_->thread_type = FF_THREAD_SLICE;
     ctx_->thread_count = 0; // Auto.
-    if (avcodec_open2(ctx_, codec, nullptr) < 0) { Reset(); return false; }
+    if (const int r = avcodec_open2(ctx_, codec, nullptr); r < 0) { Reset(); return r; }
     onFrame_ = std::move(onFrame);
-    return true;
+    return 0;
 }
 
 void H264Decoder::Reset() {
@@ -41,8 +41,8 @@ void H264Decoder::Reset() {
     onFrame_ = nullptr;
 }
 
-bool H264Decoder::Decode(const uint8_t* data, size_t size, int64_t ptsUs) {
-    if (!ctx_ || size == 0) return false;
+long H264Decoder::Decode(const uint8_t* data, size_t size, int64_t ptsUs) {
+    if (!ctx_ || size == 0) return AVERROR(EINVAL);
     input_.resize(size + AV_INPUT_BUFFER_PADDING_SIZE);
     memcpy(input_.data(), data, size);
     memset(input_.data() + size, 0, AV_INPUT_BUFFER_PADDING_SIZE);
@@ -50,12 +50,12 @@ bool H264Decoder::Decode(const uint8_t* data, size_t size, int64_t ptsUs) {
     packet_->size = int(size);
     packet_->pts = ptsUs;
     const int sent = avcodec_send_packet(ctx_, packet_);
-    if (sent < 0 && sent != AVERROR(EAGAIN)) return false;
+    if (sent < 0 && sent != AVERROR(EAGAIN)) return sent;
     while (avcodec_receive_frame(ctx_, frame_) == 0) {
         EmitFrame();
         av_frame_unref(frame_);
     }
-    return true;
+    return 0;
 }
 
 void H264Decoder::EmitFrame() {

@@ -78,7 +78,9 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
       phased in after [13, docs/LINUX-SUPPORT.md]. Test machine: Ubuntu 24.04, kernel 7.0 — v4l2loopback
       works (a test pattern shows in a browser). Build seam landed: `mycam_tests` + `web_golden` pass on
       Linux and in CI (OpenSSL in place of CNG). Video path works: FFmpeg decoder + v4l2loopback writer,
-      checked with `v4l2_play` (an H.264 file → /dev/video10, rotation/mirror/letterbox). No Android phone on the Linux side yet, so the iPhone
+      checked with `v4l2_play` (an H.264 file → /dev/video10, rotation/mirror/letterbox). TLS on OpenSSL.
+      `mycam-companion --daemon` builds and serves the iPhone page (platform.h / net.h seam; same
+      PhoneLink as Windows). Next: an iPhone end-to-end test on the Linux machine. No Android phone on the Linux side yet, so the iPhone
       path is next and USB stays unverified until someone with one tests it
 
 ## Backlog

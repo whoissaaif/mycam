@@ -8,11 +8,10 @@
 #include <string>
 #include <vector>
 
-#include "decoder.h"
 #include "discovery.h"
 #include "packet_parser.h"
-#include "frame_writer.h"
 #include "link_status.h"
+#include "platform_video.h"
 #include "protocol.h"
 #include "status_images.h"
 #include "web_server.h"
@@ -95,6 +94,13 @@ public:
     }
 
 private:
+    // The USB backend (phone_link_usb_win.cpp: UsbDk + WinUSB; phone_link_usb_posix.cpp: plain libusb).
+    bool InitUsb();                                  // Logs how it went; false: no USB phones.
+    void ExitUsb();
+    bool UsbNeedsDriver();                           // A phone in accessory mode can't be opened yet.
+    void RunAccessory(libusb_device* accessory);     // One USB session with a phone in accessory mode.
+    const char* BackendName(libusb_context* ctx) const;
+
     void ScanOnce();
     bool LooksLikeAndroid(libusb_device* dev);
     void SwitchToAccessory(libusb_device* dev);
@@ -146,7 +152,7 @@ private:
 
     bool SendCommand(uint8_t cmd, uint8_t arg = 0);
     void HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const uint8_t* payload, uint32_t length);
-    HRESULT InitDecoder(uint32_t width, uint32_t height, const char* why);
+    long InitDecoder(uint32_t width, uint32_t height, const char* why); // HRESULT on Windows.
     void OnDecodedFrame(const H264Decoder::Nv12View& frame);
     void Publish();
     void OnInTransfer(libusb_transfer* transfer);

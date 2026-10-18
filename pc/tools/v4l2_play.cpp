@@ -83,10 +83,10 @@ int main(int argc, char** argv) {
     const auto frameTime = std::chrono::microseconds(33333); // ponytail: fixed 30 fps; the file's own timing is ignored.
     auto next = std::chrono::steady_clock::now();
     for (unsigned loop = 0;; ++loop) {
-        if (!decoder.Init(width, height, onFrame)) { fprintf(stderr, "decoder init failed\n"); return 1; }
+        if (decoder.Init(width, height, onFrame) < 0) { fprintf(stderr, "decoder init failed\n"); return 1; }
         unsigned errors = 0;
         for (size_t i = 0; i < units.size(); ++i) {
-            if (!decoder.Decode(units[i].data(), units[i].size(), int64_t(i) * 33333)) ++errors;
+            if (decoder.Decode(units[i].data(), units[i].size(), int64_t(i) * 33333) < 0) ++errors;
             next += frameTime;
             std::this_thread::sleep_until(next);
         }

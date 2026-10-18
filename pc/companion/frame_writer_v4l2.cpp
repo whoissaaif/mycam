@@ -8,8 +8,36 @@
 #include <unistd.h>
 
 #include "../vcam/frame_transform.h"
+#include "log.h"
+#include "platform.h"
 
 namespace mycam {
+
+namespace {
+std::string g_device;
+uint32_t g_width = 0, g_height = 0;
+} // namespace
+
+void FrameWriter::Configure(const std::string& device, uint32_t width, uint32_t height) {
+    g_device = device;
+    g_width = width;
+    g_height = height;
+}
+
+bool FrameWriter::EnsureOpen() {
+    if (fd_ >= 0) return true;
+    const uint64_t now = NowMs();
+    if (g_device.empty() || (lastAttempt_ && now - lastAttempt_ < 2000)) return false;
+    const bool first = lastAttempt_ == 0;
+    lastAttempt_ = now;
+    std::string why;
+    if (Open(g_device, g_width, g_height, &why)) {
+        Log("camera: writing %ux%u to %s", g_width, g_height, g_device.c_str());
+        return true;
+    }
+    if (first) Log("camera: %s (retrying every 2 s)", why.c_str());
+    return false;
+}
 
 FrameWriter::~FrameWriter() { Close(); }
 
@@ -51,7 +79,8 @@ void FrameWriter::Close() {
 }
 
 void FrameWriter::Write(const uint8_t* nv12, uint32_t width, uint32_t height, uint32_t rotation, bool mirror, bool fill) {
-    if (fd_ < 0 || width == 0 || height == 0) return;
+    if (fd_ < 0 && !EnsureOpen()) return;
+    if (width == 0 || height == 0) return;
     FillBlackNV12(fitted_.data(), width_, width_, height_);
     DrawFittedNV12(nv12, width, height, rotation, mirror, fitted_.data(), width_, width_, height_, fill);
     Nv12ToI420(fitted_.data(), width_, height_, out_.data());

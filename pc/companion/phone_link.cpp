@@ -1,15 +1,16 @@
 #include "phone_link.h"
 
-#include <winsock2.h>
-
 #include <libusb.h>
 #include <string.h>
 
-#include "../common/shared_frame.h"
+#include <chrono>
+
 #include "log.h"
 #include "marquee.h"
+#include "net.h"
+#include "phone_state.h"
+#include "platform.h"
 #include "protocol.h"
-#include "winusb_bind.h"
 
 namespace mycam {
 
@@ -44,24 +45,10 @@ std::string DeviceKey(libusb_device* dev, const libusb_device_descriptor& desc) 
 } // namespace
 
 void PhoneLink::Run() {
-    // UsbDk lets libusb talk to phones while Windows' own MTP/ADB drivers are bound to them.
-    // libusb silently falls back to WinUSB without it, which cannot open phones, so check explicitly.
-    HMODULE usbdk = LoadLibraryExW(L"UsbDkHelper.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
-    if (usbdk) FreeLibrary(usbdk);
-    // Switch to UsbDk after init: libusb_init_context applies options before it has probed for UsbDk,
-    // so passing LIBUSB_OPTION_USE_USBDK there always fails with LIBUSB_ERROR_NOT_FOUND.
-    bool ok = usbdk && libusb_init_context(&ctx_, nullptr, 0) == LIBUSB_SUCCESS;
-    if (ok && libusb_set_option(ctx_, LIBUSB_OPTION_USE_USBDK) != LIBUSB_SUCCESS) {
-        libusb_exit(ctx_);
-        ctx_ = nullptr;
-        ok = false;
-    }
-    Log("usb: UsbDk helper %s, libusb %s", usbdk ? "found" : "MISSING", ok ? "ready" : "FAILED");
-    // Without UsbDk, USB phones can't be used, but Wi-Fi phones still can.
+    // Without USB (no UsbDk on Windows, say), USB phones can't be used, but Wi-Fi phones still can.
+    const bool ok = InitUsb();
     usbReady_ = ok;
-    if (ok && libusb_init_context(&winusbCtx_, nullptr, 0) != LIBUSB_SUCCESS) winusbCtx_ = nullptr;
-    WSADATA wsa;
-    WSAStartup(MAKEWORD(2, 2), &wsa);
+    net::Init();
     // The iPhone page's server. Without it (no certificate, port taken) everything else still works.
     web_ = std::make_unique<WebServer>();
     web_->Start();
@@ -81,28 +68,25 @@ void PhoneLink::Run() {
             Publish();
         }
         if (status_.wirelessSearch != wireless_) Publish(); // Status text mentions Wi-Fi when it's on.
-        for (uint64_t start = GetTickCount64(); !quit_ && GetTickCount64() - start < 1000;) {
+        for (uint64_t start = NowMs(); !quit_ && NowMs() - start < 1000;) {
             SyncLockPaused();
-            WriteStatusFrame(GetTickCount64()); // "Waiting for the phone" while none is connected.
-            PollDiscovery(GetTickCount64());     // "Scan for phones" answers arrive promptly.
+            WriteStatusFrame(NowMs()); // "Waiting for the phone" while none is connected.
+            PollDiscovery(NowMs());     // "Scan for phones" answers arrive promptly.
             if (connectRequest_ != 0 || qrRequest_.ip) break; // Connect (scan list or a QR scan): NetScanOnce runs it.
             PollWeb(StatusWaitMs());             // Serves the iPhone page meanwhile (or just waits).
             if (web_ && web_->PhonePending()) break; // An iPhone's page wants a session: WebScanOnce runs it.
         }
     }
     web_.reset();
-    WSACleanup();
-    if (winusbCtx_) libusb_exit(winusbCtx_);
-    winusbCtx_ = nullptr;
-    if (ctx_) libusb_exit(ctx_);
-    ctx_ = nullptr;
+    net::Cleanup();
+    ExitUsb();
 }
 
 void PhoneLink::ScanOnce() {
     // Windows has no driver for a phone in accessory mode, and a driverless device makes UsbDk fail to
     // enumerate anything. Ask the UI to bind WinUSB (one UAC prompt per phone; it sticks afterwards).
-    if (AccessoryNeedsDriver()) {
-        uint64_t now = GetTickCount64();
+    if (UsbNeedsDriver()) {
+        uint64_t now = NowMs();
         if (onNeedDriver_ && (lastDriverRequest_ == 0 || now - lastDriverRequest_ > 20000)) {
             lastDriverRequest_ = now;
             Log("scan: accessory-mode phone has no driver, requesting WinUSB binding");
@@ -120,7 +104,7 @@ void PhoneLink::ScanOnce() {
     ssize_t count = libusb_get_device_list(ctx_, &list);
     if (count < 0) {
         static uint64_t lastWarn = 0;
-        if (GetTickCount64() - lastWarn > 10000) { Log("scan: device list failed: %s", libusb_error_name(int(count))); lastWarn = GetTickCount64(); }
+        if (NowMs() - lastWarn > 10000) { Log("scan: device list failed: %s", libusb_error_name(int(count))); lastWarn = NowMs(); }
         return;
     }
 
@@ -148,15 +132,7 @@ void PhoneLink::ScanOnce() {
     if (accessory) {
         libusb_ref_device(accessory);
         libusb_free_device_list(list, 1);
-        // Prefer WinUSB: UsbDk refuses to redirect a device that already has a working driver, and the
-        // accessory gets WinUSB bound on first connection (see winusb_bind.cpp).
-        libusb_device* viaWinUsb = winusbCtx_ ? FindAccessory(winusbCtx_) : nullptr;
-        if (viaWinUsb) {
-            RunSession(viaWinUsb, winusbCtx_);
-            libusb_unref_device(viaWinUsb);
-        } else {
-            RunSession(accessory, ctx_);
-        }
+        RunAccessory(accessory);
         libusb_unref_device(accessory);
     } else {
         libusb_free_device_list(list, 1);
@@ -172,7 +148,7 @@ void PhoneLink::ScanOnce() {
 // keep ending the Wi-Fi session.
 bool PhoneLink::UsbPhoneArrived() {
     if (!usbReady_) return false;
-    if (AccessoryNeedsDriver()) return true;
+    if (UsbNeedsDriver()) return true;
     libusb_device** list = nullptr;
     ssize_t count = libusb_get_device_list(ctx_, &list);
     if (count < 0) return false;
@@ -274,9 +250,9 @@ void PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx) {
     int openResult = libusb_open(dev, &handle_);
     if (openResult != LIBUSB_SUCCESS) {
         static uint64_t lastWarn = 0;
-        if (GetTickCount64() - lastWarn > 10000) {
+        if (NowMs() - lastWarn > 10000) {
             Log("session: opening accessory failed: %s", libusb_error_name(openResult));
-            lastWarn = GetTickCount64();
+            lastWarn = NowMs();
         }
         handle_ = nullptr;
         return;
@@ -302,7 +278,7 @@ void PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx) {
     }
 
     BeginSession(false, "");
-    Log("session: accessory opened via %s (in 0x%02x, out 0x%02x)", ctx == ctx_ ? "UsbDk" : "WinUSB", epIn_, epOut_);
+    Log("session: accessory opened via %s (in 0x%02x, out 0x%02x)", BackendName(ctx), epIn_, epOut_);
 
     // Keep several reads queued with no timeout. Timed-out reads get cancelled, and with UsbDk a
     // cancelled read can drop bytes that were already in flight, which corrupts the stream.
@@ -358,11 +334,7 @@ void PhoneLink::BeginSession(bool wireless, const std::string& phoneName) {
     status_.state = LinkState::Waiting;
     status_.wireless = wireless;
     if (web_) web_->SetBusy(true); // One phone at a time: pages that turn up now are told to wait.
-    if (!phoneName.empty()) {
-        int n = MultiByteToWideChar(CP_UTF8, 0, phoneName.c_str(), int(phoneName.size()), nullptr, 0);
-        status_.phoneName.resize(n);
-        MultiByteToWideChar(CP_UTF8, 0, phoneName.c_str(), int(phoneName.size()), status_.phoneName.data(), n);
-    }
+    if (!phoneName.empty()) status_.phoneName = Wide(phoneName);
     writer_.SetPhoneState(kPhoneWaiting);
     sessionError_ = false;
     statBytes_ = statPackets_ = statFrames_ = statDecoded_ = statDecodeErrors_ = 0;
@@ -374,7 +346,7 @@ void PhoneLink::BeginSession(bool wireless, const std::string& phoneName) {
 // feeds it in (or sets sessionError_). Everything runs on this thread, so sends never race with reads.
 bool PhoneLink::SessionLoop(const std::function<void()>& pump) {
     SendCommand(proto::kCmdHello);
-    uint64_t lastHello = GetTickCount64();
+    uint64_t lastHello = NowMs();
     uint64_t lastConsumer = 0;
     uint64_t lastStart = 0;
     uint64_t lastStop = 0;
@@ -383,7 +355,7 @@ bool PhoneLink::SessionLoop(const std::function<void()>& pump) {
     while (!quit_ && !sessionError_) {
         pump();
 
-        uint64_t now = GetTickCount64();
+        uint64_t now = NowMs();
         LogStats(now);
         SyncLockPaused();
         WriteStatusFrame(now);
@@ -553,10 +525,10 @@ void PhoneLink::HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const u
             // No config received (some encoders only put SPS/PPS inside key frames). The decoder reads
             // the real size from the SPS and reports a format change, so the size here is only a hint.
             uint32_t w = configWidth_ ? configWidth_ : 1920, h = configHeight_ ? configHeight_ : 1080;
-            if (FAILED(InitDecoder(w, h, " without config (size is a hint)"))) return;
+            if (InitDecoder(w, h, " without config (size is a hint)") < 0) return;
             waitKeyFrame_ = true;
         }
-        uint64_t now = GetTickCount64();
+        uint64_t now = NowMs();
         if (waitKeyFrame_ && !key) {
             if (now - lastKeyRequest_ > 1000) {
                 keyFrameWanted_ = true; // Sent from the session loop: blocking sends fail inside USB callbacks.
@@ -564,9 +536,8 @@ void PhoneLink::HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const u
             }
             return;
         }
-        HRESULT hr;
-        LARGE_INTEGER t0, t1, freq;
-        QueryPerformanceCounter(&t0);
+        long hr; // HRESULT on Windows: negative is a failure.
+        const auto t0 = std::chrono::steady_clock::now();
         if (key && !csd_.empty()) {
             // Always hand SPS/PPS to the decoder with a key frame so it can (re)start cleanly.
             scratch_.assign(csd_.begin(), csd_.end());
@@ -575,10 +546,8 @@ void PhoneLink::HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const u
         } else {
             hr = decoder_.Decode(payload, length, ptsUs);
         }
-        QueryPerformanceCounter(&t1);
-        QueryPerformanceFrequency(&freq);
-        statDecodeMs_ += (t1.QuadPart - t0.QuadPart) * 1000.0 / freq.QuadPart; // Decode + copy to shared memory.
-        if (FAILED(hr)) {
+        statDecodeMs_ += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count(); // Decode + copy out.
+        if (hr < 0) {
             if (statDecodeErrors_++ < 3) Log("decoder: frame (key=%d, %u bytes) failed 0x%08X", int(key), length, unsigned(hr));
             waitKeyFrame_ = true;
             if (key && decoder_.OnGpu()) {
@@ -628,8 +597,8 @@ void PhoneLink::HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const u
     }
 }
 
-HRESULT PhoneLink::InitDecoder(uint32_t width, uint32_t height, const char* why) {
-    HRESULT hr = decoder_.Init(width, height, [this](const H264Decoder::Nv12View& f) { OnDecodedFrame(f); },
+long PhoneLink::InitDecoder(uint32_t width, uint32_t height, const char* why) {
+    const long hr = decoder_.Init(width, height, [this](const H264Decoder::Nv12View& f) { OnDecodedFrame(f); },
                                !gpuDecodeFailed_);
     Log("decoder: init %ux%u%s on the %s -> 0x%08X", width, height, why, decoder_.OnGpu() ? "GPU" : "CPU", unsigned(hr));
     return hr;
@@ -643,7 +612,7 @@ void PhoneLink::OnDecodedFrame(const H264Decoder::Nv12View& frame) {
     ++statDecoded_;
     if (phonePaused_ || lockPaused_) return; // Privacy: nothing reaches the camera while paused or locked.
     writer_.WritePlanes(frame.y, frame.uv, frame.pitch, frame.width, frame.height, uint32_t(rotation), mirror_, fill_);
-    lastFrameTick_ = GetTickCount64();
+    lastFrameTick_ = NowMs();
 }
 
 void PhoneLink::Publish() {
@@ -667,9 +636,7 @@ void PhoneLink::Publish() {
         for (const web::WebDevice& d : web_->Devices()) {
             LinkStatus::WebDeviceRow row;
             row.id = d.id;
-            const int n = MultiByteToWideChar(CP_UTF8, 0, d.name.c_str(), int(d.name.size()), nullptr, 0);
-            row.name.resize(size_t(n));
-            MultiByteToWideChar(CP_UTF8, 0, d.name.c_str(), int(d.name.size()), row.name.data(), n);
+            row.name = Wide(d.name);
             row.addedUnix = d.addedUnix;
             row.connected = webSession_ && d.id == webDeviceId_;
             status_.webDevices.push_back(std::move(row));

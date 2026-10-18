@@ -3,10 +3,9 @@
 // only a pump around the shared SessionLoop: WebServer::Poll() feeds the page's messages to FeedBytes, and
 // SendCommand() writes commands back. Everything runs on the worker thread.
 
-#include <winsock2.h>
-
 #include "log.h"
 #include "phone_link.h"
+#include "platform.h"
 
 namespace mycam {
 
@@ -18,7 +17,7 @@ constexpr uint64_t kWebLingerMs = 5 * 60 * 1000;
 
 void PhoneLink::PollWeb(uint32_t waitMs) {
     if (!web_) {
-        if (waitMs) Sleep(waitMs);
+        if (waitMs) SleepMs(waitMs);
         return;
     }
     const int64_t pair = webPairRequest_.exchange(-1);
@@ -54,11 +53,11 @@ void PhoneLink::WebScanOnce() {
     Log("session: %s connected over %s (web page)", name.c_str(), link.c_str());
     if (!web_->TakeNewlyPaired(id).empty()) NotePaired(name, false); // It scanned the QR code just now.
 
-    uint64_t lastUsbCheck = GetTickCount64(), lingerSince = 0;
+    uint64_t lastUsbCheck = NowMs(), lingerSince = 0;
     webLingering_ = false;
     SessionLoop([&] {
         PollWeb(StatusWaitMs());
-        const uint64_t now = GetTickCount64();
+        const uint64_t now = NowMs();
         if (!web_->PhoneConnected()) {
             std::string id2, name2, link2;
             // While this session runs, the server only lets its own device in: a page waiting now is this

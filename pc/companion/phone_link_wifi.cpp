@@ -5,10 +5,7 @@
 // The PC only ever sends (a UDP broadcast, then a TCP connect), so Windows never asks for a firewall rule:
 // the phone's unicast answer to a broadcast is allowed back in as a response.
 
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <iphlpapi.h>
-#include <wincrypt.h>
+#include <string.h>
 
 #include <algorithm>
 #include <functional>
@@ -16,7 +13,9 @@
 #include <vector>
 
 #include "log.h"
+#include "net.h"
 #include "phone_link.h"
+#include "platform.h"
 #include "wifi_crypto.h"
 
 namespace mycam {
@@ -34,124 +33,80 @@ constexpr uint8_t kRejectRefused = 1;
 constexpr uint64_t kStepTimeoutMs = 10000;
 constexpr uint64_t kUserTimeoutMs = kPairingAnswerMs + 15000; // The phone gives its user 60 s.
 
-// --- Paired phones: HKCU\Software\MyCam\PairedPhones\<phone id> = Key (DPAPI-protected), Name ----------
-constexpr wchar_t kMyCamKey[] = L"Software\\MyCam";
-constexpr wchar_t kPairedKey[] = L"Software\\MyCam\\PairedPhones";
+// --- Paired phones: the store's PairedPhones/<phone id> = Key (protected), Name ---------------------------
+// (HKCU\Software\MyCam\PairedPhones on Windows.)
+constexpr char kPairedKey[] = "PairedPhones";
 
-std::wstring Wide(const std::string& utf8) {
-    std::wstring w(MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), int(utf8.size()), nullptr, 0), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), int(utf8.size()), w.data(), int(w.size()));
-    return w;
-}
-
-std::string Utf8(const std::wstring& w) {
-    std::string s(WideCharToMultiByte(CP_UTF8, 0, w.c_str(), int(w.size()), nullptr, 0, nullptr, nullptr), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w.c_str(), int(w.size()), s.data(), int(s.size()), nullptr, nullptr);
-    return s;
-}
-
-std::wstring HexId(const Bytes& id) {
-    std::wstring s;
-    wchar_t two[3];
-    for (uint8_t b : id) { swprintf_s(two, L"%02x", b); s += two; }
-    return s;
-}
+std::string PairedPath(const Bytes& phoneId) { return std::string(kPairedKey) + "/" + web::Hex(phoneId.data(), phoneId.size()); }
 
 // This PC's random id, made once.
 Bytes PcId() {
-    Bytes id(16);
-    DWORD size = DWORD(id.size()), type = 0;
-    if (RegGetValueW(HKEY_CURRENT_USER, kMyCamKey, L"PcId", RRF_RT_REG_BINARY, &type, id.data(), &size) == ERROR_SUCCESS && size == 16)
-        return id;
+    Bytes id;
+    if (StoreGetBytes("", "PcId", &id) && id.size() == 16) return id;
     id = wifi::Random(16);
-    RegSetKeyValueW(HKEY_CURRENT_USER, kMyCamKey, L"PcId", REG_BINARY, id.data(), DWORD(id.size()));
+    StoreSetBytes("", "PcId", id);
     return id;
 }
 
 bool LoadPairKey(const Bytes& phoneId, Bytes* key) {
-    const std::wstring sub = std::wstring(kPairedKey) + L"\\" + HexId(phoneId);
-    DWORD size = 0;
-    if (RegGetValueW(HKEY_CURRENT_USER, sub.c_str(), L"Key", RRF_RT_REG_BINARY, nullptr, nullptr, &size) != ERROR_SUCCESS) return false;
-    Bytes blob(size);
-    if (RegGetValueW(HKEY_CURRENT_USER, sub.c_str(), L"Key", RRF_RT_REG_BINARY, nullptr, blob.data(), &size) != ERROR_SUCCESS) return false;
-    DATA_BLOB in = {DWORD(blob.size()), blob.data()}, out = {};
-    if (!CryptUnprotectData(&in, nullptr, nullptr, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN, &out)) return false;
-    key->assign(out.pbData, out.pbData + out.cbData);
-    SecureZeroMemory(out.pbData, out.cbData);
-    LocalFree(out.pbData);
+    Bytes stored;
+    if (!StoreGetBytes(PairedPath(phoneId), "Key", &stored) || !Unprotect(stored, key)) return false;
     return key->size() == 32;
 }
 
 void SavePairKey(const Bytes& phoneId, const Bytes& key, const std::string& name) {
-    DATA_BLOB in = {DWORD(key.size()), const_cast<BYTE*>(key.data())}, out = {};
-    if (!CryptProtectData(&in, L"MyCam phone pairing", nullptr, nullptr, nullptr, CRYPTPROTECT_UI_FORBIDDEN, &out)) return;
-    const std::wstring sub = std::wstring(kPairedKey) + L"\\" + HexId(phoneId);
-    RegSetKeyValueW(HKEY_CURRENT_USER, sub.c_str(), L"Key", REG_BINARY, out.pbData, out.cbData);
-    const std::wstring wide = Wide(name);
-    RegSetKeyValueW(HKEY_CURRENT_USER, sub.c_str(), L"Name", REG_SZ, wide.c_str(), DWORD((wide.size() + 1) * sizeof(wchar_t)));
-    LocalFree(out.pbData);
+    Bytes stored;
+    if (!Protect(key, &stored)) return;
+    StoreSetBytes(PairedPath(phoneId), "Key", stored);
+    StoreSetString(PairedPath(phoneId), "Name", name);
 }
 
-void ForgetPairKey(const Bytes& phoneId) {
-    RegDeleteTreeW(HKEY_CURRENT_USER, (std::wstring(kPairedKey) + L"\\" + HexId(phoneId)).c_str());
-}
+void ForgetPairKey(const Bytes& phoneId) { StoreDelete(PairedPath(phoneId)); }
 
 // Names of the phones this PC holds a pairing key for. Discovery answers carry only a name (no phone id),
 // so "Paired" in the scan list is matched by name: best effort.
 std::vector<std::string> PairedNames() {
     std::vector<std::string> names;
-    HKEY root;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, kPairedKey, 0, KEY_READ, &root) != ERROR_SUCCESS) return names;
-    wchar_t sub[128];
-    for (DWORD i = 0;; ++i) {
-        DWORD len = DWORD(std::size(sub));
-        if (RegEnumKeyExW(root, i, sub, &len, nullptr, nullptr, nullptr, nullptr) != ERROR_SUCCESS) break;
-        wchar_t name[256] = {};
-        DWORD size = sizeof(name);
-        if (RegGetValueW(root, sub, L"Name", RRF_RT_REG_SZ, nullptr, name, &size) == ERROR_SUCCESS) {
-            std::string utf8(WideCharToMultiByte(CP_UTF8, 0, name, -1, nullptr, 0, nullptr, nullptr), '\0');
-            WideCharToMultiByte(CP_UTF8, 0, name, -1, utf8.data(), int(utf8.size()), nullptr, nullptr);
-            if (!utf8.empty() && utf8.back() == '\0') utf8.pop_back();
-            names.push_back(utf8);
-        }
+    for (const std::string& sub : StoreList(kPairedKey)) {
+        std::string name;
+        if (StoreGetString(std::string(kPairedKey) + "/" + sub, "Name", &name)) names.push_back(name);
     }
-    RegCloseKey(root);
     return names;
 }
 
 // --- Socket helpers (the socket is non-blocking) --------------------------------------------------
 
-bool SendAll(SOCKET s, const uint8_t* data, size_t size, uint64_t timeoutMs = 1000) {
+bool SendAll(net::Socket s, const uint8_t* data, size_t size, uint64_t timeoutMs = 1000) {
     size_t sent = 0;
-    const uint64_t deadline = GetTickCount64() + timeoutMs;
+    const uint64_t deadline = NowMs() + timeoutMs;
     while (sent < size) {
         int n = send(s, reinterpret_cast<const char*>(data + sent), int(size - sent), 0);
         if (n > 0) { sent += size_t(n); continue; }
-        if (WSAGetLastError() != WSAEWOULDBLOCK || GetTickCount64() > deadline) return false;
+        if (!net::WouldBlock() || NowMs() > deadline) return false;
         fd_set wr;
         FD_ZERO(&wr);
         FD_SET(s, &wr);
         timeval tv = {0, 50000};
-        select(0, nullptr, &wr, nullptr, &tv);
+        select(int(s) + 1, nullptr, &wr, nullptr, &tv);
     }
     return true;
 }
 
 // Reads exactly `size` bytes, giving up after `timeoutMs` or when `keepWaiting` says so (it runs about
 // every 100 ms, so the status pictures keep updating while the phone's user decides).
-bool RecvExact(SOCKET s, uint8_t* out, size_t size, uint64_t timeoutMs, const std::function<bool()>& keepWaiting) {
+bool RecvExact(net::Socket s, uint8_t* out, size_t size, uint64_t timeoutMs, const std::function<bool()>& keepWaiting) {
     size_t got = 0;
-    const uint64_t deadline = GetTickCount64() + timeoutMs;
+    const uint64_t deadline = NowMs() + timeoutMs;
     while (got < size) {
         int n = recv(s, reinterpret_cast<char*>(out + got), int(size - got), 0);
         if (n > 0) { got += size_t(n); continue; }
-        if (n == 0 || WSAGetLastError() != WSAEWOULDBLOCK) return false;
-        if (GetTickCount64() > deadline || !keepWaiting()) return false;
+        if (n == 0 || !net::WouldBlock()) return false;
+        if (NowMs() > deadline || !keepWaiting()) return false;
         fd_set rd;
         FD_ZERO(&rd);
         FD_SET(s, &rd);
         timeval tv = {0, 100000};
-        select(0, &rd, nullptr, nullptr, &tv);
+        select(int(s) + 1, &rd, nullptr, nullptr, &tv);
     }
     return true;
 }
@@ -180,48 +135,24 @@ constexpr uint64_t kNever = ~0ull;             // retryAfter for a phone this PC
 // open that long: the phone lists this PC for 6 s after its last probe, and taps take a moment.
 constexpr uint64_t kInviteGraceMs = 10000;
 
-std::string ComputerName() {
-    wchar_t name[MAX_COMPUTERNAME_LENGTH + 1] = {};
-    DWORD n = MAX_COMPUTERNAME_LENGTH + 1;
-    if (!GetComputerNameW(name, &n)) return "PC";
-    char utf8[64] = {};
-    WideCharToMultiByte(CP_UTF8, 0, name, int(n), utf8, sizeof(utf8) - 1, nullptr, nullptr);
-    return utf8;
-}
-
 // Directed broadcast address of every IPv4 network this PC is on (plus the generic one), so the probe
 // goes out on Wi-Fi even when Ethernet or a VPN is the default route.
 std::vector<uint32_t> BroadcastAddresses() {
     std::vector<uint32_t> out = {htonl(INADDR_BROADCAST)};
-    ULONG size = 16 * 1024;
-    std::vector<uint8_t> buf(size);
-    auto* list = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buf.data());
-    const ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
-    if (GetAdaptersAddresses(AF_INET, flags, nullptr, list, &size) == ERROR_BUFFER_OVERFLOW) {
-        buf.resize(size);
-        list = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buf.data());
-    }
-    if (GetAdaptersAddresses(AF_INET, flags, nullptr, list, &size) != NO_ERROR) return out;
-    for (auto* a = list; a; a = a->Next) {
-        if (a->OperStatus != IfOperStatusUp || a->IfType == IF_TYPE_SOFTWARE_LOOPBACK) continue;
-        for (auto* u = a->FirstUnicastAddress; u; u = u->Next) {
-            const auto* sin = reinterpret_cast<const sockaddr_in*>(u->Address.lpSockaddr);
-            const ULONG prefix = u->OnLinkPrefixLength;
-            if (prefix == 0 || prefix >= 32) continue;
-            const uint32_t mask = htonl(~0u << (32 - prefix));
-            out.push_back(sin->sin_addr.s_addr | ~mask);
-        }
+    for (const Adapter& a : UpAdapters()) {
+        if (a.ifType == 24 /* loopback */ || a.prefix == 0 || a.prefix >= 32) continue;
+        const uint32_t mask = htonl(~0u << (32 - a.prefix));
+        out.push_back(a.ipv4 | ~mask);
     }
     return out;
 }
 
 // Connects with a timeout, then leaves the socket non-blocking.
-SOCKET ConnectTcp(uint32_t ip, uint16_t port, int timeoutMs) {
-    SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (s == INVALID_SOCKET) return s;
-    u_long nonBlocking = 1;
-    ioctlsocket(s, FIONBIO, &nonBlocking);
-    BOOL noDelay = TRUE;
+net::Socket ConnectTcp(uint32_t ip, uint16_t port, int timeoutMs) {
+    const net::Socket s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (s == net::kInvalid) return s;
+    net::SetNonBlocking(s);
+    int noDelay = 1;
     setsockopt(s, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&noDelay), sizeof(noDelay));
     // Large receive window: a 4K key frame can be several hundred KB.
     int rcv = 1024 * 1024;
@@ -235,9 +166,13 @@ SOCKET ConnectTcp(uint32_t ip, uint16_t port, int timeoutMs) {
     FD_ZERO(&wr); FD_ZERO(&ex);
     FD_SET(s, &wr); FD_SET(s, &ex);
     timeval tv = {timeoutMs / 1000, (timeoutMs % 1000) * 1000};
-    if (select(0, nullptr, &wr, &ex, &tv) != 1 || !FD_ISSET(s, &wr)) {
-        closesocket(s);
-        return INVALID_SOCKET;
+    int error = 0;
+    socklen_t errorLen = sizeof(error);
+    if (select(int(s) + 1, nullptr, &wr, &ex, &tv) != 1 || !FD_ISSET(s, &wr) ||
+        // Linux reports a refused connect as writable: the socket error says whether it worked.
+        getsockopt(s, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&error), &errorLen) != 0 || error != 0) {
+        net::Close(s);
+        return net::kInvalid;
     }
     return s;
 }
@@ -253,17 +188,16 @@ std::string IpText(uint32_t ip) {
 } // namespace
 
 bool PhoneLink::EnsureUdp() {
-    if (udp_ != INVALID_SOCKET) return true;
-    SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (s == INVALID_SOCKET) return false;
-    BOOL on = TRUE;
+    if (udp_ != net::kInvalid) return true;
+    const net::Socket s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == net::kInvalid) return false;
+    int on = 1;
     setsockopt(s, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<const char*>(&on), sizeof(on));
-    u_long nonBlocking = 1;
-    ioctlsocket(s, FIONBIO, &nonBlocking);
+    net::SetNonBlocking(s);
     sockaddr_in any = {};
     any.sin_family = AF_INET; // Any address, a free port.
     if (bind(s, reinterpret_cast<sockaddr*>(&any), sizeof(any)) != 0) {
-        closesocket(s);
+        net::Close(s);
         return false;
     }
     udp_ = s;
@@ -277,7 +211,7 @@ void PhoneLink::BroadcastProbe() {
         to.sin_family = AF_INET;
         to.sin_port = htons(kDiscoveryPort);
         to.sin_addr.s_addr = addr;
-        sendto(SOCKET(udp_), message.data(), int(message.size()), 0, reinterpret_cast<sockaddr*>(&to), sizeof(to));
+        sendto(udp_, message.data(), int(message.size()), 0, reinterpret_cast<sockaddr*>(&to), sizeof(to));
     }
 }
 
@@ -289,12 +223,12 @@ void PhoneLink::BroadcastProbe() {
 // pairing can be started from either screen. It is ignored during a session, and while a connect is already
 // queued, so the phone's resends don't pile up.
 void PhoneLink::ReadAnswers(uint64_t now) {
-    if (udp_ == INVALID_SOCKET) return;
+    if (udp_ == net::kInvalid) return;
     char buf[512];
     for (int i = 0; i < 64; ++i) {
         sockaddr_in from = {};
-        int fromLen = sizeof(from);
-        int n = recvfrom(SOCKET(udp_), buf, sizeof(buf) - 1, 0, reinterpret_cast<sockaddr*>(&from), &fromLen);
+        socklen_t fromLen = sizeof(from);
+        int n = recvfrom(udp_, buf, sizeof(buf) - 1, 0, reinterpret_cast<sockaddr*>(&from), &fromLen);
         if (n <= 0) break;
         const std::string text(buf, size_t(n));
         uint16_t port = 0;
@@ -353,7 +287,7 @@ void PhoneLink::PollDiscovery(uint64_t now) {
             lastProbe_ = 0; // Probe right away.
             nearbyDirty_ = true;
         } else {
-            Log("wifi: can't scan: no UDP socket (%d)", WSAGetLastError());
+            Log("wifi: can't scan: no UDP socket (%d)", net::LastError());
             ++scansDone_;
             nearbyDirty_ = true;
         }
@@ -394,8 +328,8 @@ void PhoneLink::RunManualConnect(uint32_t ip) {
     manualSession_ = true;
     WifiEnd end = WifiEnd::Failed;
     for (int attempt = 0; attempt < 2 && !quit_; ++attempt) {
-        SOCKET s = ConnectTcp(ip, port, 3000);
-        if (s == INVALID_SOCKET) {
+        net::Socket s = ConnectTcp(ip, port, 3000);
+        if (s == net::kInvalid) {
             Log("wifi: can't connect to %s (%s:%u)", name.c_str(), IpText(ip).c_str(), unsigned(port));
             break;
         }
@@ -405,7 +339,7 @@ void PhoneLink::RunManualConnect(uint32_t ip) {
     manualSession_ = false;
     // Auto-connect (search on) mustn't ask a phone again right after a user said no, here or on the phone.
     if (wireless_ && (end == WifiEnd::Refused || end == WifiEnd::TimedOutHere))
-        netPhones_[ip].retryAfter = GetTickCount64() + kRetryRefusedMs;
+        netPhones_[ip].retryAfter = NowMs() + kRetryRefusedMs;
     if (wireless_ && end == WifiEnd::RefusedHere) netPhones_[ip].retryAfter = kNever;
     lastProbe_ = 0;
 }
@@ -452,7 +386,7 @@ void PhoneLink::ProbeForQr(uint64_t now) {
         to.sin_family = AF_INET;
         to.sin_port = htons(kDiscoveryPort);
         to.sin_addr.s_addr = htonl(host);
-        sendto(SOCKET(udp_), message.data(), int(message.size()), 0, reinterpret_cast<sockaddr*>(&to), sizeof(to));
+        sendto(udp_, message.data(), int(message.size()), 0, reinterpret_cast<sockaddr*>(&to), sizeof(to));
     }
 }
 
@@ -477,7 +411,7 @@ void PhoneLink::OnQrInvite(const sockaddr_in& from, uint16_t port, const std::st
     if (refusal) {
         Log("wifi: %s scanned a QR code, but %s", IpText(ip).c_str(),
             refusal[8] == 'c' ? "it isn't this PC's current code" : "another phone has the session");
-        sendto(SOCKET(udp_), refusal, int(strlen(refusal)), 0, reinterpret_cast<const sockaddr*>(&from), sizeof(from));
+        sendto(udp_, refusal, int(strlen(refusal)), 0, reinterpret_cast<const sockaddr*>(&from), sizeof(from));
         return;
     }
     qrRequest_ = QrRequest{ip, port, name.empty() ? IpText(ip) : name, code};
@@ -488,9 +422,9 @@ void PhoneLink::RunQrConnect() {
     const QrRequest q = qrRequest_;
     qrRequest_ = QrRequest{}; // The session (sessionIp_) covers the phone's resends from here on.
     manualSession_ = true;    // Whether or not "Find phones on Wi-Fi" is on, like Connect.
-    SOCKET s = ConnectTcp(q.ip, q.port, 3000);
+    net::Socket s = ConnectTcp(q.ip, q.port, 3000);
     WifiEnd end = WifiEnd::Failed;
-    if (s == INVALID_SOCKET) Log("wifi: can't connect to %s (%s:%u)", q.name.c_str(), IpText(q.ip).c_str(), unsigned(q.port));
+    if (s == net::kInvalid) Log("wifi: can't connect to %s (%s:%u)", q.name.c_str(), IpText(q.ip).c_str(), unsigned(q.port));
     else end = RunTcpSession(uintptr_t(s), q.name, false, &q.code);
     manualSession_ = false;
     // It didn't pair (unreachable, or whoever answered couldn't prove it holds the code): let go of the code
@@ -519,16 +453,16 @@ void PhoneLink::NetScanOnce() {
         // The socket lingers after a scan (or the QR code) so a phone that lists this PC can still ask it to
         // connect.
         const bool qrShowing = web_ && web_->Pairing();
-        if (udp_ != INVALID_SOCKET && !scanUntil_ && !qrShowing &&
-            GetTickCount64() - std::max(scanEndedAt_, lastQrProbe_) > kInviteGraceMs) {
-            closesocket(SOCKET(udp_));
-            udp_ = INVALID_SOCKET;
+        if (udp_ != net::kInvalid && !scanUntil_ && !qrShowing &&
+            NowMs() - std::max(scanEndedAt_, lastQrProbe_) > kInviteGraceMs) {
+            net::Close(udp_);
+            udp_ = net::kInvalid;
             netPhones_.clear();
         }
         return;
     }
     if (!EnsureUdp()) return;
-    uint64_t now = GetTickCount64();
+    uint64_t now = NowMs();
     if (now - lastProbe_ >= kProbeEveryMs) {
         lastProbe_ = now;
         BroadcastProbe();
@@ -541,8 +475,8 @@ void PhoneLink::NetScanOnce() {
     // Connect to a phone that answered recently and isn't in back-off.
     for (auto& [ip, phone] : netPhones_) {
         if (now - phone.lastSeen > kForgetAfterMs || now < phone.retryAfter) continue;
-        SOCKET s = ConnectTcp(ip, phone.port, 2000);
-        if (s == INVALID_SOCKET) {
+        net::Socket s = ConnectTcp(ip, phone.port, 2000);
+        if (s == net::kInvalid) {
             Log("wifi: can't connect to %s (%s:%u)", phone.name.c_str(), IpText(ip).c_str(), phone.port);
             phone.retryAfter = now + kRetryUnreachableMs;
             continue;
@@ -550,16 +484,16 @@ void PhoneLink::NetScanOnce() {
         const bool forcePair = phone.forcePair;
         phone.forcePair = false;
         switch (RunTcpSession(uintptr_t(s), phone.name, forcePair)) {
-        case WifiEnd::Ran: phone.retryAfter = GetTickCount64() + kRetryLostMs; break;
+        case WifiEnd::Ran: phone.retryAfter = NowMs() + kRetryLostMs; break;
         // The user said no (or nobody answered): don't ask again for a while.
-        case WifiEnd::Refused: phone.retryAfter = GetTickCount64() + kRetryRefusedMs; break;
+        case WifiEnd::Refused: phone.retryAfter = NowMs() + kRetryRefusedMs; break;
         // Nobody answered on this PC: treat it like any other "not now" and ask again after a while.
-        case WifiEnd::TimedOutHere: phone.retryAfter = GetTickCount64() + kRetryRefusedMs; break;
+        case WifiEnd::TimedOutHere: phone.retryAfter = NowMs() + kRetryRefusedMs; break;
         // This PC's user said no: never by itself again (Connect, or the phone asking, still work).
         case WifiEnd::RefusedHere: phone.retryAfter = kNever; break;
         // Our pairing key doesn't work any more (e.g. this PC forgot the phone): pair again, with a code.
         case WifiEnd::NeedsPairing: phone.forcePair = true; phone.retryAfter = 0; break;
-        case WifiEnd::Failed: phone.retryAfter = GetTickCount64() + kRetryUnreachableMs; break;
+        case WifiEnd::Failed: phone.retryAfter = NowMs() + kRetryUnreachableMs; break;
         }
         lastProbe_ = 0; // Look again right away.
         break;
@@ -571,14 +505,14 @@ void PhoneLink::NetScanOnce() {
 // show the same 6-digit code, and the user allows it on the phone. Either way the session keys come from
 // a fresh ECDH, so earlier sessions stay safe if a key ever leaks.
 PhoneLink::WifiEnd PhoneLink::Handshake(uintptr_t socket, bool forcePair, const Bytes* qrCode) {
-    const SOCKET s = SOCKET(socket);
+    const net::Socket s = socket;
     bool cancelled = false; // The user pressed "Don't allow" on the PC.
     bool allowedHere = false; // ...or "Allow" (1.5: a code pairing needs both users).
     uint64_t codeShownAt = 0; // When the 6-digit code went on screen: this PC's user answers from then.
     cancelPairing_ = false;
     allowPairing_ = false;
     auto keepWaiting = [this, &cancelled, &allowedHere] {
-        const uint64_t now = GetTickCount64();
+        const uint64_t now = NowMs();
         SyncLockPaused();
         WriteStatusFrame(now);
         if (cancelPairing_.exchange(false) && !status_.pairingCode.empty()) cancelled = true;
@@ -683,7 +617,7 @@ PhoneLink::WifiEnd PhoneLink::Handshake(uintptr_t socket, bool forcePair, const 
         const std::string code = wifi::Sas(pcPub, phonePub, na, nb);
         status_.pairingCode = std::wstring(code.begin(), code.begin() + 3) + L" " + std::wstring(code.begin() + 3, code.end());
         Publish();
-        codeShownAt = GetTickCount64(); // This PC's user gets their own kPairingAnswerMs from here.
+        codeShownAt = NowMs(); // This PC's user gets their own kPairingAnswerMs from here.
         Log("wifi: pairing with %s, code %s", Utf8(status_.phoneName).c_str(), code.c_str());
     } else {
         return WifiEnd::Failed;
@@ -700,7 +634,7 @@ PhoneLink::WifiEnd PhoneLink::Handshake(uintptr_t socket, bool forcePair, const 
     // slow answer on the phone can't eat this PC's window.
     bool timedOutHere = false;
     if (ok && mode == kModePairing) {
-        while (!allowedHere && !cancelled && GetTickCount64() - codeShownAt < kPairingAnswerMs && keepWaiting()) Sleep(50);
+        while (!allowedHere && !cancelled && NowMs() - codeShownAt < kPairingAnswerMs && keepWaiting()) SleepMs(50);
         if (!allowedHere) {
             const uint8_t reject[] = {0, 2, kMsgReject, kRejectRefused};
             SendAll(s, reject, sizeof(reject));
@@ -747,28 +681,28 @@ PhoneLink::WifiEnd PhoneLink::Handshake(uintptr_t socket, bool forcePair, const 
 
 PhoneLink::WifiEnd PhoneLink::RunTcpSession(uintptr_t socket, const std::string& phoneName, bool forcePair,
                                              const Bytes* qrCode) {
-    const SOCKET s = SOCKET(socket);
+    const net::Socket s = socket;
     BeginSession(true, phoneName);
     Log("session: Wi-Fi connection to %s%s", phoneName.c_str(), forcePair ? " (pairing again)" : "");
     sockaddr_in peer = {};
-    int peerLen = sizeof(peer);
+    socklen_t peerLen = sizeof(peer);
     if (getpeername(s, reinterpret_cast<sockaddr*>(&peer), &peerLen) == 0) {
         sessionIp_ = peer.sin_addr.s_addr;
-        nearby_.Seen(sessionIp_, IpText(sessionIp_), ntohs(peer.sin_port), phoneName, GetTickCount64());
+        nearby_.Seen(sessionIp_, IpText(sessionIp_), ntohs(peer.sin_port), phoneName, NowMs());
         RefreshNearby(); // Shows it as "Connected" in the scan list.
     }
     WifiEnd end = Handshake(socket, forcePair, qrCode);
     if (end == WifiEnd::Ran) {
         Log("session: Wi-Fi link to %s is encrypted", phoneName.c_str());
         tcp_ = socket;
-        uint64_t lastUsbCheck = GetTickCount64();
+        uint64_t lastUsbCheck = NowMs();
         SessionLoop([&] {
             fd_set rd;
             FD_ZERO(&rd);
             FD_SET(s, &rd);
             timeval tv = {0, long(StatusWaitMs()) * 1000};
-            if (select(0, &rd, nullptr, nullptr, &tv) > 0 && !ReceiveRecords(socket)) sessionError_ = true;
-            const uint64_t now = GetTickCount64();
+            if (select(int(s) + 1, &rd, nullptr, nullptr, &tv) > 0 && !ReceiveRecords(socket)) sessionError_ = true;
+            const uint64_t now = NowMs();
             if (!WifiAllowed()) {
                 Log("wifi: turned off on the PC");
                 sessionError_ = true;
@@ -782,9 +716,9 @@ PhoneLink::WifiEnd PhoneLink::RunTcpSession(uintptr_t socket, const std::string&
         });
         LeaveSession();
     }
-    shutdown(s, SD_BOTH);
-    closesocket(s);
-    tcp_ = INVALID_SOCKET;
+    net::Shutdown(s);
+    net::Close(s);
+    tcp_ = net::kInvalid;
     wifiTx_.reset();
     wifiRx_.reset();
     wifiRxBuf_.clear();
@@ -796,14 +730,14 @@ PhoneLink::WifiEnd PhoneLink::RunTcpSession(uintptr_t socket, const std::string&
 
 // Drains the socket into wifiRxBuf_, then decrypts every complete record into the protocol parser.
 bool PhoneLink::ReceiveRecords(uintptr_t socket) {
-    const SOCKET s = SOCKET(socket);
+    const net::Socket s = socket;
     uint8_t buf[64 * 1024];
     for (int i = 0; i < 64; ++i) {
         int n = recv(s, reinterpret_cast<char*>(buf), sizeof(buf), 0);
         if (n > 0) { wifiRxBuf_.insert(wifiRxBuf_.end(), buf, buf + n); continue; }
         if (n == 0) { Log("wifi: the phone closed the connection"); return false; }
-        if (WSAGetLastError() == WSAEWOULDBLOCK) break;
-        Log("wifi: connection lost (%d)", WSAGetLastError());
+        if (net::WouldBlock()) break;
+        Log("wifi: connection lost (%d)", net::LastError());
         return false;
     }
     size_t pos = 0;
@@ -824,8 +758,8 @@ bool PhoneLink::ReceiveRecords(uintptr_t socket) {
 bool PhoneLink::SendTcp(const uint8_t* data, size_t size) {
     Bytes record;
     if (!wifiTx_ || !wifiTx_->Seal(data, size, &record)) return false;
-    if (!SendAll(SOCKET(tcp_), record.data(), record.size())) {
-        Log("send cmd failed over Wi-Fi (%d)", WSAGetLastError());
+    if (!SendAll(tcp_, record.data(), record.size())) {
+        Log("send cmd failed over Wi-Fi (%d)", net::LastError());
         return false;
     }
     return true;
@@ -836,8 +770,6 @@ std::string PcIdHex() {
     return web::Hex(id.data(), id.size());
 }
 
-void ForgetPairedPhones() {
-    RegDeleteTreeW(HKEY_CURRENT_USER, kPairedKey);
-}
+void ForgetPairedPhones() { StoreDelete(kPairedKey); }
 
 } // namespace mycam

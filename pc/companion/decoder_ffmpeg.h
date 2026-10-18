@@ -1,7 +1,7 @@
 #pragma once
 // The Linux H264Decoder: the same interface as decoder.h (Media Foundation, Windows), on FFmpeg's libavcodec,
-// linked dynamically against the distro's package (MyCam is MIT; libavcodec is LGPL/GPL). Returns bool where
-// the Windows one returns HRESULT.
+// linked dynamically against the distro's package (MyCam is MIT; libavcodec is LGPL/GPL). Results are 0 or a
+// negative AVERROR, as the Windows one returns an HRESULT (also a long, negative on failure).
 
 #include <stddef.h>
 #include <stdint.h>
@@ -34,12 +34,14 @@ public:
     ~H264Decoder();
 
     // width/height are the phone's configured size; the stream's own SPS wins if it differs.
-    bool Init(uint32_t width, uint32_t height, FrameCallback onFrame);
+    // gpu is ignored: FFmpeg decodes on the CPU (the Windows decoder falls back to its CPU path).
+    long Init(uint32_t width, uint32_t height, FrameCallback onFrame, bool gpu = true);
     void Reset();
     bool Ready() const { return ctx_ != nullptr; }
+    bool OnGpu() const { return false; }
 
-    // One access unit. False if the decoder rejected it (corrupt data); later keyframes recover.
-    bool Decode(const uint8_t* data, size_t size, int64_t ptsUs);
+    // One access unit. Negative if the decoder rejected it (corrupt data); later keyframes recover.
+    long Decode(const uint8_t* data, size_t size, int64_t ptsUs);
 
 private:
     void EmitFrame();

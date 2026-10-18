@@ -6,6 +6,8 @@
 #include <windows.h>
 #include <stdint.h>
 
+#include "../companion/phone_state.h" // PhoneState, the header's phoneState field.
+
 namespace mycam {
 
 constexpr wchar_t kSharedFrameName[] = L"Global\\MyCamFrame";
@@ -22,13 +24,6 @@ constexpr uint32_t kSharedBytes = kHeaderBytes + kMaxFrameBytes;
 
 // Allow SYSTEM, LOCAL SERVICE, administrators and interactive users to read/write.
 constexpr wchar_t kSharedSddl[] = L"D:(A;;GA;;;SY)(A;;GA;;;LS)(A;;GA;;;BA)(A;;GRGW;;;IU)";
-
-enum PhoneState : uint32_t {
-    kPhoneNone = 0,       // No phone connected.
-    kPhoneWaiting = 1,    // Phone in accessory mode, waiting for the MyCam app to respond.
-    kPhoneIdle = 2,       // MyCam app connected, camera off.
-    kPhoneStreaming = 3,  // Frames are flowing.
-};
 
 struct SharedHeader {
     uint32_t magic;
