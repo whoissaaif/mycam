@@ -50,6 +50,8 @@ private:
     AVFrame* frame_ = nullptr;
     AVPacket* packet_ = nullptr;
     SwsContext* sws_ = nullptr;
+    int swsFormat_ = -1, swsWidth_ = 0, swsHeight_ = 0; // What sws_ was made for.
+    bool swsFull_ = false;
     FrameCallback onFrame_;
     std::vector<uint8_t> input_; // The access unit plus the zero padding libavcodec reads past the end.
     std::vector<uint8_t> nv12_;  // The current frame, converted from whatever libavcodec produced.
