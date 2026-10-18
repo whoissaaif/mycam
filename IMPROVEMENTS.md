@@ -48,6 +48,10 @@ or locked, even frames already in flight.
 Glass header, Win7 command link for Pause / Resume, Aero buttons, blue "main instruction" status,
 LIVE pill, Selawik font, new launcher icon (adaptive, legacy and themed).
 
+### 1.4 Keep Wi-Fi pairing secrets out of Android backup (S): ✅
+The `mycam` shared prefs file is now excluded from both Android cloud backup and device-to-device transfer,
+so a restored/cloned phone does not inherit the old phone's `phone_id` and remembered `paired_pc_*` keys.
+
 ---
 
 ## 2. Reliability
