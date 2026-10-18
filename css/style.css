@@ -794,6 +794,54 @@ a {
   margin-top: 24px;
 }
 
+/* ---------- Legal content ---------- */
+
+.legal-updated {
+  color: var(--ink-soft);
+  font-size: 0.88rem;
+  margin: -8px 0 28px;
+}
+
+.legal h2 {
+  font-size: 1.3rem;
+  font-weight: 800;
+  margin: 36px 0 12px;
+}
+
+.legal h2:first-of-type {
+  margin-top: 0;
+}
+
+.legal p,
+.legal li {
+  color: var(--ink-soft);
+  font-size: 1rem;
+  line-height: 1.7;
+  max-width: 740px;
+}
+
+.legal ul {
+  margin: 0 0 16px;
+  padding-left: 22px;
+}
+
+.legal li {
+  margin-bottom: 6px;
+}
+
+.legal code {
+  background: var(--bg-section);
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-size: 0.9em;
+}
+
+.legal a {
+  color: var(--blue-mid);
+  text-decoration: underline;
+}
+
 /* ---------- Responsive ---------- */
 
 @media (max-width: 900px) {
