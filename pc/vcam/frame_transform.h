@@ -21,4 +21,8 @@ void DrawFittedNV12(const uint8_t* src, uint32_t srcWidth, uint32_t srcHeight, u
 // same colour space the phone's H.264 video decodes to. dst must hold width * height * 3 / 2 bytes.
 void BgraToNV12(const uint8_t* bgra, ptrdiff_t stride, uint32_t width, uint32_t height, uint8_t* dst);
 
+// Converts a tightly packed NV12 image (width, height even) to tightly packed I420 (YU12): the Y plane, then
+// all U, then all V. For cameras that take planar YUV (Linux v4l2loopback). dst holds width * height * 3 / 2.
+void Nv12ToI420(const uint8_t* nv12, uint32_t width, uint32_t height, uint8_t* dst);
+
 } // namespace mycam

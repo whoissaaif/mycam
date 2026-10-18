@@ -77,7 +77,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [~] Linux support before launch: headless CLI daemon first (USB → v4l2loopback), Wi-Fi/iPhone/GUI
       phased in after [13, docs/LINUX-SUPPORT.md]. Test machine: Ubuntu 24.04, kernel 7.0 — v4l2loopback
       works (a test pattern shows in a browser). Build seam landed: `mycam_tests` + `web_golden` pass on
-      Linux and in CI (OpenSSL in place of CNG). No Android phone on the Linux side yet, so the iPhone
+      Linux and in CI (OpenSSL in place of CNG). Video path works: FFmpeg decoder + v4l2loopback writer,
+      checked with `v4l2_play` (an H.264 file → /dev/video10, rotation/mirror/letterbox). No Android phone on the Linux side yet, so the iPhone
       path is next and USB stays unverified until someone with one tests it
 
 ## Backlog

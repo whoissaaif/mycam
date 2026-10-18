@@ -398,6 +398,15 @@ void TestBgraToNV12() {
     CHECK(out[0] == 16 && out[1] == 235 && out[4] == 128 && out[5] == 128);
 }
 
+void TestNv12ToI420() {
+    // 4x2: Y bytes 0..7, then two interleaved UV pairs.
+    const uint8_t nv12[12] = {0, 1, 2, 3, 4, 5, 6, 7, 10, 20, 11, 21};
+    uint8_t out[12] = {};
+    Nv12ToI420(nv12, 4, 2, out);
+    const uint8_t expect[12] = {0, 1, 2, 3, 4, 5, 6, 7, 10, 11, 20, 21};
+    CHECK(memcmp(out, expect, sizeof(out)) == 0);
+}
+
 #ifdef _WIN32
 // --- pc/vcam-dshow: AM_MEDIA_TYPE helpers (format negotiation, no DirectShow graph needed) ----------
 
@@ -1207,6 +1216,7 @@ int main() {
     printf("transform downscale\n");       TestDownscale();
     printf("transform pitch\n");           TestPitch();
     printf("bgra to nv12\n");              TestBgraToNV12();
+    printf("nv12 to i420\n");              TestNv12ToI420();
 #ifdef _WIN32
     printf("dshow media types\n");         TestDShowMediaTypes();
 #endif
