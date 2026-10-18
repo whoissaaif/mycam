@@ -47,12 +47,10 @@ FrameWriter::~FrameWriter() {
     if (inotify_ >= 0) close(inotify_);
 }
 
-bool FrameWriter::ConsumerActive(uint64_t withinMs) {
+bool FrameWriter::ConsumerActive(uint64_t) {
     if (!EnsureOpen()) return false;
-    const uint64_t now = NowMs();
-    PollReaders(now);
-    if (readers_ > 0) lastReader_ = now;
-    return lastReader_ && now - lastReader_ < withinMs;
+    PollReaders(NowMs());
+    return readers_ > 0;
 }
 
 void FrameWriter::PollReaders(uint64_t now) {

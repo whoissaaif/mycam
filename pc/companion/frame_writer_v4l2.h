@@ -29,10 +29,12 @@ public:
     void Close();
     bool IsOpen() const { return fd_ >= 0; }
 
-    // True if an app has had the camera open within the last `withinMs`, as on Windows: the phone's camera
-    // only runs while someone watches. v4l2loopback keeps no reader count, so this counts the other processes
-    // holding the device open (/proc/*/fd), rescanned only when inotify sees the node opened or closed.
-    bool ConsumerActive(uint64_t withinMs);
+    // True while an app has the camera open: the phone's camera only runs while someone watches.
+    // v4l2loopback keeps no reader count, so this counts the other processes holding the device open
+    // (/proc/*/fd), rescanned only when inotify sees the node opened or closed. That is exact, so unlike the
+    // Windows camera (which only learns of a reader when it asks for a frame) there is no `withinMs` window
+    // on top: the session loop's stop grace alone covers an app closing and reopening the camera.
+    bool ConsumerActive(uint64_t /*withinMs*/);
     void SetPhoneState(uint32_t /*state*/) {} // The Windows camera draws its own waiting picture; nothing here.
 
     void Write(const uint8_t* nv12, uint32_t width, uint32_t height, uint32_t rotation, bool mirror, bool fill = false);
@@ -49,7 +51,7 @@ private:
     std::string device_;
     int inotify_ = -1;          // Watches device_ for opens and closes.
     int readers_ = -1;          // Other processes holding it open (-1: not counted yet).
-    uint64_t lastScan_ = 0, lastReader_ = 0;
+    uint64_t lastScan_ = 0;
     uint64_t lastAttempt_ = 0;
     uint32_t width_ = 0, height_ = 0;
     std::vector<uint8_t> packed_; // Decoder planes repacked tightly (DrawFittedNV12 takes packed NV12).
