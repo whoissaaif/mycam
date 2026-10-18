@@ -69,8 +69,8 @@ private const val STEPS = 3
  * version without the flag), so it never sees them either.
  */
 object FirstRun {
-    fun shouldShow(prefs: SharedPreferences): Boolean =
-        !prefs.getBoolean(WebcamService.PREF_FIRST_RUN_DONE, false) && PairedPcs(prefs).list().isEmpty()
+    fun shouldShow(prefs: SharedPreferences, pairedPcs: PairedPcs): Boolean =
+        !prefs.getBoolean(WebcamService.PREF_FIRST_RUN_DONE, false) && pairedPcs.list().isEmpty()
 
     fun done(prefs: SharedPreferences) {
         if (!prefs.getBoolean(WebcamService.PREF_FIRST_RUN_DONE, false)) {

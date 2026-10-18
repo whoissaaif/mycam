@@ -132,7 +132,7 @@ class WebcamService : Service() {
     private var wifiLock: WifiManager.WifiLock? = null
     private var handshaking = false                      // A PC is pairing or proving its pairing key.
     private var pendingAnswer: ((Boolean) -> Unit)? = null // Waiting for Allow / Don't allow on a pairing.
-    private val pairedPcs by lazy { PairedPcs(getSharedPreferences(PREFS, MODE_PRIVATE)) }
+    private val pairedPcs by lazy { PairedPcs.open(this) }
     private val nearby = NearbyPcs()
     /** Drops PCs that stopped probing; runs every second while the nearby list isn't empty. */
     private val expireNearby = object : Runnable {
@@ -517,10 +517,9 @@ class WebcamService : Service() {
         }
         handshaking = true
         stopInviting() // A PC turned up: whether or not it is the one we asked, the asking is over.
-        val prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         Thread({
             val result = WifiHandshake(
-                sock, pairedPcs, PairedPcs.phoneId(prefs), WirelessServer.deviceName(this), ::askUser, ::qrCodeFor,
+                sock, pairedPcs, pairedPcs.phoneId(), WirelessServer.deviceName(this), ::askUser, ::qrCodeFor,
             ).run()
             main.post {
                 handshaking = false
