@@ -112,9 +112,19 @@ bool WebServer::Start() {
         cred_.reset();
         return false;
     }
+    return TryListen();
+}
+
+// Linux hands out ports 32768-60999 for outgoing connections, so right after boot one can briefly hold kPort.
+// Poll keeps retrying until it frees up.
+bool WebServer::TryListen() {
+    lastListenTry_ = NowMs();
     const net::Socket s = net::ListenTcp(web::kPort, 16);
     if (s == net::kInvalid) {
-        Log("web: can't listen on port %u (%d): another program may be using it", unsigned(web::kPort), net::LastError());
+        if (!listenFailed_)
+            Log("web: can't listen on port %u (%d): another program may be using it (retrying every 2 s)",
+                unsigned(web::kPort), net::LastError());
+        listenFailed_ = true;
         return false;
     }
     listen_ = s;
@@ -125,6 +135,7 @@ bool WebServer::Start() {
 }
 
 void WebServer::Poll(uint32_t timeoutMs) {
+    if (listen_ == net::kInvalid && cred_ && NowMs() - lastListenTry_ >= 2000) TryListen();
     if (listen_ == net::kInvalid) {
         if (timeoutMs) SleepMs(timeoutMs);
         return;
