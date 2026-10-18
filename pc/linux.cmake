@@ -28,6 +28,11 @@ if(MYCAM_BUILD_TESTS)
     target_compile_options(mycam_tests PRIVATE -Wall)
     target_compile_definitions(mycam_tests PRIVATE MYCAM_GOLDEN_PATH="${CMAKE_CURRENT_SOURCE_DIR}/../protocol/golden.txt")
     add_test(NAME mycam_tests COMMAND mycam_tests)
+    # The OpenSSL TLS server against an OpenSSL client, in memory.
+    add_executable(tls_tests tests/tls_test.cpp companion/tls_server_openssl.cpp companion/log_posix.cpp)
+    target_link_libraries(tls_tests PRIVATE OpenSSL::SSL OpenSSL::Crypto)
+    target_compile_options(tls_tests PRIVATE -Wall)
+    add_test(NAME tls_tests COMMAND tls_tests)
     # The iPhone page's protocol code against the same golden vectors (needs Node.js; skipped without it).
     find_program(NODE_EXE node)
     if(NODE_EXE)

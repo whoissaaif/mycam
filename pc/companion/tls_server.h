@@ -1,8 +1,9 @@
 #pragma once
-// TLS for the iPhone page's server, on Schannel (built into Windows, so no new dependency).
+// TLS for the iPhone page's server: Schannel on Windows (tls_server.cpp, built in, so no new dependency),
+// OpenSSL on Linux (tls_server_openssl.cpp). The private handle slots below are opaque platform handles.
 //
-// The certificate is self-signed, made once per user and kept in the current user's certificate store
-// ("MyCam web camera", private key not exportable). Safari warns about it the first time; after one tap
+// The certificate is self-signed and made once per user: on Windows it is kept in the current user's
+// certificate store ("MyCam web camera", private key not exportable), on Linux in ~/.config/mycam/. Safari warns about it the first time; after one tap
 // through, the same certificate is trusted for that address. It is renewed (another tap-through) only when
 // it nears its end, 397 days after it was made: iOS refuses TLS certificates that live longer than that.
 
@@ -17,7 +18,7 @@ namespace mycam::tls {
 
 using Bytes = std::vector<uint8_t>;
 
-// Schannel server credentials for the certificate (found, or made now). Shared by every connection.
+// Server credentials for the certificate (found, or made now). Shared by every connection.
 class Credentials {
 public:
     Credentials() = default;

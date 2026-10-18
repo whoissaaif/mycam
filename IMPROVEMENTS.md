@@ -524,8 +524,11 @@ portable companion code and the unit tests on Linux, with `wifi_crypto_openssl.c
 Windows CNG (the handshake on top moved to `wifi_crypto_common.cpp`, shared by both); CI runs them on
 Ubuntu. The video path is in: `decoder_ffmpeg.cpp` (the `H264Decoder` interface on libavcodec, linked
 dynamically) and `frame_writer_v4l2.cpp` (the `FrameWriter` interface into v4l2loopback, I420 at a fixed
-size, fitted with `frame_transform`); `tools/v4l2_play.cpp` drives it from an H.264 file. Next: the iPhone
-path (OpenSSL TLS + web server).
+size, fitted with `frame_transform`); `tools/v4l2_play.cpp` drives it from an H.264 file. TLS for the
+iPhone page: `tls_server_openssl.cpp` (same `tls::Session` interface; certificate in `~/.config/mycam/`),
+tested against an OpenSSL client (`tls_tests`). Correction to the plan: `web_server.cpp` and
+`phone_link_web.cpp` are *not* portable yet (Winsock, registry, exe resources, adapter list), and the
+session loop lives in `PhoneLink` with the USB code. Next: those, then `mycam-companion --daemon`.
 
 ---
 

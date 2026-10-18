@@ -1,5 +1,6 @@
 #pragma once
-// Diagnostic log at %LOCALAPPDATA%\MyCam\mycam.log (restarted each launch). Thread-safe.
+// Diagnostic log: %LOCALAPPDATA%\MyCam\mycam.log on Windows (restarted each launch), stderr on Linux
+// (log_posix.cpp). Thread-safe.
 
 namespace mycam {
 
