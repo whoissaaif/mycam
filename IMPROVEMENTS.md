@@ -519,6 +519,11 @@ last, pending a design decision on whether it keeps the Windows XP Luna look or 
 
 **Needs before starting:** a Linux test machine or VM, and `v4l2loopback` available on it.
 
+**Progress:** a Linux test machine (Ubuntu 24.04) has v4l2loopback working. `pc/linux.cmake` builds the
+portable companion code and the unit tests on Linux, with `wifi_crypto_openssl.cpp` standing in for
+Windows CNG (the handshake on top moved to `wifi_crypto_common.cpp`, shared by both); CI runs them on
+Ubuntu. Next: the FFmpeg decoder and the v4l2loopback writer, then the iPhone path (OpenSSL TLS).
+
 ---
 
 ## Suggested order

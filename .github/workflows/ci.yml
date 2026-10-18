@@ -44,3 +44,21 @@ jobs:
 
       - name: Test
         run: ctest --test-dir pc/build -C Release --output-on-failure
+
+  pc-linux:
+    name: PC companion, Linux (build + ctest)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev
+
+      - name: Configure
+        run: cmake -S pc -B pc/build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build pc/build
+
+      - name: Test
+        run: ctest --test-dir pc/build --output-on-failure

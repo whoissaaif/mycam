@@ -23,7 +23,9 @@
 #include "../companion/ui_model.h"
 #include "../companion/ui_motion.h"
 #include "../vcam/frame_transform.h"
+#ifdef _WIN32 // The DirectShow camera is Windows-only; everything else here builds everywhere.
 #include "../vcam-dshow/dshow_media_types.h"
+#endif
 
 #include <cmath>
 
@@ -396,6 +398,7 @@ void TestBgraToNV12() {
     CHECK(out[0] == 16 && out[1] == 235 && out[4] == 128 && out[5] == 128);
 }
 
+#ifdef _WIN32
 // --- pc/vcam-dshow: AM_MEDIA_TYPE helpers (format negotiation, no DirectShow graph needed) ----------
 
 void TestDShowMediaTypes() {
@@ -446,6 +449,7 @@ void TestDShowMediaTypes() {
     FreeMediaType(mt);
     CoTaskMemFree(mt);
 }
+#endif
 
 // --- Waiting-picture marquee ----------------------------------------------------------------------
 
@@ -1203,7 +1207,9 @@ int main() {
     printf("transform downscale\n");       TestDownscale();
     printf("transform pitch\n");           TestPitch();
     printf("bgra to nv12\n");              TestBgraToNV12();
+#ifdef _WIN32
     printf("dshow media types\n");         TestDShowMediaTypes();
+#endif
     printf("marquee geometry\n");          TestMarqueeGeometry();
     printf("marquee chunk positions\n");   TestMarqueeChunkPositions();
     printf("marquee pause\n");             TestMarqueePause();

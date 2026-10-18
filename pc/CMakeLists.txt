@@ -3,6 +3,13 @@ project(MyCam LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Linux (docs/LINUX-SUPPORT.md) builds its own targets; everything below this is the Windows build.
+if(NOT WIN32)
+    include(linux.cmake)
+    return()
+endif()
+
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>") # Static CRT: no VC++ redist needed.
 add_compile_definitions(UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00)
 add_compile_options(/utf-8) # Sources are UTF-8 (status text uses · and ×).
@@ -54,6 +61,7 @@ add_executable(MyCamCompanion WIN32
     companion/phone_link.cpp
     companion/phone_link_wifi.cpp
     companion/wifi_crypto.cpp
+    companion/wifi_crypto_common.cpp
     companion/web_proto.cpp
     companion/web_server.cpp
     companion/tls_server.cpp
@@ -90,7 +98,7 @@ if(MYCAM_BUILD_TOOLS)
     add_executable(usb_probe tools/usb_probe.cpp)
     target_link_libraries(usb_probe PRIVATE usb)
     add_executable(web_probe tools/web_probe.cpp companion/companion.rc companion/web_server.cpp companion/web_proto.cpp companion/tls_server.cpp
-        companion/wifi_crypto.cpp companion/packet_parser.cpp)
+        companion/wifi_crypto.cpp companion/wifi_crypto_common.cpp companion/packet_parser.cpp)
     target_link_libraries(web_probe PRIVATE ws2_32 iphlpapi bcrypt crypt32 ncrypt secur32 ole32)
     add_executable(uia_dump tools/uia_dump.cpp)
     target_link_libraries(uia_dump PRIVATE ole32 oleaut32 uiautomationcore)
@@ -100,7 +108,8 @@ endif()
 option(MYCAM_BUILD_TESTS "Build unit tests" ON)
 if(MYCAM_BUILD_TESTS)
     enable_testing()
-    add_executable(mycam_tests tests/tests.cpp companion/packet_parser.cpp companion/wifi_crypto.cpp companion/marquee.cpp
+    add_executable(mycam_tests tests/tests.cpp companion/packet_parser.cpp companion/wifi_crypto.cpp companion/wifi_crypto_common.cpp
+        companion/marquee.cpp
         companion/preview_convert.cpp companion/status_text.cpp companion/web_proto.cpp vcam/frame_transform.cpp
         vcam-dshow/dshow_media_types.cpp)
     target_link_libraries(mycam_tests PRIVATE bcrypt strmiids ole32)
