@@ -65,6 +65,9 @@ import kotlinx.coroutines.delay
 /** Where "Get it" and About point: MyCam for Windows. */
 const val RELEASES_URL = "https://github.com/whoissaaif/mycam/releases"
 
+/** Where the About section's Privacy Policy link points. */
+const val PRIVACY_URL = "https://mycam.dev/privacy.html"
+
 /** What the main screen can ask the activity to do. Defaults are no-ops (previews). */
 data class ScreenActions(
     val onFacing: (Int) -> Unit = {},

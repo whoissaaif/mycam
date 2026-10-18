@@ -125,6 +125,9 @@ fun SettingsPage(
                 stringResource(R.string.about_version, appVersionName(LocalContext.current)),
                 style = MaterialTheme.typography.bodyMedium, color = V2.Subtle,
             )
+            XpLink(stringResource(R.string.about_privacy), onClick = {
+                try { uri.openUri(PRIVACY_URL) } catch (_: Exception) {}
+            })
             XpLink(stringResource(R.string.about_licences), onClick = onLicences)
         }
     }
