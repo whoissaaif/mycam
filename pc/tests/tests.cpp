@@ -23,8 +23,9 @@
 #include "../companion/ui_model.h"
 #include "../companion/ui_motion.h"
 #include "../vcam/frame_transform.h"
-#ifdef _WIN32 // The DirectShow camera is Windows-only; everything else here builds everywhere.
+#ifdef _WIN32 // The DirectShow camera and driver binding are Windows-only; everything else here builds everywhere.
 #include "../vcam-dshow/dshow_media_types.h"
+#include "../companion/winusb_bind.h"
 #endif
 
 #include <cmath>
@@ -457,6 +458,22 @@ void TestDShowMediaTypes() {
     CHECK(!MatchesKnownFormat(*mt, &ignored));
     FreeMediaType(mt);
     CoTaskMemFree(mt);
+}
+
+// --- pc/companion/winusb_bind: which device instances get WinUSB (#9) ------------------------------
+
+void TestAccessoryInstances() {
+    CHECK(IsAccessoryInstance(L"USB\\VID_18D1&PID_2D00\\0123456789ABCDEF"));        // Accessory only.
+    CHECK(IsAccessoryInstance(L"usb\\vid_18d1&pid_2d00\\0123"));                    // Case doesn't matter.
+    CHECK(IsAccessoryInstance(L"USB\\VID_18D1&PID_2D01&MI_00\\6&1A2B3C4D&0&0000"));  // Accessory + adb (USB debugging).
+    CHECK(!IsAccessoryInstance(L"USB\\VID_18D1&PID_2D01&MI_01\\6&1A2B3C4D&0&0001")); // ...and its adb interface.
+    CHECK(IsAccessoryInstance(L"USB\\VID_18D1&PID_2D04&MI_00\\6&1&0&0000"));         // Accessory + audio.
+    CHECK(IsAccessoryInstance(L"USB\\VID_18D1&PID_2D05&MI_00\\6&1&0&0000"));         // Accessory + audio + adb.
+    CHECK(!IsAccessoryInstance(L"USB\\VID_18D1&PID_2D05&MI_03\\6&1&0&0003"));
+    CHECK(!IsAccessoryInstance(L"USB\\VID_18D1&PID_2D03&MI_00\\6&1&0&0000"));        // Audio only: MI_00 is audio.
+    CHECK(!IsAccessoryInstance(L"USB\\VID_18D1&PID_2D06\\0123"));                    // Not an accessory product.
+    CHECK(!IsAccessoryInstance(L"USB\\VID_18D1&PID_4EE7\\0123"));                    // A Pixel in normal (MTP) mode.
+    CHECK(!IsAccessoryInstance(L"USB\\VID_18D1&PID_2D0"));                           // Truncated.
 }
 #endif
 
@@ -1219,6 +1236,7 @@ int main() {
     printf("nv12 to i420\n");              TestNv12ToI420();
 #ifdef _WIN32
     printf("dshow media types\n");         TestDShowMediaTypes();
+    printf("winusb accessory ids\n");      TestAccessoryInstances();
 #endif
     printf("marquee geometry\n");          TestMarqueeGeometry();
     printf("marquee chunk positions\n");   TestMarqueeChunkPositions();
