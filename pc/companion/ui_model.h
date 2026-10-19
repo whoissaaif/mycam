@@ -16,9 +16,8 @@
 
 namespace mycam::ui {
 
-// Shown on the About page. Keep in step with app/build.gradle.kts, installer/mycam.iss and
-// installer/build.ps1 when releasing (see CLAUDE.md "Release steps").
-constexpr wchar_t kAppVersion[] = L"1.4.0";
+// Shown on the About page. MYCAM_VERSION is versionName from app/build.gradle.kts (pc/CMakeLists.txt).
+constexpr wchar_t kAppVersion[] = L"" MYCAM_VERSION;
 
 enum class Kind {
     Group,          // Collapsible task-pane group (or the fixed "Now" group). UIA: Group + ExpandCollapse.

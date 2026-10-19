@@ -101,9 +101,7 @@ if(MYCAM_BUILD_TESTS)
 endif()
 
 # --- Packaging: cpack -G DEB (docs/LINUX-SUPPORT.md "Definition of done") ----------------------------------
-# One version for Android and PC (CLAUDE.md): read it from the app, not a fourth copy.
-file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/../app/build.gradle.kts MYCAM_VERSION_LINE REGEX "versionName = \"[0-9.]+\"")
-string(REGEX MATCH "[0-9]+\\.[0-9]+\\.[0-9]+" MYCAM_VERSION "${MYCAM_VERSION_LINE}")
+# MYCAM_VERSION comes from app/build.gradle.kts (CMakeLists.txt).
 
 # USB access for the logged-in user, before the switch to accessory mode (the phone maker's vendor id, from
 # kAndroidVendors[] in phone_link.cpp, the list the companion asks) and after it (Google, 18d1:2d00-2d05).
