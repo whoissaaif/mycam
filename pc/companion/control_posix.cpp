@@ -10,9 +10,13 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include "capabilities.h"
+#include "control_proto.h"
 #include "log.h"
 #include "phone_link.h"
 #include "platform.h"
+#include "protocol.h"
+#include "status_text.h"
 
 namespace mycam {
 
@@ -58,6 +62,26 @@ bool ReadLine(int s, std::string* buffer, std::string* line, int timeoutMs) {
     }
 }
 
+TrayStatus MakeTrayStatus(const LinkStatus& status, bool mirror, bool fill) {
+    TrayStatus t;
+    // No camera registration to fail on Linux: the v4l2loopback device is opened by the daemon itself.
+    const StatusView view = DescribeStatus(status, true);
+    t.icon = view.icon;
+    t.headline = Utf8(view.headline);
+    t.detail = Utf8(view.detail);
+    // The Windows tray menu's rules (main.cpp ShowMenu).
+    const bool connected = status.state >= LinkState::Idle;
+    t.canPause = connected && !status.lockPaused && !status.webAway;
+    t.paused = status.state == LinkState::Paused;
+    t.linked = connected && status.camera.valid;
+    t.facing = status.facing;
+    t.quality = t.linked && status.camera.quality <= proto::kQuality4K ? status.camera.quality : -1;
+    for (int q = 0; q < 3; ++q) t.qualityOk[q] = caps::QualityEnabled(t.linked, status.camera, uint8_t(q));
+    t.mirror = mirror;
+    t.fill = fill;
+    return t;
+}
+
 } // namespace
 
 bool ControlServer::Start() {
@@ -86,17 +110,23 @@ bool ControlServer::Start() {
         return false;
     }
     chmod(path_.c_str(), 0600);
+    {
+        std::lock_guard<std::mutex> lock(lock_);
+        UpdateStatusLine(); // A tray that connects before the first status change gets one too.
+    }
     thread_ = std::thread([this] { Loop(); });
     return true;
 }
 
 void ControlServer::Stop() {
-    {
-        std::lock_guard<std::mutex> lock(lock_);
-        stop_ = true;
-    }
+    std::unique_lock<std::mutex> lock(lock_);
+    stop_ = true;
     changed_.notify_all();
+    lock.unlock();
     if (thread_.joinable()) thread_.join();
+    lock.lock();
+    changed_.wait(lock, [this] { return clients_ == 0; }); // Each notices stop_ within 500 ms.
+    lock.unlock();
     if (listen_ >= 0) close(listen_);
     listen_ = -1;
     if (!path_.empty()) unlink(path_.c_str());
@@ -109,8 +139,18 @@ void ControlServer::OnStatus(const LinkStatus& status) {
         url_ = Utf8(status.webUrl);
         if (status.pairedCount != pairedCount_) pairedName_ = Utf8(status.pairedName);
         pairedCount_ = status.pairedCount;
+        status_ = status;
+        UpdateStatusLine();
     }
     changed_.notify_all();
+}
+
+void ControlServer::UpdateStatusLine() {
+    std::string line = FormatTrayStatus(MakeTrayStatus(status_, mirror_, fill_));
+    if (line != statusLine_) {
+        statusLine_ = std::move(line);
+        ++statusSeq_;
+    }
 }
 
 void ControlServer::Loop() {
@@ -123,17 +163,31 @@ void ControlServer::Loop() {
         if (poll(&p, 1, 500) <= 0) continue;
         const int client = accept4(listen_, nullptr, nullptr, SOCK_CLOEXEC);
         if (client < 0) continue;
-        Serve(client); // One at a time; a second terminal waits until the first lets go.
-        close(client);
+        {
+            std::lock_guard<std::mutex> lock(lock_);
+            if (clients_ >= 8) { close(client); continue; } // Only this user can connect; a cap all the same.
+            ++clients_;
+        }
+        // Its own thread: the tray stays connected while a terminal pairs.
+        std::thread([this, client] {
+            Serve(client);
+            close(client);
+            std::lock_guard<std::mutex> lock(lock_);
+            --clients_;
+            changed_.notify_all();
+        }).detach();
     }
 }
 
 void ControlServer::Serve(int client) {
-    std::string buffer, command;
-    if (!ReadLine(client, &buffer, &command, 2000) || command != "pair") {
-        SendLine(client, "error unknown command");
-        return;
-    }
+    std::string buffer, first;
+    if (!ReadLine(client, &buffer, &first, 2000)) return;
+    if (first == "pair") Pair(client);
+    else if (first == "watch") Watch(client, buffer);
+    else Command(first);
+}
+
+void ControlServer::Pair(int client) {
     Log("control: pairing asked for from a terminal");
     link_->StartWebPairing(0);
     std::unique_lock<std::mutex> lock(lock_);
@@ -156,6 +210,58 @@ void ControlServer::Serve(int client) {
     lock.unlock();
     link_->StopWebPairing();
     Log("control: pairing from the terminal ended");
+}
+
+void ControlServer::Watch(int client, std::string buffer) {
+    uint64_t sent = 0;
+    for (;;) {
+        std::string line;
+        {
+            std::unique_lock<std::mutex> lock(lock_);
+            if (stop_) return;
+            if (statusSeq_ == sent) changed_.wait_for(lock, std::chrono::milliseconds(500));
+            if (statusSeq_ != sent) {
+                sent = statusSeq_;
+                line = statusLine_;
+            }
+        }
+        if (!line.empty() && !SendLine(client, line)) return;
+        pollfd p = {client, POLLIN, 0};
+        if (poll(&p, 1, 0) <= 0) continue;
+        char chunk[512];
+        const ssize_t n = recv(client, chunk, sizeof(chunk), 0);
+        if (n <= 0 || buffer.size() > 4096) return; // Closed (the tray quit), or not a tray.
+        buffer.append(chunk, size_t(n));
+        for (size_t nl; (nl = buffer.find('\n')) != std::string::npos; buffer.erase(0, nl + 1)) {
+            Command(buffer.substr(0, nl));
+        }
+    }
+}
+
+void ControlServer::Command(const std::string& line) {
+    char name[16] = {};
+    int arg = -1;
+    if (sscanf(line.c_str(), "%15s %d", name, &arg) < 1) return;
+    const std::string cmd = name;
+    if (cmd == "pause" && (arg == 0 || arg == 1)) link_->RequestPause(arg);
+    else if (cmd == "facing" && (arg == proto::kFacingBack || arg == proto::kFacingFront)) link_->RequestFacing(arg);
+    else if (cmd == "quality" && arg >= proto::kQuality720p && arg <= proto::kQuality4K) {
+        link_->RequestCommand(proto::kCmdSetQuality, uint8_t(arg));
+    } else if (cmd == "reconnect") link_->RequestReconnect();
+    else if ((cmd == "mirror" || cmd == "fill") && (arg == 0 || arg == 1)) {
+        // Saved like the Windows tray saves them, and applied at the next frame.
+        if (cmd == "mirror") link_->SetMirror(arg);
+        else link_->SetFill(arg);
+        StoreSetU64("", cmd == "mirror" ? "Mirror" : "Fill", uint64_t(arg));
+        {
+            std::lock_guard<std::mutex> lock(lock_);
+            (cmd == "mirror" ? mirror_ : fill_) = arg;
+            UpdateStatusLine();
+        }
+        changed_.notify_all();
+    } else {
+        Log("control: unknown command"); // Not the line itself: it came from outside the daemon.
+    }
 }
 
 int RunPairClient(void (*printQr)(const std::string& url)) {

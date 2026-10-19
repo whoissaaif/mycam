@@ -18,6 +18,7 @@
 #include "../companion/capabilities.h"
 #include "../companion/discovery.h"
 #include "../companion/preview_convert.h"
+#include "../companion/control_proto.h"
 #include "../companion/status_text.h"
 #include "../companion/ui_layout.h"
 #include "../companion/ui_model.h"
@@ -848,6 +849,26 @@ void TestPreviewConvert() {
     CHECK(back[2] > 240 && back[1] < 15 && back[0] < 15);
 }
 
+void TestTrayStatusLine() {
+    TrayStatus s;
+    s.icon = kIconStreaming;
+    s.canPause = s.linked = s.mirror = true;
+    s.facing = proto::kFacingFront;
+    s.quality = proto::kQuality4K;
+    s.qualityOk[0] = s.qualityOk[2] = true;
+    s.headline = "Streaming";
+    s.detail = "Front camera \xC2\xB7 3840 \xC3\x97 2160 \t from \"My\tPhone\""; // UTF-8, and a tab in a name.
+    const std::string line = FormatTrayStatus(s);
+    CHECK(line.find('\n') == std::string::npos && line.rfind("status icon=103 ", 0) == 0);
+    TrayStatus back;
+    CHECK(ParseTrayStatus(line, &back));
+    CHECK(back.icon == s.icon && back.canPause && !back.paused && back.linked && back.facing == s.facing);
+    CHECK(back.quality == s.quality && back.qualityOk[0] && !back.qualityOk[1] && back.qualityOk[2]);
+    CHECK(back.mirror && !back.fill && back.headline == "Streaming");
+    CHECK(back.detail == "Front camera \xC2\xB7 3840 \xC3\x97 2160   from \"My Phone\"");
+    CHECK(!ParseTrayStatus("status icon=103", &back) && !ParseTrayStatus("url https://x\ta\tb", &back));
+}
+
 void TestStatusText() {
     LinkStatus s;
     s.state = LinkState::Waiting;
@@ -1252,6 +1273,7 @@ int main() {
     printf("wi-fi discovery list\n");      TestDiscovery();
     printf("preview convert\n");           TestPreviewConvert();
     printf("status text\n");               TestStatusText();
+    printf("tray status line\n");          TestTrayStatusLine();
     printf("web: websocket frames\n");     TestWebSocketFrames();
     printf("web: http and handshake\n");   TestWebHandshake();
     printf("web: tokens\n");               TestWebTokens();
