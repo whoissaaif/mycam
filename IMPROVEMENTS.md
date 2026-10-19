@@ -554,8 +554,14 @@ dynamically) and `frame_writer_v4l2.cpp` (the `FrameWriter` interface into v4l2l
 size, fitted with `frame_transform`); `tools/v4l2_play.cpp` drives it from an H.264 file. TLS for the
 iPhone page: `tls_server_openssl.cpp` (same `tls::Session` interface; certificate in `~/.config/mycam/`),
 tested against an OpenSSL client (`tls_tests`). Correction to the plan: `web_server.cpp` and
-`phone_link_web.cpp` are *not* portable yet (Winsock, registry, exe resources, adapter list), and the
-session loop lives in `PhoneLink` with the USB code. Next: those, then `mycam-companion --daemon`.
+`phone_link_web.cpp` were *not* portable (Winsock, registry, exe resources, adapter list), and the session
+loop lives in `PhoneLink` with the USB code. So the OS now sits behind one seam: `platform.h` (time, text,
+adapters, a settings store, secret protection, embedded files) and `net.h` (sockets), implemented by
+`platform_win.cpp` (the same registry keys and DPAPI as before) and `platform_posix.cpp` (`~/.config/mycam/`);
+the USB backend split is `phone_link_usb_win.cpp` (UsbDk + WinUSB) / `phone_link_usb_posix.cpp` (libusb).
+The shared `PhoneLink`, `SessionLoop` and `WebServer` build on both. `mycam-companion --daemon` runs on
+Linux: the iPhone page is served (QR code in the terminal with `--pair`), USB and Android Wi-Fi are built
+but not yet tried on a phone.
 
 ---
 

@@ -7,18 +7,17 @@
 //   GET  /ws?d=<device token>                      WebSocket: one MyCam packet or command per message
 // Tokens never reach the log.
 
-#define FD_SETSIZE 128
-#include <winsock2.h>
-#include <ws2tcpip.h>
-#include <iphlpapi.h>
+#include "net.h"
 
 #include "web_server.h"
 
-#include <time.h>
+#include <stdio.h>
+#include <ctype.h>
 
 #include <algorithm>
 
 #include "log.h"
+#include "platform.h"
 #include "tls_server.h"
 #include "wifi_crypto.h"
 
@@ -36,7 +35,7 @@ constexpr size_t kMaxEarly = 256 * 1024;   // What a page may send before its se
 constexpr uint16_t kCloseBusy = 4001;      // Another phone is using MyCam: try again later.
 constexpr uint16_t kCloseReplaced = 4002;  // The same device opened a newer connection.
 constexpr uint16_t kCloseForgotten = 4003; // The PC forgot this device: scan the QR code again.
-constexpr wchar_t kDevicesKey[] = L"Software\\MyCam\\WebDevices";
+constexpr char kDevicesKey[] = "WebDevices"; // In the settings store (HKCU\Software\MyCam\WebDevices on Windows).
 
 // Page files embedded in companion.rc. IDs must match there.
 struct PageFile { const char* path; int id; const char* type; };
@@ -48,13 +47,6 @@ constexpr PageFile kFiles[] = {
     {"/style.css", 304, "text/css; charset=utf-8"},
     {"/icon.png", 305, "image/png"},
 };
-
-std::string Resource(int id) {
-    HRSRC r = FindResourceW(nullptr, MAKEINTRESOURCEW(id), MAKEINTRESOURCEW(10) /* RT_RCDATA */);
-    HGLOBAL g = r ? LoadResource(nullptr, r) : nullptr;
-    const void* p = g ? LockResource(g) : nullptr;
-    return p ? std::string(static_cast<const char*>(p), SizeofResource(nullptr, r)) : std::string();
-}
 
 std::string IpText(uint32_t ip) {
     char text[INET_ADDRSTRLEN] = {};
@@ -69,30 +61,24 @@ std::string JsonString(const std::string& s) {
     for (char ch : s) {
         const unsigned char c = static_cast<unsigned char>(ch);
         if (c == '"' || c == '\\') { out += '\\'; out += ch; }
-        else if (c < 0x20) { char esc[8]; sprintf_s(esc, "\\u%04x", c); out += esc; }
+        else if (c < 0x20) { char esc[8]; snprintf(esc, sizeof(esc), "\\u%04x", c); out += esc; }
         else out += ch;
     }
     return out + "\"";
 }
 
-std::wstring Wide(const std::string& utf8) {
-    std::wstring w(MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), int(utf8.size()), nullptr, 0), L'\0');
-    MultiByteToWideChar(CP_UTF8, 0, utf8.c_str(), int(utf8.size()), w.data(), int(w.size()));
-    return w;
-}
-
-std::string Utf8(const wchar_t* w) {
-    std::string s(WideCharToMultiByte(CP_UTF8, 0, w, -1, nullptr, 0, nullptr, nullptr), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, w, -1, s.data(), int(s.size()), nullptr, nullptr);
-    if (!s.empty() && s.back() == '\0') s.pop_back();
-    return s;
+bool EqualsNoCase(const std::string& a, const char* b) {
+    size_t i = 0;
+    for (; i < a.size() && b[i]; ++i)
+        if (tolower(static_cast<unsigned char>(a[i])) != tolower(static_cast<unsigned char>(b[i]))) return false;
+    return i == a.size() && !b[i];
 }
 
 } // namespace
 
 struct WebServer::Conn {
     enum class Mode { Http, PhonePending, Phone };
-    SOCKET s = INVALID_SOCKET;
+    net::Socket s = net::kInvalid;
     std::unique_ptr<tls::Session> tls;
     Mode mode = Mode::Http;
     web::Bytes in;          // Decrypted request bytes not handled yet (HTTP mode).
@@ -108,14 +94,14 @@ struct WebServer::Conn {
     bool dead = false;
 };
 
-WebServer::WebServer() : listen_(INVALID_SOCKET) {}
+WebServer::WebServer() : listen_(net::kInvalid) {}
 
 WebServer::~WebServer() {
-    for (auto& c : conns_) if (!c->dead) closesocket(c->s);
-    if (listen_ != INVALID_SOCKET) closesocket(SOCKET(listen_));
+    for (auto& c : conns_) if (!c->dead) net::Close(c->s);
+    if (listen_ != net::kInvalid) net::Close(listen_);
 }
 
-bool WebServer::Listening() const { return listen_ != INVALID_SOCKET; }
+bool WebServer::Listening() const { return listen_ != net::kInvalid; }
 
 bool WebServer::Start() {
     LoadDevices();
@@ -126,20 +112,11 @@ bool WebServer::Start() {
         cred_.reset();
         return false;
     }
-    SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (s == INVALID_SOCKET) return false;
-    BOOL exclusive = TRUE; // Nobody else may take the port from under us.
-    setsockopt(s, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, reinterpret_cast<const char*>(&exclusive), sizeof(exclusive));
-    sockaddr_in addr = {};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(web::kPort);
-    if (bind(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0 || listen(s, 16) != 0) {
-        Log("web: can't listen on port %u (%d): another program may be using it", unsigned(web::kPort), WSAGetLastError());
-        closesocket(s);
+    const net::Socket s = net::ListenTcp(web::kPort, 16);
+    if (s == net::kInvalid) {
+        Log("web: can't listen on port %u (%d): another program may be using it", unsigned(web::kPort), net::LastError());
         return false;
     }
-    u_long nonBlocking = 1;
-    ioctlsocket(s, FIONBIO, &nonBlocking);
     listen_ = s;
     RefreshAddresses();
     Log("web: iPhone page listening on port %u (certificate %s), %u remembered device(s)", unsigned(web::kPort),
@@ -148,22 +125,24 @@ bool WebServer::Start() {
 }
 
 void WebServer::Poll(uint32_t timeoutMs) {
-    if (listen_ == INVALID_SOCKET) {
-        if (timeoutMs) Sleep(timeoutMs);
+    if (listen_ == net::kInvalid) {
+        if (timeoutMs) SleepMs(timeoutMs);
         return;
     }
     fd_set rd, wr;
     FD_ZERO(&rd);
     FD_ZERO(&wr);
-    FD_SET(SOCKET(listen_), &rd);
+    FD_SET(listen_, &rd);
+    int maxFd = int(listen_); // select's first argument: ignored on Windows, the highest fd + 1 on Linux.
     for (auto& c : conns_) {
         if (c->dead) continue;
         FD_SET(c->s, &rd);
         if (c->outPos < c->out.size()) FD_SET(c->s, &wr);
+        maxFd = std::max(maxFd, int(c->s));
     }
     timeval tv = {long(timeoutMs / 1000), long(timeoutMs % 1000) * 1000};
-    if (select(0, &rd, &wr, nullptr, &tv) > 0) {
-        if (FD_ISSET(SOCKET(listen_), &rd)) Accept();
+    if (select(maxFd + 1, &rd, &wr, nullptr, &tv) > 0) {
+        if (FD_ISSET(listen_, &rd)) Accept();
         for (size_t i = 0; i < conns_.size(); ++i) {
             Conn& c = *conns_[i];
             if (!c.dead && FD_ISSET(c.s, &rd)) ReadFrom(c);
@@ -178,22 +157,22 @@ void WebServer::Poll(uint32_t timeoutMs) {
             onPhone_(early.data(), early.size());
         }
     }
-    Sweep(GetTickCount64());
+    Sweep(NowMs());
 }
 
 void WebServer::Accept() {
     for (int i = 0; i < 8; ++i) {
         sockaddr_in from = {};
-        int len = sizeof(from);
-        SOCKET s = accept(SOCKET(listen_), reinterpret_cast<sockaddr*>(&from), &len);
-        if (s == INVALID_SOCKET) return;
+        socklen_t len = sizeof(from);
+        const net::Socket s = accept(listen_, reinterpret_cast<sockaddr*>(&from), &len);
+        if (s == net::kInvalid) return;
+        // ponytail: select() can't watch an fd >= FD_SETSIZE on Linux; the connection limit keeps us far below.
         if (conns_.size() >= kMaxConns) {
-            closesocket(s);
+            net::Close(s);
             continue;
         }
-        u_long nonBlocking = 1;
-        ioctlsocket(s, FIONBIO, &nonBlocking);
-        BOOL noDelay = TRUE;
+        net::SetNonBlocking(s);
+        int noDelay = 1;
         setsockopt(s, IPPROTO_TCP, TCP_NODELAY, reinterpret_cast<const char*>(&noDelay), sizeof(noDelay));
         int rcv = 1024 * 1024; // A 4K key frame can be several hundred KB.
         setsockopt(s, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<const char*>(&rcv), sizeof(rcv));
@@ -202,9 +181,9 @@ void WebServer::Accept() {
         c->tls = std::make_unique<tls::Session>(cred_.get());
         c->peer = IpText(from.sin_addr.s_addr);
         sockaddr_in local = {};
-        int localLen = sizeof(local);
+        socklen_t localLen = sizeof(local);
         if (getsockname(s, reinterpret_cast<sockaddr*>(&local), &localLen) == 0) c->localIp = local.sin_addr.s_addr;
-        c->opened = c->lastIn = GetTickCount64();
+        c->opened = c->lastIn = NowMs();
         conns_.push_back(std::move(c));
     }
 }
@@ -215,11 +194,11 @@ void WebServer::ReadFrom(Conn& c) {
         const int n = recv(c.s, reinterpret_cast<char*>(buf), sizeof(buf), 0);
         if (n == 0) { Close(c, "closed by the page"); return; }
         if (n < 0) {
-            if (WSAGetLastError() == WSAEWOULDBLOCK) return;
+            if (net::WouldBlock()) return;
             Close(c, "connection lost");
             return;
         }
-        c.lastIn = GetTickCount64();
+        c.lastIn = NowMs();
         web::Bytes toSend, plain;
         const bool ok = c.tls->Receive(buf, size_t(n), &toSend, &plain);
         if (!toSend.empty()) SendRaw(c, toSend.data(), toSend.size());
@@ -254,7 +233,7 @@ void WebServer::HandleHttp(Conn& c) {
         const std::string body(c.in.begin() + head, c.in.begin() + head + r.contentLength);
         c.in.erase(c.in.begin(), c.in.begin() + head + r.contentLength);
         HandleRequest(c, r, body);
-        if (_stricmp(r.Header("connection").c_str(), "close") == 0) c.closeAfterSend = true;
+        if (EqualsNoCase(r.Header("connection"), "close")) c.closeAfterSend = true;
     }
     // After an upgrade, anything left over already belongs to the WebSocket.
     if (!c.dead && c.mode != Conn::Mode::Http && !c.in.empty()) {
@@ -291,7 +270,7 @@ void WebServer::HandleRequest(Conn& c, const web::HttpRequest& r, const std::str
     }
     for (const PageFile& f : kFiles) {
         if (r.path != f.path) continue;
-        const std::string data = Resource(f.id);
+        const std::string data = ResourceData(f.id);
         if (data.empty()) break;
         std::string extra;
         if (f.id == 301) {
@@ -306,7 +285,7 @@ void WebServer::HandleRequest(Conn& c, const web::HttpRequest& r, const std::str
 }
 
 void WebServer::HandlePair(Conn& c, const web::HttpRequest&, const std::string& body) {
-    const uint64_t now = GetTickCount64();
+    const uint64_t now = NowMs();
     if (codeClaimed_) { // An Android phone scanned this code first and is pairing with it now.
         Log("web: refused to pair %s: a phone is already using this code", c.peer.c_str());
         SendResponse(c, 409, "Conflict", "application/json", "{\"ok\":false,\"error\":\"code\"}");
@@ -319,7 +298,7 @@ void WebServer::HandlePair(Conn& c, const web::HttpRequest&, const std::string& 
     }
     web::WebDevice d;
     const std::string token =
-        book_.AddDevice(web::QueryParam(body, "name"), wifi::Random(32), wifi::Random(8), uint64_t(_time64(nullptr)), &d);
+        book_.AddDevice(web::QueryParam(body, "name"), wifi::Random(32), wifi::Random(8), UnixTime(), &d);
     SaveDevice(d);
     newlyPairedId_ = d.id;
     Log("web: paired %s at %s", d.name.c_str(), c.peer.c_str());
@@ -376,7 +355,7 @@ void WebServer::HandleUpgrade(Conn& c, const web::HttpRequest& r) {
     c.mode = Conn::Mode::PhonePending;
     c.deviceId = d->id;
     c.deviceName = d->name;
-    c.lastIn = GetTickCount64();
+    c.lastIn = NowMs();
     ++generation_;
     Log("web: %s opened the camera link from %s", d->name.c_str(), c.peer.c_str());
 }
@@ -427,7 +406,7 @@ void WebServer::SendRaw(Conn& c, const uint8_t* data, size_t size) {
 void WebServer::SendResponse(Conn& c, int code, const char* reason, const std::string& type, const std::string& body,
                              const std::string& extraHeaders) {
     char status[64];
-    sprintf_s(status, "HTTP/1.1 %d %s\r\n", code, reason);
+    snprintf(status, sizeof(status), "HTTP/1.1 %d %s\r\n", code, reason);
     std::string head = status;
     head += "Content-Type: " + type + "\r\n";
     head += "Content-Length: " + std::to_string(body.size()) + "\r\n";
@@ -447,7 +426,7 @@ void WebServer::Flush(Conn& c) {
     while (!c.dead && c.outPos < c.out.size()) {
         const int n = send(c.s, reinterpret_cast<const char*>(c.out.data() + c.outPos), int(c.out.size() - c.outPos), 0);
         if (n > 0) { c.outPos += size_t(n); continue; }
-        if (WSAGetLastError() != WSAEWOULDBLOCK) Close(c, "send failed");
+        if (!net::WouldBlock()) Close(c, "send failed");
         break;
     }
     if (c.dead) return;
@@ -469,8 +448,8 @@ void WebServer::Close(Conn& c, const char* why) {
         Log("web: %s's camera link closed%s%s", c.deviceName.c_str(), why ? ": " : "", why ? why : "");
         ++generation_;
     }
-    shutdown(c.s, SD_BOTH);
-    closesocket(c.s);
+    net::Shutdown(c.s);
+    net::Close(c.s);
     c.dead = true;
 }
 
@@ -581,33 +560,20 @@ std::string WebServer::LinkOf(uint32_t localIp) const {
 
 void WebServer::RefreshAddresses() {
     std::vector<web::NetAddress> list;
-    ULONG size = 16 * 1024;
-    std::vector<uint8_t> buf(size);
-    auto* adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buf.data());
-    const ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
-    if (GetAdaptersAddresses(AF_INET, flags, nullptr, adapters, &size) == ERROR_BUFFER_OVERFLOW) {
-        buf.resize(size);
-        adapters = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buf.data());
-    }
-    if (GetAdaptersAddresses(AF_INET, flags, nullptr, adapters, &size) == NO_ERROR) {
-        for (auto* a = adapters; a; a = a->Next) {
-            if (a->OperStatus != IfOperStatusUp) continue;
-            for (auto* u = a->FirstUnicastAddress; u; u = u->Next) {
-                web::NetAddress n;
-                n.ipv4 = reinterpret_cast<const sockaddr_in*>(u->Address.lpSockaddr)->sin_addr.s_addr;
-                n.text = IpText(n.ipv4);
-                n.adapter = a->FriendlyName ? a->FriendlyName : L"";
-                n.kind = web::ClassifyAdapter(a->IfType, a->Description ? a->Description : L"", ntohl(n.ipv4));
-                n.prefix = u->OnLinkPrefixLength <= 32 ? uint8_t(u->OnLinkPrefixLength) : 0;
-                list.push_back(std::move(n));
-            }
-        }
+    for (const Adapter& a : UpAdapters()) {
+        web::NetAddress n;
+        n.ipv4 = a.ipv4;
+        n.text = IpText(n.ipv4);
+        n.adapter = a.name;
+        n.kind = web::ClassifyAdapter(a.ifType, a.description, ntohl(n.ipv4));
+        n.prefix = a.prefix;
+        list.push_back(std::move(n));
     }
     web::SortAddresses(&list);
     addresses_ = std::move(list);
 }
 
-void WebServer::MakeCode() { book_.NewPairingCode(wifi::Random(16), GetTickCount64()); }
+void WebServer::MakeCode() { book_.NewPairingCode(wifi::Random(16), NowMs()); }
 
 void WebServer::StartPairing(uint32_t ipv4) {
     RefreshAddresses();
@@ -628,13 +594,13 @@ void WebServer::StopPairing() {
 }
 
 std::string WebServer::PairingUrl() const {
-    if (!pairing_ || !pairingIp_ || listen_ == INVALID_SOCKET || book_.PairingCode().empty()) return "";
+    if (!pairing_ || !pairingIp_ || listen_ == net::kInvalid || book_.PairingCode().empty()) return "";
     return "https://" + IpText(pairingIp_) + ":" + std::to_string(web::kPort) + "/?t=" + book_.PairingCode() +
            (pcId_.empty() ? "" : "&pc=" + pcId_);
 }
 
 std::string WebServer::CurrentPairingCode() const {
-    return pairing_ && book_.HasPairingCode(GetTickCount64()) ? book_.PairingCode() : std::string();
+    return pairing_ && book_.HasPairingCode(NowMs()) ? book_.PairingCode() : std::string();
 }
 
 void WebServer::PairingCodeUsed() {
@@ -656,51 +622,35 @@ std::string WebServer::TakeNewlyPaired(const std::string& deviceId) {
     return deviceId;
 }
 
-// --- Remembered devices: HKCU\Software\MyCam\WebDevices\<id> = TokenHash, Name, Added ----------------------
+// --- Remembered devices: the store's WebDevices/<id> = TokenHash, Name, Added -------------------------------
 
 std::vector<web::WebDevice> WebServer::Devices() const { return book_.Devices(); }
 
 void WebServer::LoadDevices() {
     std::vector<web::WebDevice> list;
-    HKEY root;
-    if (RegOpenKeyExW(HKEY_CURRENT_USER, kDevicesKey, 0, KEY_READ, &root) == ERROR_SUCCESS) {
-        wchar_t sub[64];
-        for (DWORD i = 0;; ++i) {
-            DWORD len = DWORD(std::size(sub));
-            if (RegEnumKeyExW(root, i, sub, &len, nullptr, nullptr, nullptr, nullptr) != ERROR_SUCCESS) break;
-            web::WebDevice d;
-            d.id = Utf8(sub);
-            d.tokenHash.resize(32);
-            DWORD size = 32;
-            if (RegGetValueW(root, sub, L"TokenHash", RRF_RT_REG_BINARY, nullptr, d.tokenHash.data(), &size) != ERROR_SUCCESS ||
-                size != 32)
-                continue;
-            wchar_t name[128] = {};
-            size = sizeof(name);
-            if (RegGetValueW(root, sub, L"Name", RRF_RT_REG_SZ, nullptr, name, &size) == ERROR_SUCCESS) d.name = Utf8(name);
-            ULONGLONG added = 0;
-            size = sizeof(added);
-            if (RegGetValueW(root, sub, L"Added", RRF_RT_REG_QWORD, nullptr, &added, &size) == ERROR_SUCCESS) d.addedUnix = added;
-            list.push_back(std::move(d));
-        }
-        RegCloseKey(root);
+    for (const std::string& id : StoreList(kDevicesKey)) {
+        const std::string path = std::string(kDevicesKey) + "/" + id;
+        web::WebDevice d;
+        d.id = id;
+        if (!StoreGetBytes(path, "TokenHash", &d.tokenHash) || d.tokenHash.size() != 32) continue;
+        StoreGetString(path, "Name", &d.name);
+        StoreGetU64(path, "Added", &d.addedUnix);
+        list.push_back(std::move(d));
     }
     std::sort(list.begin(), list.end(), [](const web::WebDevice& a, const web::WebDevice& b) { return a.addedUnix < b.addedUnix; });
     book_.SetDevices(std::move(list));
 }
 
 void WebServer::SaveDevice(const web::WebDevice& d) {
-    const std::wstring sub = std::wstring(kDevicesKey) + L"\\" + Wide(d.id);
-    RegSetKeyValueW(HKEY_CURRENT_USER, sub.c_str(), L"TokenHash", REG_BINARY, d.tokenHash.data(), DWORD(d.tokenHash.size()));
-    const std::wstring name = Wide(d.name);
-    RegSetKeyValueW(HKEY_CURRENT_USER, sub.c_str(), L"Name", REG_SZ, name.c_str(), DWORD((name.size() + 1) * sizeof(wchar_t)));
-    const ULONGLONG added = d.addedUnix;
-    RegSetKeyValueW(HKEY_CURRENT_USER, sub.c_str(), L"Added", REG_QWORD, &added, sizeof(added));
+    const std::string path = std::string(kDevicesKey) + "/" + d.id;
+    StoreSetBytes(path, "TokenHash", d.tokenHash);
+    StoreSetString(path, "Name", d.name);
+    StoreSetU64(path, "Added", d.addedUnix);
 }
 
 void WebServer::Forget(const std::string& id) {
     if (!book_.Forget(id)) return;
-    RegDeleteTreeW(HKEY_CURRENT_USER, (std::wstring(kDevicesKey) + L"\\" + Wide(id)).c_str());
+    StoreDelete(std::string(kDevicesKey) + "/" + id);
     for (auto& c : conns_) {
         if (c->dead || c->deviceId != id) continue;
         const web::Bytes bye = web::CloseFrame(kCloseForgotten);

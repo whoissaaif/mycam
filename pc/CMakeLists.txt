@@ -59,7 +59,9 @@ target_link_libraries(MyCamVCamDShow PRIVATE strmiids ole32 oleaut32 advapi32 ru
 add_executable(MyCamCompanion WIN32
     companion/main.cpp
     companion/phone_link.cpp
+    companion/phone_link_usb_win.cpp
     companion/phone_link_wifi.cpp
+    companion/platform_win.cpp
     companion/wifi_crypto.cpp
     companion/wifi_crypto_common.cpp
     companion/web_proto.cpp
@@ -98,7 +100,7 @@ if(MYCAM_BUILD_TOOLS)
     add_executable(usb_probe tools/usb_probe.cpp)
     target_link_libraries(usb_probe PRIVATE usb)
     add_executable(web_probe tools/web_probe.cpp companion/companion.rc companion/web_server.cpp companion/web_proto.cpp companion/tls_server.cpp
-        companion/wifi_crypto.cpp companion/wifi_crypto_common.cpp companion/packet_parser.cpp)
+        companion/wifi_crypto.cpp companion/wifi_crypto_common.cpp companion/packet_parser.cpp companion/platform_win.cpp)
     target_link_libraries(web_probe PRIVATE ws2_32 iphlpapi bcrypt crypt32 ncrypt secur32 ole32)
     add_executable(uia_dump tools/uia_dump.cpp)
     target_link_libraries(uia_dump PRIVATE ole32 oleaut32 uiautomationcore)

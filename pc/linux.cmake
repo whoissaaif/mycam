@@ -1,16 +1,50 @@
-# Linux build (docs/LINUX-SUPPORT.md). Included from CMakeLists.txt when not on Windows. So far: the unit
-# tests (the portable companion code, with OpenSSL standing in for Windows CNG) and the video path (FFmpeg
-# decoder + v4l2loopback writer), with a developer tool to drive it.
+# Linux build (docs/LINUX-SUPPORT.md). Included from CMakeLists.txt when not on Windows: mycam-companion (the
+# headless daemon), the unit tests, and developer tools. The platform split is per file, never #ifdef in
+# shared code: *_posix.cpp, *_openssl.cpp, *_ffmpeg.cpp and *_v4l2.cpp stand in for the Windows files.
 
 find_package(OpenSSL 3 REQUIRED)
 find_package(PkgConfig REQUIRED)
 # Linked dynamically against the distro's FFmpeg: never vendored or static (MyCam is MIT, FFmpeg LGPL/GPL).
 pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavcodec libavutil libswscale)
+# The distro's libusb (the vendored copy in third_party/ has only the Windows backends).
+pkg_check_modules(LIBUSB REQUIRED IMPORTED_TARGET libusb-1.0)
 
 # The video path: decoded phone frames into a v4l2loopback camera.
-add_library(mycam_video STATIC companion/decoder_ffmpeg.cpp companion/frame_writer_v4l2.cpp vcam/frame_transform.cpp)
+add_library(mycam_video STATIC companion/decoder_ffmpeg.cpp companion/frame_writer_v4l2.cpp vcam/frame_transform.cpp
+    companion/log_posix.cpp companion/platform_posix.cpp)
 target_link_libraries(mycam_video PUBLIC PkgConfig::FFMPEG)
 target_compile_options(mycam_video PRIVATE -Wall -Wextra)
+
+# The page files and status pictures, compiled in (companion.rc's RCDATA on Windows).
+set(WEB_ASSETS ${CMAKE_CURRENT_BINARY_DIR}/web_assets.cpp)
+file(GLOB WEB_FILES ${CMAKE_CURRENT_SOURCE_DIR}/companion/web/* ${CMAKE_CURRENT_SOURCE_DIR}/companion/res/frame_*.png)
+add_custom_command(OUTPUT ${WEB_ASSETS}
+    COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_CURRENT_SOURCE_DIR} -DOUT=${WEB_ASSETS}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_assets.cmake
+    DEPENDS ${WEB_FILES} ${CMAKE_CURRENT_SOURCE_DIR}/../design/assets/app-256.png
+            ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_assets.cmake
+    COMMENT "Embedding the iPhone page")
+
+# The daemon: the same PhoneLink as the Windows tray app.
+add_executable(mycam-companion
+    companion/main_linux.cpp
+    companion/phone_link.cpp
+    companion/phone_link_usb_posix.cpp
+    companion/phone_link_wifi.cpp
+    companion/phone_link_web.cpp
+    companion/web_server.cpp
+    companion/web_proto.cpp
+    companion/tls_server_openssl.cpp
+    companion/wifi_crypto_openssl.cpp
+    companion/wifi_crypto_common.cpp
+    companion/packet_parser.cpp
+    companion/marquee.cpp
+    third_party/qrcodegen/qrcodegen.cpp
+    ${WEB_ASSETS})
+target_include_directories(mycam-companion PRIVATE companion)
+target_link_libraries(mycam-companion PRIVATE mycam_video PkgConfig::LIBUSB OpenSSL::SSL OpenSSL::Crypto)
+target_compile_options(mycam-companion PRIVATE -Wall)
+install(TARGETS mycam-companion RUNTIME DESTINATION bin)
 
 option(MYCAM_BUILD_TOOLS "Build developer tools (v4l2_play)" ON)
 if(MYCAM_BUILD_TOOLS)
