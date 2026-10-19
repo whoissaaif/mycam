@@ -95,6 +95,7 @@ private:
     void Flush(Conn& c);
     void Close(Conn& c, const char* why);
     void Sweep(uint64_t now);
+    bool TryListen();
     void RefreshAddresses();
     void MakeCode();
     void LoadDevices();
@@ -103,6 +104,8 @@ private:
 
     uintptr_t listen_;
     std::unique_ptr<tls::Credentials> cred_;
+    uint64_t lastListenTry_ = 0;
+    bool listenFailed_ = false; // Logged once, not every retry.
     std::vector<std::unique_ptr<Conn>> conns_;
     std::function<void(const uint8_t*, size_t)> onPhone_;
     web::TokenBook book_;

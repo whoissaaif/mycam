@@ -75,3 +75,52 @@ if(MYCAM_BUILD_TESTS)
                  ${CMAKE_CURRENT_SOURCE_DIR}/../protocol/golden.txt)
     endif()
 endif()
+
+# --- Packaging: cpack -G DEB (docs/LINUX-SUPPORT.md "Definition of done") ----------------------------------
+# One version for Android and PC (CLAUDE.md): read it from the app, not a fourth copy.
+file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/../app/build.gradle.kts MYCAM_VERSION_LINE REGEX "versionName = \"[0-9.]+\"")
+string(REGEX MATCH "[0-9]+\\.[0-9]+\\.[0-9]+" MYCAM_VERSION "${MYCAM_VERSION_LINE}")
+
+# USB access for the logged-in user, before the switch to accessory mode (the phone maker's vendor id, from
+# kAndroidVendors[] in phone_link.cpp, the list the companion asks) and after it (Google, 18d1:2d00-2d05).
+# Without the first kind, libusb can't open the phone to ask it to switch at all.
+file(READ ${CMAKE_CURRENT_SOURCE_DIR}/companion/phone_link.cpp PHONE_LINK_SOURCE)
+string(REGEX MATCH "kAndroidVendors\\[\\] = {[^}]*}" VENDOR_ARRAY "${PHONE_LINK_SOURCE}")
+string(REGEX MATCHALL "0x[0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f][0-9A-Fa-f]" VENDOR_IDS "${VENDOR_ARRAY}")
+list(LENGTH VENDOR_IDS VENDOR_COUNT)
+if(VENDOR_COUNT LESS 10)
+    message(FATAL_ERROR "Could not read kAndroidVendors[] from phone_link.cpp (found ${VENDOR_COUNT})")
+endif()
+set(UDEV_RULES "# MyCam: lets the logged-in user's mycam-companion open Android phones over USB. Generated from\n# kAndroidVendors[] in pc/companion/phone_link.cpp by pc/linux.cmake.\n")
+string(APPEND UDEV_RULES "# After the switch to accessory mode (IsAccessoryPid: 0x2D00-0x2D05).\nSUBSYSTEM==\"usb\", ATTR{idVendor}==\"18d1\", ATTR{idProduct}==\"2d0[0-5]\", TAG+=\"uaccess\"\n# Before it: the phone makers MyCam asks to switch.\n")
+foreach(vid ${VENDOR_IDS})
+    string(SUBSTRING "${vid}" 2 4 hex)
+    string(TOLOWER "${hex}" hex)
+    string(APPEND UDEV_RULES "SUBSYSTEM==\"usb\", ATTR{idVendor}==\"${hex}\", TAG+=\"uaccess\"\n")
+endforeach()
+file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/69-mycam.rules "${UDEV_RULES}")
+
+set(CMAKE_INSTALL_DEFAULT_DIRECTORY_PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE
+    WORLD_READ WORLD_EXECUTE) # 755, whatever the builder's umask.
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/69-mycam.rules DESTINATION lib/udev/rules.d)
+install(FILES linux/mycam.service DESTINATION lib/systemd/user)
+install(FILES linux/modprobe.conf DESTINATION lib/modprobe.d RENAME mycam.conf)
+install(FILES linux/modules-load.conf DESTINATION lib/modules-load.d RENAME mycam.conf)
+
+set(CPACK_GENERATOR DEB)
+set(CPACK_PACKAGE_NAME mycam)
+set(CPACK_PACKAGE_VERSION ${MYCAM_VERSION})
+set(CPACK_PACKAGING_INSTALL_PREFIX /usr)
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Use your phone as a webcam")
+set(CPACK_PACKAGE_DESCRIPTION "MyCam turns an Android phone (USB or Wi-Fi) or an iPhone (Safari, Wi-Fi) into a webcam\nfor Zoom, OBS, Discord and browsers, through a v4l2loopback camera.")
+set(CPACK_PACKAGE_CONTACT "MyCam <https://github.com/whoissaaif/mycam/issues>")
+set(CPACK_DEBIAN_PACKAGE_HOMEPAGE "https://github.com/whoissaaif/mycam")
+set(CPACK_DEBIAN_PACKAGE_SECTION video)
+set(CPACK_DEBIAN_FILE_NAME DEB-DEFAULT)
+set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON) # libavcodec, libusb, libssl...: the distro's, linked dynamically.
+# v4l2loopback ships with some kernels (linux-modules-extra) and as DKMS elsewhere: recommended, and postinst
+# says what to do when it's missing, rather than forcing a DKMS build that may not suit the kernel.
+set(CPACK_DEBIAN_PACKAGE_RECOMMENDS "v4l2loopback-dkms")
+set(CPACK_DEBIAN_PACKAGE_CONTROL_EXTRA ${CMAKE_CURRENT_SOURCE_DIR}/linux/postinst ${CMAKE_CURRENT_SOURCE_DIR}/linux/prerm)
+set(CPACK_DEBIAN_PACKAGE_CONTROL_STRICT_PERMISSION ON)
+include(CPack)
