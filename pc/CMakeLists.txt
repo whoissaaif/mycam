@@ -4,6 +4,11 @@ project(MyCam LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# One version for Android and PC (CLAUDE.md): read it from the app, not another copy to keep in step.
+file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/../app/build.gradle.kts MYCAM_VERSION_LINE REGEX "versionName = \"[0-9.]+\"")
+string(REGEX MATCH "[0-9]+\\.[0-9]+\\.[0-9]+" MYCAM_VERSION "${MYCAM_VERSION_LINE}")
+add_compile_definitions(MYCAM_VERSION="${MYCAM_VERSION}")
+
 # Linux (docs/LINUX-SUPPORT.md) builds its own targets; everything below this is the Windows build.
 if(NOT WIN32)
     include(linux.cmake)
