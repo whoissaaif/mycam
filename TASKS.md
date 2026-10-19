@@ -95,6 +95,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [ ] iPhone native app + usbmux transport on the PC (only if a Mac and the developer program become available) [9.2]
 ## Done
 
+- [x] A failed decoder init retries and logs at most every 2 s, not on every frame [#15]
 - [x] 4K: H.264 decodes on the GPU (D3D11/DXVA), CPU as fallback; 4K30 tested with a phone [3.4, #8]
 - [x] Pairing keys and the phone id are kept out of cloud backups and phone-to-phone transfers (own prefs file, migrated on upgrade) [12]
 - [x] Adaptive-bitrate Int overflow fix at 4K (`WebcamService.kt`), shipped in 1.3.2
