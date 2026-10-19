@@ -542,7 +542,9 @@ Schannel TLS, Win32 GUI). Full plan, phased work items and the open design quest
 **Plan, in short:** a phased port starting with a headless CLI daemon (USB only, writing decoded frames
 into a `v4l2loopback` device) before any GUI work — that alone covers Zoom/OBS/browsers on Linux. Wi-Fi
 and the iPhone web server follow in later phases; the tray/settings/pairing-dialog GUI is deliberately
-last, pending a design decision on whether it keeps the Windows XP Luna look or goes native.
+last. **Decided (Aiyan, 2026-10-18): the Linux GUI keeps the same Windows XP Luna Blue look as Windows**
+(one design language, per CLAUDE.md), reusing the portable UI model (`ui_model.h`, `ui_layout.h`,
+`status_text.h`, `marquee.h`); to confirm with saif.
 
 **Needs before starting:** a Linux test machine or VM, and `v4l2loopback` available on it.
 
