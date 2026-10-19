@@ -28,6 +28,7 @@ add_custom_command(OUTPUT ${WEB_ASSETS}
 # The daemon: the same PhoneLink as the Windows tray app.
 add_executable(mycam-companion
     companion/main_linux.cpp
+    companion/control_posix.cpp
     companion/phone_link.cpp
     companion/phone_link_usb_posix.cpp
     companion/phone_link_wifi.cpp
@@ -43,7 +44,8 @@ add_executable(mycam-companion
     third_party/qrcodegen/qrcodegen.cpp
     ${WEB_ASSETS})
 target_include_directories(mycam-companion PRIVATE companion)
-target_link_libraries(mycam-companion PRIVATE mycam_video PkgConfig::LIBUSB OpenSSL::SSL OpenSSL::Crypto)
+find_package(Threads REQUIRED)
+target_link_libraries(mycam-companion PRIVATE mycam_video PkgConfig::LIBUSB OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
 target_compile_options(mycam-companion PRIVATE -Wall)
 install(TARGETS mycam-companion RUNTIME DESTINATION bin)
 

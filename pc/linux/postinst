@@ -24,6 +24,6 @@ if [ "$1" = "configure" ]; then
         systemctl --global enable mycam.service || true
     fi
     echo "MyCam is installed. It starts with your next login, or now: systemctl --user start mycam" >&2
-    echo "To connect an iPhone: mycam-companion --daemon --pair (stop the service first)." >&2
+    echo "To connect an iPhone: mycam-companion --pair" >&2
 fi
 exit 0

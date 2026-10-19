@@ -1,9 +1,10 @@
 // mycam-companion on Linux (docs/LINUX-SUPPORT.md): a headless daemon. It runs the same PhoneLink as the
 // Windows tray app (USB, Android Wi-Fi and the iPhone page, one session at a time) and writes the video into a
 // v4l2loopback camera. No GUI yet: status goes to the log (stderr), and --pair shows the iPhone QR code in the
-// terminal.
+// terminal (from a running daemon, through its control socket: control_posix.h).
 //
 //   mycam-companion --daemon [--device /dev/video10] [--size 1280x720] [--pair] [--wifi]
+//   mycam-companion --pair
 
 #include <signal.h>
 #include <stdio.h>
@@ -13,6 +14,7 @@
 #include <string>
 
 #include "../third_party/qrcodegen/qrcodegen.hpp"
+#include "control_posix.h"
 #include "log.h"
 #include "phone_link.h"
 #include "platform.h"
@@ -63,12 +65,15 @@ void PrintQr(const std::string& url) {
 
 void Usage(const char* argv0) {
     fprintf(stderr,
-            "usage: %s --daemon [--device /dev/video10] [--size WIDTHxHEIGHT] [--pair] [--wifi]\n"
+            "usage: %s --pair\n"
+            "         show a QR code to connect an iPhone (Safari, same Wi-Fi), from the running MyCam\n"
+            "       %s --daemon [--device /dev/video10] [--size WIDTHxHEIGHT] [--pair] [--wifi]\n"
+            "         run MyCam (the mycam service does this)\n"
             "  --device  the v4l2loopback device to write to (default /dev/video10)\n"
             "  --size    the camera size apps see (default 1280x720)\n"
-            "  --pair    show a QR code to connect an iPhone (Safari, same Wi-Fi)\n"
+            "  --pair    with --daemon: show the iPhone QR code in this terminal from the start\n"
             "  --wifi    also look for Android phones on the Wi-Fi\n",
-            argv0);
+            argv0, argv0);
 }
 
 } // namespace
@@ -94,6 +99,7 @@ int main(int argc, char** argv) {
         }
     }
     if (!daemon) {
+        if (pair) return RunPairClient(PrintQr);
         Usage(argv[0]);
         return 2;
     }
@@ -102,8 +108,10 @@ int main(int argc, char** argv) {
     FrameWriter::Configure(device, width, height);
     LinkState lastState = LinkState(-1);
     std::wstring lastUrl;
+    ControlServer* control = nullptr;
     PhoneLink link(
         [&](const LinkStatus& s) {
+            if (control) control->OnStatus(s);
             if (s.state != lastState) {
                 lastState = s.state;
                 const std::string phone = Utf8(s.phoneName);
@@ -127,8 +135,12 @@ int main(int argc, char** argv) {
     link.SetStatusImages(LoadStatusImage(kImagePaused), LoadStatusImage(kImageWaiting));
     link.SetWireless(wifi);
     if (pair) link.StartWebPairing(0);
+    ControlServer server(&link);
+    if (server.Start()) control = &server;
     Log("mycam-companion: camera %s at %ux%u%s", device.c_str(), width, height, wifi ? ", Android Wi-Fi on" : "");
     link.Run(); // Until SIGINT / SIGTERM.
+    control = nullptr;
+    server.Stop();
     g_link = nullptr;
     Log("mycam-companion: stopped");
     return 0;
