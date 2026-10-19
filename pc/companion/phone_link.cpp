@@ -527,7 +527,7 @@ void PhoneLink::HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const u
             // No config received (some encoders only put SPS/PPS inside key frames). The decoder reads
             // the real size from the SPS and reports a format change, so the size here is only a hint.
             // After a failed init, retry (and log) at most every 2 s instead of on every frame.
-            if (lastDecoderFailure_ && GetTickCount64() - lastDecoderFailure_ < 2000) return;
+            if (lastDecoderFailure_ && NowMs() - lastDecoderFailure_ < 2000) return;
             uint32_t w = configWidth_ ? configWidth_ : 1920, h = configHeight_ ? configHeight_ : 1080;
             if (InitDecoder(w, h, " without config (size is a hint)") < 0) return;
             waitKeyFrame_ = true;
@@ -605,7 +605,7 @@ long PhoneLink::InitDecoder(uint32_t width, uint32_t height, const char* why) {
     const long hr = decoder_.Init(width, height, [this](const H264Decoder::Nv12View& f) { OnDecodedFrame(f); },
                                !gpuDecodeFailed_);
     Log("decoder: init %ux%u%s on the %s -> 0x%08X", width, height, why, decoder_.OnGpu() ? "GPU" : "CPU", unsigned(hr));
-    lastDecoderFailure_ = FAILED(hr) ? GetTickCount64() : 0;
+    lastDecoderFailure_ = hr < 0 ? NowMs() : 0; // hr < 0: FAILED(hr)
     return hr;
 }
 
