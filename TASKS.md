@@ -90,8 +90,12 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
       `cpack` (CI artifact): daemon, udev rule generated from kAndroidVendors[], v4l2loopback options +
       load at boot, systemd user service. Reader detection verified on hardware (STOP 4 s after the
       last app closes MyCam). `mycam-companion --pair` shows the iPhone QR code from the running service
-      (control socket in $XDG_RUNTIME_DIR). Android (USB + Wi-Fi) on Linux: deferred until an Android phone is at hand. No Android phone on the Linux side yet, so the iPhone
-      path is next and USB stays unverified until someone with one tests it
+      (control socket in $XDG_RUNTIME_DIR). All on main (2026-10-20); 1.6.0 ships it as a preview.
+      GUI phase 4a done (2026-10-20): `mycam-tray`, an AppIndicator tray with the Windows tray's icons and
+      menu, over the control socket; verified on Ubuntu 24.04 with the iPhone (status, pause, mirror, front
+      camera, Connect an iPhone window). Next: 4b, the settings window on a shared XP drawing kit
+      (Direct2D on Windows, Cairo/Pango on Linux; needs saif's review and a Windows test). Android (USB +
+      Wi-Fi) on Linux: last, once an Android phone is at hand
 
 ## Backlog
 

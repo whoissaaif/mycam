@@ -17,7 +17,8 @@ target_compile_options(mycam_video PRIVATE -Wall -Wextra)
 
 # The page files and status pictures, compiled in (companion.rc's RCDATA on Windows).
 set(WEB_ASSETS ${CMAKE_CURRENT_BINARY_DIR}/web_assets.cpp)
-file(GLOB WEB_FILES ${CMAKE_CURRENT_SOURCE_DIR}/companion/web/* ${CMAKE_CURRENT_SOURCE_DIR}/companion/res/frame_*.png)
+file(GLOB WEB_FILES ${CMAKE_CURRENT_SOURCE_DIR}/companion/web/* ${CMAKE_CURRENT_SOURCE_DIR}/companion/res/frame_*.png
+    ${CMAKE_CURRENT_SOURCE_DIR}/companion/res/tray_*.ico)
 add_custom_command(OUTPUT ${WEB_ASSETS}
     COMMAND ${CMAKE_COMMAND} -DSRC=${CMAKE_CURRENT_SOURCE_DIR} -DOUT=${WEB_ASSETS}
             -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_assets.cmake
@@ -29,6 +30,8 @@ add_custom_command(OUTPUT ${WEB_ASSETS}
 add_executable(mycam-companion
     companion/main_linux.cpp
     companion/control_posix.cpp
+    companion/control_proto.cpp
+    companion/status_text.cpp
     companion/phone_link.cpp
     companion/phone_link_usb_posix.cpp
     companion/phone_link_wifi.cpp
@@ -49,6 +52,24 @@ target_link_libraries(mycam-companion PRIVATE mycam_video PkgConfig::LIBUSB Open
 target_compile_options(mycam-companion PRIVATE -Wall)
 install(TARGETS mycam-companion RUNTIME DESTINATION bin)
 
+# The tray icon (phase 4a): its own program in the desktop session, talking to the daemon over its socket.
+# Built when GTK 3 and AppIndicator are there (libgtk-3-dev libayatana-appindicator3-dev); CI and the .deb
+# always have them.
+pkg_check_modules(TRAY IMPORTED_TARGET gtk+-3.0 ayatana-appindicator3-0.1)
+if(TRAY_FOUND)
+    add_executable(mycam-tray companion/tray_linux.cpp companion/control_proto.cpp third_party/qrcodegen/qrcodegen.cpp
+        ${WEB_ASSETS})
+    target_include_directories(mycam-tray PRIVATE companion)
+    target_link_libraries(mycam-tray PRIVATE PkgConfig::TRAY)
+    target_compile_options(mycam-tray PRIVATE -Wall)
+    install(TARGETS mycam-tray RUNTIME DESTINATION bin)
+    install(FILES linux/mycam-tray.desktop DESTINATION /etc/xdg/autostart)
+    install(FILES linux/mycam-tray.desktop DESTINATION share/applications RENAME mycam.desktop)
+    install(FILES ../design/assets/app-256.png DESTINATION share/icons/hicolor/256x256/apps RENAME mycam.png)
+else()
+    message(STATUS "No GTK 3 / AppIndicator: building without mycam-tray")
+endif()
+
 option(MYCAM_BUILD_TOOLS "Build developer tools (v4l2_play)" ON)
 if(MYCAM_BUILD_TOOLS)
     add_executable(v4l2_play tools/v4l2_play.cpp)
@@ -60,6 +81,7 @@ if(MYCAM_BUILD_TESTS)
     enable_testing()
     add_executable(mycam_tests tests/tests.cpp companion/packet_parser.cpp companion/wifi_crypto_openssl.cpp
         companion/wifi_crypto_common.cpp companion/marquee.cpp companion/preview_convert.cpp companion/status_text.cpp
+        companion/control_proto.cpp
         companion/web_proto.cpp vcam/frame_transform.cpp)
     target_link_libraries(mycam_tests PRIVATE OpenSSL::Crypto)
     target_compile_options(mycam_tests PRIVATE -Wall)

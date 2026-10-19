@@ -565,6 +565,15 @@ The shared `PhoneLink`, `SessionLoop` and `WebServer` build on both. `mycam-comp
 Linux: the iPhone page is served (QR code in the terminal with `--pair`), USB and Android Wi-Fi are built
 but not yet tried on a phone.
 
+**GUI, phase 4a (2026-10-20):** `mycam-tray` (`tray_linux.cpp`), a separate program in the desktop session,
+so the camera service stays headless. It shows the Windows tray icons (the same `.ico` files, embedded) and
+the Windows tray menu through AppIndicator, which Ubuntu's dock shows out of the box. The daemon does the
+menu logic and sends one status line on every change (`control_proto.h`); menu clicks go back as commands
+on the same control socket, which now serves each client on its own thread (a tray and `--pair` at once).
+Mirror/Fill are saved in the store like on Windows. The "Connect an iPhone" window is plain GTK until 4b.
+**Phase 4b, next:** the settings window, sharing the Windows page code through a cross-platform XP drawing
+kit (Direct2D on Windows, Cairo/Pango on Linux) — decided 2026-10-20 over a separate Linux-only copy.
+
 ---
 
 ## Suggested order

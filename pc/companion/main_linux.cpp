@@ -1,7 +1,7 @@
 // mycam-companion on Linux (docs/LINUX-SUPPORT.md): a headless daemon. It runs the same PhoneLink as the
 // Windows tray app (USB, Android Wi-Fi and the iPhone page, one session at a time) and writes the video into a
-// v4l2loopback camera. No GUI yet: status goes to the log (stderr), and --pair shows the iPhone QR code in the
-// terminal (from a running daemon, through its control socket: control_posix.h).
+// v4l2loopback camera. Headless: status goes to the log (stderr) and to mycam-tray (tray_linux.cpp) through
+// the control socket (control_posix.h), and --pair shows the iPhone QR code in the terminal.
 //
 //   mycam-companion --daemon [--device /dev/video10] [--size 1280x720] [--pair] [--wifi]
 //   mycam-companion --pair
@@ -134,8 +134,13 @@ int main(int argc, char** argv) {
     // apps at all: with exclusive_caps, v4l2loopback offers a camera only once a frame has been written.
     link.SetStatusImages(LoadStatusImage(kImagePaused), LoadStatusImage(kImageWaiting));
     link.SetWireless(wifi);
+    uint64_t mirror = 0, fill = 0; // The tray's picture options, kept across restarts.
+    StoreGetU64("", "Mirror", &mirror);
+    StoreGetU64("", "Fill", &fill);
+    link.SetMirror(mirror != 0);
+    link.SetFill(fill != 0);
     if (pair) link.StartWebPairing(0);
-    ControlServer server(&link);
+    ControlServer server(&link, mirror != 0, fill != 0);
     if (server.Start()) control = &server;
     Log("mycam-companion: camera %s at %ux%u%s", device.c_str(), width, height, wifi ? ", Android Wi-Fi on" : "");
     link.Run(); // Until SIGINT / SIGTERM.
