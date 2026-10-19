@@ -879,7 +879,10 @@ class WebcamService : Service() {
             flags = (lastCameraInfo!!.flags and (Protocol.CAM_TORCH_ON or Protocol.CAM_FOCUS_LOCKED).inv()) or
                 (if (c.torch && lastCameraInfo!!.flags and Protocol.CAM_TORCH_AVAILABLE != 0) Protocol.CAM_TORCH_ON else 0) or
                 (if (c.focusLocked && lastCameraInfo!!.flags and Protocol.CAM_HAS_AUTOFOCUS != 0) Protocol.CAM_FOCUS_LOCKED else 0),
-        ) ?: Protocol.CameraInfo(c.quality, c.fps, (c.zoom * 100).toInt(), 100, 100, c.ev, 0, 0, 0, 0, 0, 0, 0)
+        )
+            // No camera opened yet, so the ranges are placeholders (zoom 1-1, EV 0-0): report values inside them,
+            // not a saved zoom/EV outside them (#16). The real ones follow once the camera opens.
+            ?: Protocol.CameraInfo(c.quality, c.fps, 100, 100, 100, 0, 0, 0, 0, 0, 0, 0, 0)
         send(Protocol.TYPE_CAMERA, 0, 0, info.encode())
     }
 
