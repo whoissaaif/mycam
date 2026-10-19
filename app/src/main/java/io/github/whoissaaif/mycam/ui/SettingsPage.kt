@@ -152,7 +152,8 @@ private fun VideoDropdowns(state: WebcamService.UiState, onCommand: (Int, Int) -
     val info = state.cameraInfo
     val settings = state.camera
     val reported = info != null && info.width > 0
-    val has4K = info == null || info.flags and Protocol.CAM_HAS_4K != 0
+    // Only once the camera has reported it (#11): no info yet must not offer 4K on a phone that can't do it.
+    val has4K = info != null && info.flags and Protocol.CAM_HAS_4K != 0
     val qualityAvailable = { q: Int -> q != Protocol.QUALITY_4K || has4K }
     val mask = if (reported) info.fpsMask(settings.quality) else Protocol.FPS_30
     val rateAvailable = { i: Int ->

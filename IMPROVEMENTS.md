@@ -99,6 +99,7 @@ both apps; each choice is enabled only if the camera and encoder can do it (CAME
 virtual camera offers 1080p120 and 720p120 to apps. Noise is the same at 60 and 120 (same exposure limit).
 Availability is worked out per quality (CAMERA frame-rate masks, 21-byte payload), by the same
 `modeFor()` check that starts the camera, so a phone that only does 4K30 never offers 60/120 at 4K.
+Before the camera has reported anything, the phone's Resolution list now leaves 4K off too (#11).
 720p / 1080p / 4K, and 60 fps where the phone supports it. Add a protocol command to request a mode, and
 advertise the matching media types from the virtual camera.
 
