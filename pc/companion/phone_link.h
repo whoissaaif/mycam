@@ -248,6 +248,7 @@ private:
 
     H264Decoder decoder_;
     bool gpuDecodeFailed_ = false; // Once the GPU has failed a key frame, the CPU decodes for the rest of this run.
+    uint64_t lastDecoderFailure_ = 0; // GetTickCount64() of the last failed decoder init (0: none), to back off retries.
     FrameWriter writer_;
     LinkStatus status_;
 };

@@ -128,6 +128,9 @@ run. Measured on an RTX 3050 with a synthetic 4K30 stream at 38 Mbps: decode+cop
 leaves room. Still open from #8: the phone's bitrate control can't tell a busy PC from a full link, and
 decoding still runs on the USB thread.
 
+Decoder init failures (#15, fixed): a failed `decoder_.Init` used to be retried and logged on every incoming
+frame (30-120 log lines a second); it now waits 2 s between attempts.
+
 ---
 
 ## 4. Phone app

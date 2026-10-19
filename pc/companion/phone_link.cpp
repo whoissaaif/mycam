@@ -354,6 +354,7 @@ void PhoneLink::BeginSession(bool wireless, const std::string& phoneName) {
     keyFrameWanted_ = false;
     csd_.clear();
     decoder_.Reset();
+    lastDecoderFailure_ = 0;
     status_ = LinkStatus{};
     status_.state = LinkState::Waiting;
     status_.wireless = wireless;
@@ -552,6 +553,8 @@ void PhoneLink::HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const u
         if (!decoder_.Ready()) {
             // No config received (some encoders only put SPS/PPS inside key frames). The decoder reads
             // the real size from the SPS and reports a format change, so the size here is only a hint.
+            // After a failed init, retry (and log) at most every 2 s instead of on every frame.
+            if (lastDecoderFailure_ && GetTickCount64() - lastDecoderFailure_ < 2000) return;
             uint32_t w = configWidth_ ? configWidth_ : 1920, h = configHeight_ ? configHeight_ : 1080;
             if (FAILED(InitDecoder(w, h, " without config (size is a hint)"))) return;
             waitKeyFrame_ = true;
@@ -632,6 +635,7 @@ HRESULT PhoneLink::InitDecoder(uint32_t width, uint32_t height, const char* why)
     HRESULT hr = decoder_.Init(width, height, [this](const H264Decoder::Nv12View& f) { OnDecodedFrame(f); },
                                !gpuDecodeFailed_);
     Log("decoder: init %ux%u%s on the %s -> 0x%08X", width, height, why, decoder_.OnGpu() ? "GPU" : "CPU", unsigned(hr));
+    lastDecoderFailure_ = FAILED(hr) ? GetTickCount64() : 0;
     return hr;
 }
 
