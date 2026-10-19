@@ -13,17 +13,21 @@ namespace mycam {
 
 namespace {
 
-// Enumerates the fixed format list through IPin::EnumMediaTypes; separate from IAMStreamConfig's
+// Enumerates the pin's format list through IPin::EnumMediaTypes; separate from IAMStreamConfig's
 // GetStreamCaps, which most apps use instead, but some graph-building code still walks this.
 class MediaTypeEnumerator : public RuntimeClass<RuntimeClassFlags<ClassicCom>, IEnumMediaTypes, FtmBase> {
 public:
-    HRESULT RuntimeClassInitialize() { return S_OK; }
+    HRESULT RuntimeClassInitialize(const DShowFormat* formats, size_t count) {
+        std::copy(formats, formats + count, formats_);
+        count_ = count;
+        return S_OK;
+    }
 
     IFACEMETHODIMP Next(ULONG count, AM_MEDIA_TYPE** types, ULONG* fetched) override {
         if (!types) return E_POINTER;
         ULONG n = 0;
-        while (n < count && index_ < ARRAYSIZE(kDShowFormats)) {
-            AM_MEDIA_TYPE* mt = NewMediaType(kDShowFormats[index_]);
+        while (n < count && index_ < count_) {
+            AM_MEDIA_TYPE* mt = NewMediaType(formats_[index_]);
             if (!mt) break;
             types[n++] = mt;
             ++index_;
@@ -32,8 +36,8 @@ public:
         return n == count ? S_OK : S_FALSE;
     }
     IFACEMETHODIMP Skip(ULONG count) override {
-        index_ = std::min<size_t>(index_ + count, ARRAYSIZE(kDShowFormats));
-        return index_ < ARRAYSIZE(kDShowFormats) ? S_OK : S_FALSE;
+        index_ = std::min<size_t>(index_ + count, count_);
+        return index_ < count_ ? S_OK : S_FALSE;
     }
     IFACEMETHODIMP Reset() override {
         index_ = 0;
@@ -42,7 +46,7 @@ public:
     IFACEMETHODIMP Clone(IEnumMediaTypes** out) override {
         if (!out) return E_POINTER;
         ComPtr<MediaTypeEnumerator> clone;
-        HRESULT hr = Microsoft::WRL::MakeAndInitialize<MediaTypeEnumerator>(&clone);
+        HRESULT hr = Microsoft::WRL::MakeAndInitialize<MediaTypeEnumerator>(&clone, formats_, count_);
         if (SUCCEEDED(hr)) {
             clone->index_ = index_;
             hr = clone.CopyTo(out);
@@ -51,6 +55,8 @@ public:
     }
 
 private:
+    DShowFormat formats_[kVcamFormatCount] = {};
+    size_t count_ = 0;
     size_t index_ = 0;
 };
 
@@ -58,7 +64,9 @@ private:
 
 HRESULT OutputPin::RuntimeClassInitialize(Filter* filter) {
     filter_ = filter;
-    current_ = kDShowFormats[0];
+    // Only the formats the phone reported (#10), read each time an app creates the filter.
+    offeredCount_ = OfferedFormats(ReadVcamModes(), offered_);
+    current_ = offered_[0];
     frameDuration_ = 10'000'000LL / current_.fps;
     AM_MEDIA_TYPE* defaultType = NewMediaType(current_);
     if (!defaultType) return E_OUTOFMEMORY;
@@ -96,7 +104,8 @@ IFACEMETHODIMP OutputPin::Connect(IPin* receivePin, const AM_MEDIA_TYPE* mt) {
     DShowLog("OutputPin::Connect(default %ux%u@%u) = 0x%08X", current_.width, current_.height, current_.fps,
              unsigned(hr));
     if (SUCCEEDED(hr)) return hr;
-    for (const auto& format : kDShowFormats) {
+    for (size_t i = 0; i < offeredCount_; ++i) {
+        const DShowFormat& format = offered_[i];
         AM_MEDIA_TYPE* candidate = NewMediaType(format);
         if (!candidate) continue;
         hr = TryConnect(receivePin, *candidate);
@@ -205,7 +214,7 @@ IFACEMETHODIMP OutputPin::QueryAccept(const AM_MEDIA_TYPE* mt) {
 IFACEMETHODIMP OutputPin::EnumMediaTypes(IEnumMediaTypes** enumerator) {
     if (!enumerator) return E_POINTER;
     ComPtr<MediaTypeEnumerator> e;
-    HRESULT hr = Microsoft::WRL::MakeAndInitialize<MediaTypeEnumerator>(&e);
+    HRESULT hr = Microsoft::WRL::MakeAndInitialize<MediaTypeEnumerator>(&e, offered_, offeredCount_);
     if (FAILED(hr)) return hr;
     return e.CopyTo(enumerator);
 }
@@ -252,17 +261,17 @@ IFACEMETHODIMP OutputPin::GetFormat(AM_MEDIA_TYPE** mt) {
 
 IFACEMETHODIMP OutputPin::GetNumberOfCapabilities(int* count, int* size) {
     if (!count || !size) return E_POINTER;
-    *count = int(ARRAYSIZE(kDShowFormats));
+    *count = int(offeredCount_);
     *size = sizeof(VIDEO_STREAM_CONFIG_CAPS);
     return S_OK;
 }
 
 IFACEMETHODIMP OutputPin::GetStreamCaps(int index, AM_MEDIA_TYPE** mt, BYTE* caps) {
     if (!mt || !caps) return E_POINTER;
-    if (index < 0 || index >= int(ARRAYSIZE(kDShowFormats))) return S_FALSE;
-    AM_MEDIA_TYPE* out = NewMediaType(kDShowFormats[index]);
+    if (index < 0 || index >= int(offeredCount_)) return S_FALSE;
+    AM_MEDIA_TYPE* out = NewMediaType(offered_[index]);
     if (!out) return E_OUTOFMEMORY;
-    FillStreamCaps(kDShowFormats[index], reinterpret_cast<VIDEO_STREAM_CONFIG_CAPS*>(caps));
+    FillStreamCaps(offered_[index], reinterpret_cast<VIDEO_STREAM_CONFIG_CAPS*>(caps));
     *mt = out;
     return S_OK;
 }

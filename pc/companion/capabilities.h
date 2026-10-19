@@ -4,6 +4,7 @@
 
 #include <algorithm>
 
+#include "../common/vcam_modes.h"
 #include "protocol.h"
 
 namespace mycam::caps {
@@ -48,6 +49,16 @@ inline bool TorchEnabled(bool k, const proto::CameraInfo& c) { return k && (c.fl
 inline bool AutoEnabled(bool k, const proto::CameraInfo& c) {
     return k && (c.zoomX100 != std::clamp<uint16_t>(100, c.zoomMinX100, c.zoomMaxX100) || c.ev != 0 ||
                  (c.flags & (proto::kCamTorchOn | proto::kCamFocusLocked)));
+}
+
+// The virtual camera's extra formats (kMode* bits, #10) this phone supports, at any quality: 0 until its
+// camera has started and reported them.
+inline uint32_t VcamModes(const proto::CameraInfo& c) {
+    if (!c.valid || c.width == 0) return 0;
+    const uint8_t m720 = proto::FpsMask(c, proto::kQuality720p), m1080 = proto::FpsMask(c, proto::kQuality1080p);
+    return ((c.flags & proto::kCamHas4K) ? kMode4K30 : 0) | ((m1080 & proto::kFps60Bit) ? kMode1080p60 : 0) |
+           ((m720 & proto::kFps60Bit) ? kMode720p60 : 0) | ((m1080 & proto::kFps120Bit) ? kMode1080p120 : 0) |
+           ((m720 & proto::kFps120Bit) ? kMode720p120 : 0);
 }
 
 // "1080p" / "4K" for a picture height.

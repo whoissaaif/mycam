@@ -109,6 +109,8 @@ STDAPI DllRegisterServer() {
     HRESULT hrCo = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     HRESULT hr = mycam::RegisterWithFilterMapper();
     if (SUCCEEDED(hrCo)) CoUninitialize();
+    // Where the unelevated companion leaves the phone's modes (#10).
+    if (SUCCEEDED(hr)) hr = mycam::CreateVcamModesKey();
     return hr;
 }
 
@@ -116,6 +118,7 @@ STDAPI DllUnregisterServer() {
     HRESULT hrCo = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     mycam::UnregisterFromFilterMapper();
     if (SUCCEEDED(hrCo)) CoUninitialize();
+    mycam::DeleteVcamModesKey();
 
     LSTATUS st = RegDeleteTreeW(HKEY_LOCAL_MACHINE, mycam::ClsidKey().c_str());
     return (st == ERROR_SUCCESS || st == ERROR_FILE_NOT_FOUND) ? S_OK : HRESULT_FROM_WIN32(st);

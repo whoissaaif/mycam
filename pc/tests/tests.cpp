@@ -714,6 +714,35 @@ void TestCapabilities() {
     CHECK(wcscmp(caps::QualityLabel(1080), L"1080p") == 0 && wcscmp(caps::QualityLabel(2160), L"4K") == 0);
 }
 
+// --- pc/common/vcam_modes: what the virtual cameras offer apps (#10) --------------------------------
+
+void TestVcamModes() {
+    VcamFormat f[kVcamFormatCount];
+    // No phone has reported yet: the 30 fps formats up to 1080p, default 1080p30.
+    size_t n = OfferedFormats(0, f);
+    CHECK(n == 4);
+    CHECK(f[0].width == 1920 && f[0].height == 1080 && f[0].fps == 30);
+    for (size_t i = 0; i < n; ++i) CHECK(f[i].fps == 30 && f[i].height <= 1080);
+    CHECK(OfferedFormats(kAllVcamModes, f) == kVcamFormatCount);
+    n = OfferedFormats(kMode1080p60, f);
+    CHECK(n == 5 && f[2].width == 1920 && f[2].fps == 60); // List order kept.
+
+    proto::CameraInfo c;
+    CHECK(caps::VcamModes(c) == 0); // No CameraInfo.
+    c.valid = true;
+    c.flags = proto::kCamHas4K | proto::kCamHas60Fps;
+    CHECK(caps::VcamModes(c) == 0); // Camera not started: nothing reported yet.
+    c.width = 1920;
+    c.height = 1080;
+    CHECK(caps::VcamModes(c) == (kMode4K30 | kMode1080p60 | kMode720p60)); // Pre-1.3.2 phone: overall flags.
+    c.hasFpsModes = true;
+    c.fpsModes[proto::kQuality720p] = proto::kFps30Bit | proto::kFps60Bit | proto::kFps120Bit;
+    c.fpsModes[proto::kQuality1080p] = proto::kFps30Bit | proto::kFps60Bit;
+    c.fpsModes[proto::kQuality4K] = proto::kFps30Bit;
+    c.flags = 0;
+    CHECK(caps::VcamModes(c) == (kMode1080p60 | kMode720p60 | kMode720p120)); // Per quality; no 4K flag.
+}
+
 void TestUiModel() {
     using namespace mycam::ui;
     auto make = [](int id, Kind kind, int parent, int set = kSetNone, bool selected = false, bool enabled = true) {
@@ -1248,6 +1277,7 @@ int main() {
     printf("ui flow layout\n");            TestUiFlow();
     printf("ui motion\n");                 TestUiMotion();
     printf("ui capabilities\n");           TestCapabilities();
+    printf("vcam modes\n");                TestVcamModes();
     printf("ui element model\n");          TestUiModel();
     printf("wi-fi discovery list\n");      TestDiscovery();
     printf("preview convert\n");           TestPreviewConvert();

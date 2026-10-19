@@ -29,6 +29,10 @@ Camera2 → H.264 encoder ──────────────────
   of `pc/vcam/`'s Frame Server media source — `MFCreateVirtualCamera` is Windows 11-only. It reads the
   same `Global\MyCamFrame` shared memory; the installer registers whichever one the Windows build
   supports. See [docs/WINDOWS10-SUPPORT.md](WINDOWS10-SUPPORT.md).
+* **Formats offered to apps** come from the phone (#10): 30 fps up to 1080p always, plus 4K30 and 60/120
+  fps only once a phone has reported them. The companion writes them as a bitmask to
+  `HKLM\SOFTWARE\MyCam\VCamModes` (`pc/common/vcam_modes.h`; `DllRegisterServer` creates the key and lets
+  interactive users write it), and either camera reads it when an app opens it.
 
 ## iPhone
 

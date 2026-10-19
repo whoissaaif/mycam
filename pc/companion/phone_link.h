@@ -149,6 +149,7 @@ private:
     HRESULT InitDecoder(uint32_t width, uint32_t height, const char* why);
     void OnDecodedFrame(const H264Decoder::Nv12View& frame);
     void Publish();
+    void UpdateVcamModes();
     void OnInTransfer(libusb_transfer* transfer);
     void LogStats(uint64_t now);
     void SyncLockPaused();
@@ -159,6 +160,7 @@ private:
     StatusCallback onStatus_;
     std::function<void()> onNeedDriver_;
     uint64_t lastDriverRequest_ = 0;
+    uint32_t vcamModes_ = UINT32_MAX; // Last kMode* mask written for the virtual camera (#10); MAX: none yet.
     std::atomic<bool> quit_{false};
     std::atomic<int> pendingFacing_{-1};
     std::atomic<bool> mirror_{false};
