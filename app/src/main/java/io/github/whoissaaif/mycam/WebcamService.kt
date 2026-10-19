@@ -1067,6 +1067,9 @@ class WebcamService : Service() {
         accessory = null
         wifiLock?.release()
         wifiLock = null
+        // Held for a link only: with wireless mode on the service outlives the link, and the phone must sleep.
+        wakeLock?.release()
+        wakeLock = null
         orientationListener?.disable()
         cameraBlocked = false
         gatedPcId = null
@@ -1114,8 +1117,6 @@ class WebcamService : Service() {
         pendingAnswer?.invoke(false) // Unblocks a pairing that is waiting for the user.
         pendingAnswer = null
         closeLink()
-        wakeLock?.release()
-        wakeLock = null
         _state.update { UiState(facing = facing, paused = paused, camera = camSettings, pairedPcs = pairedPcs.list()) }
         super.onDestroy()
     }
