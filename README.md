@@ -50,6 +50,7 @@ code on an iPhone and nothing even needs installing.
 | | |
 |---|---|
 | **Windows (PC)** | Download `MyCam-Setup-X.Y.Z.exe` from the [latest release](https://github.com/whoissaaif/mycam/releases/latest) and run it. |
+| **Linux (PC, preview)** | Download `mycam_X.Y.Z_amd64.deb` from the same release — see the [Linux guide](pc/linux/README.md). Ubuntu 24.04; no settings window yet. |
 | **Android** | Download `MyCam-X.Y.Z.apk` from the same release and install it (or build from source — see [Architecture → Build and test](docs/ARCHITECTURE.md#build-and-test-from-source)). |
 | **iPhone / iPad** | Nothing to install — see [iPhone](#iphone) below. |
 

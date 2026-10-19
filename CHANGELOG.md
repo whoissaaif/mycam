@@ -3,6 +3,23 @@
 Android app and PC companion share one version (SemVer: PATCH = fixes, MINOR = features, MAJOR = breaking
 or protocol changes). Releases with their installers: https://github.com/whoissaaif/mycam/releases
 
+## 1.6.0 — Linux (preview)
+
+- **Linux PC companion, a preview.** `mycam_1.6.0_amd64.deb` for Ubuntu 24.04 (and similar): a background
+  service that shows your phone as the **MyCam** camera in Zoom, OBS, Discord and browsers, through
+  v4l2loopback. The phone camera only runs while an app is watching. Pair an iPhone with
+  `mycam-companion --pair`. Tested with an iPhone over Wi-Fi; Android (USB and Wi-Fi) is built in but not
+  tested on Linux yet. No settings window yet. Guide: `pc/linux/README.md`. (#28, #30, #31, #32, #33, #36, #37)
+- **Android: the phone sleeps again after a Wi-Fi session.** The wake lock is released when a link ends,
+  not only when the app closes. (#40)
+- **Android: 4K is only offered once the camera reports it**, instead of on every phone until its camera
+  first opened. (#53)
+- **Android: zoom and brightness stay in range** before the camera has opened once. (#52)
+- **Android: a Privacy Policy link** in Settings → About. (#50)
+- **PC: a failing decoder no longer floods the log**; it retries every 2 s instead of on every frame. (#51)
+
+No protocol changes: 1.6.0 phones and PCs work with 1.5.x.
+
 ## 1.5.1 — fixes
 
 - **Windows 11: no more black camera.** A companion that started before any app opened MyCam (at login,
