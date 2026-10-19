@@ -105,6 +105,8 @@ advertise the matching media types from the virtual camera.
 ### 3.3 Camera controls (M): ✅ (1.3), plus an Auto reset button (1.3.1). Lens choice via zoom ratio only where the phone exposes it (the test phone: 1–10×, no ultrawide).
 Zoom, tap-to-focus, exposure, torch, and lens choice (ultrawide / telephoto). Phone UI first; exposing them
 to PC apps through `IKsControl` is a stretch goal.
+Before the camera has opened, the CAMERA packet reports zoom 1.00 and EV 0 inside its placeholder ranges, not
+a saved value outside them (#16).
 
 ### 3.4 Lower latency (M): 🟡 PC side done (1.3–1.3.1): delivery on arrival, one less copy, adaptive bitrate when the USB link is the limit. Measured: PC decode+copy 3–12 ms; **phone capture→encoded 150–230 ms** (MediaTek encoder buffers ~3 frames). Next: try encoder low-latency vendor keys, fewer camera buffers, I-frame interval.
 Decode on the GPU (D3D11 / DXVA) instead of the CPU (built, see below), cut extra frame copies, and add a
