@@ -39,6 +39,7 @@ add_executable(mycam-companion
     companion/wifi_crypto_common.cpp
     companion/packet_parser.cpp
     companion/marquee.cpp
+    companion/status_images_ffmpeg.cpp
     third_party/qrcodegen/qrcodegen.cpp
     ${WEB_ASSETS})
 target_include_directories(mycam-companion PRIVATE companion)

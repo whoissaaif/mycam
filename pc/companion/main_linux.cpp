@@ -16,6 +16,7 @@
 #include "log.h"
 #include "phone_link.h"
 #include "platform.h"
+#include "status_images.h"
 
 using namespace mycam;
 
@@ -121,6 +122,9 @@ int main(int argc, char** argv) {
     sigaction(SIGTERM, &sa, nullptr);
     signal(SIGPIPE, SIG_IGN); // A phone that drops its connection mid-send is a failed send, not a crash.
 
+    // "Waiting for the phone" / "Camera paused" while there is no live video. They also make MyCam appear in
+    // apps at all: with exclusive_caps, v4l2loopback offers a camera only once a frame has been written.
+    link.SetStatusImages(LoadStatusImage(kImagePaused), LoadStatusImage(kImageWaiting));
     link.SetWireless(wifi);
     if (pair) link.StartWebPairing(0);
     Log("mycam-companion: camera %s at %ux%u%s", device.c_str(), width, height, wifi ? ", Android Wi-Fi on" : "");

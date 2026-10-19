@@ -1,10 +1,13 @@
 #include "frame_writer_v4l2.h"
 
+#include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/videodev2.h>
 #include <string.h>
+#include <sys/inotify.h>
 #include <sys/ioctl.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
 #include "../vcam/frame_transform.h"
@@ -39,7 +42,67 @@ bool FrameWriter::EnsureOpen() {
     return false;
 }
 
-FrameWriter::~FrameWriter() { Close(); }
+FrameWriter::~FrameWriter() {
+    Close();
+    if (inotify_ >= 0) close(inotify_);
+}
+
+bool FrameWriter::ConsumerActive(uint64_t) {
+    if (!EnsureOpen()) return false;
+    PollReaders(NowMs());
+    return readers_ > 0;
+}
+
+void FrameWriter::PollReaders(uint64_t now) {
+    if (inotify_ < 0) {
+        inotify_ = inotify_init1(IN_NONBLOCK | IN_CLOEXEC);
+        if (inotify_ >= 0 && inotify_add_watch(inotify_, device_.c_str(), IN_OPEN | IN_CLOSE) < 0) {
+            close(inotify_);
+            inotify_ = -1;
+        }
+    }
+    bool changed = readers_ < 0 || inotify_ < 0; // Without inotify, the safety-net rescan below is all there is.
+    alignas(inotify_event) char buf[4096];
+    while (inotify_ >= 0 && read(inotify_, buf, sizeof(buf)) > 0) changed = true;
+    // A scan costs ~15 ms (every fd of every process), so only after an open or close, plus a slow safety net
+    // in case an event was missed (the queue overflowed, or a reader was already there).
+    if (!changed && now - lastScan_ < 10000) return;
+    lastScan_ = now;
+    const int count = CountReaders();
+    if (count != readers_) {
+        if (count > 0) Log("camera: %d app%s watching", count, count == 1 ? "" : "s");
+        else if (readers_ > 0) Log("camera: no app watching");
+    }
+    readers_ = count;
+}
+
+int FrameWriter::CountReaders() const {
+    struct stat dev;
+    if (stat(device_.c_str(), &dev) != 0) return 0;
+    const std::string self = std::to_string(getpid());
+    int count = 0;
+    DIR* proc = opendir("/proc");
+    if (!proc) return 0;
+    while (dirent* p = readdir(proc)) {
+        if (p->d_name[0] < '1' || p->d_name[0] > '9' || self == p->d_name) continue; // Processes, not us.
+        const std::string fdDir = std::string("/proc/") + p->d_name + "/fd";
+        DIR* fds = opendir(fdDir.c_str()); // Other users' processes are unreadable: apps run as this user.
+        if (!fds) continue;
+        bool holds = false;
+        while (dirent* f = readdir(fds)) {
+            struct stat st;
+            if (f->d_name[0] != '.' && stat((fdDir + "/" + f->d_name).c_str(), &st) == 0 && S_ISCHR(st.st_mode) &&
+                st.st_rdev == dev.st_rdev) {
+                holds = true;
+                break;
+            }
+        }
+        closedir(fds);
+        count += holds;
+    }
+    closedir(proc);
+    return count;
+}
 
 bool FrameWriter::Open(const std::string& device, uint32_t width, uint32_t height, std::string* why) {
     Close();
@@ -68,6 +131,7 @@ bool FrameWriter::Open(const std::string& device, uint32_t width, uint32_t heigh
     }
     width_ = width;
     height_ = height;
+    device_ = device;
     fitted_.resize(size_t(width) * height * 3 / 2);
     out_.resize(fitted_.size());
     return true;

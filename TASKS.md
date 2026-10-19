@@ -85,7 +85,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
       the real machine: picture shows, upright when the phone rotates, normal colours. Also verified in OBS
       (PPA build; Ubuntu 24.04's packaged OBS 30.0.2 crashes on any v4l2loopback device, `free(): invalid
       pointer`, even an ffmpeg test pattern: not MyCam). The slight delay went away after unticking "Use Buffering" in
-      the OBS V4L2 source (tell Linux users that). No Android phone on the Linux side yet, so the iPhone
+      the OBS V4L2 source (tell Linux users that). The phone camera now runs only while an app has MyCam
+      open (inotify + /proc scan), and the camera shows the Windows waiting/paused pictures. No Android phone on the Linux side yet, so the iPhone
       path is next and USB stays unverified until someone with one tests it
 
 ## Backlog
