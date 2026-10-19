@@ -78,6 +78,8 @@ private:
     AM_MEDIA_TYPE currentType_{};
     bool haveType_ = false;
     DShowFormat current_{1920, 1080, 30};
+    DShowFormat offered_[kVcamFormatCount] = {}; // What this pin lists (vcam_modes.h), set once at creation.
+    size_t offeredCount_ = 0;
     LONGLONG frameDuration_ = 10'000'000 / 30;
 
     HANDLE wake_ = nullptr;

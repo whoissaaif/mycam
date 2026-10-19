@@ -6,6 +6,8 @@
 #include <string.h>
 
 #include "../common/shared_frame.h"
+#include "../common/vcam_modes.h"
+#include "capabilities.h"
 #include "log.h"
 #include "marquee.h"
 #include "protocol.h"
@@ -602,6 +604,7 @@ void PhoneLink::HandlePacket(uint8_t type, uint8_t flags, int64_t ptsUs, const u
                 status_.camera.height, status_.camera.actualFps, status_.camera.zoomX100 / 100.0,
                 status_.camera.zoomMinX100 / 100.0, status_.camera.zoomMaxX100 / 100.0, status_.camera.ev,
                 status_.camera.flags);
+            UpdateVcamModes();
             Publish();
         }
         break;
@@ -637,6 +640,16 @@ HRESULT PhoneLink::InitDecoder(uint32_t width, uint32_t height, const char* why)
     Log("decoder: init %ux%u%s on the %s -> 0x%08X", width, height, why, decoder_.OnGpu() ? "GPU" : "CPU", unsigned(hr));
     lastDecoderFailure_ = FAILED(hr) ? GetTickCount64() : 0;
     return hr;
+}
+
+// Tells the virtual camera which extra formats to offer apps (#10). The last phone's modes stay until
+// another phone reports different ones, so a camera opened before the phone connects still lists them.
+void PhoneLink::UpdateVcamModes() {
+    const uint32_t modes = caps::VcamModes(status_.camera);
+    if (!status_.camera.width || modes == vcamModes_) return;
+    const LSTATUS st = WriteVcamModes(modes);
+    Log("vcam: modes 0x%02x -> %ld", unsigned(modes), long(st));
+    if (st == ERROR_SUCCESS) vcamModes_ = modes;
 }
 
 void PhoneLink::OnDecodedFrame(const H264Decoder::Nv12View& frame) {

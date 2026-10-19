@@ -100,6 +100,10 @@ virtual camera offers 1080p120 and 720p120 to apps. Noise is the same at 60 and 
 Availability is worked out per quality (CAMERA frame-rate masks, 21-byte payload), by the same
 `modeFor()` check that starts the camera, so a phone that only does 4K30 never offers 60/120 at 4K.
 Before the camera has reported anything, the phone's Resolution list now leaves 4K off too (#11).
+The virtual camera now lists only what the phone reported too (#10): 30 fps up to 1080p always, 4K30 and
+60/120 fps per quality once a phone has reported them (`HKLM\SOFTWARE\MyCam\VCamModes`, kept from the
+last phone). An app that is already open keeps its list until it reopens the camera. Still open: an app
+picking a format doesn't switch the phone's mode; the companion scales whatever the phone sends.
 720p / 1080p / 4K, and 60 fps where the phone supports it. Add a protocol command to request a mode, and
 advertise the matching media types from the virtual camera.
 

@@ -10,6 +10,7 @@
 #include <string>
 
 #include "../common/guids.h"
+#include "../common/vcam_modes.h"
 #include "media_source.h"
 
 using namespace Microsoft::WRL;
@@ -131,10 +132,12 @@ STDAPI DllRegisterServer() {
         RegSetValueExW(clsidKey, nullptr, 0, REG_SZ, reinterpret_cast<const BYTE*>(name), sizeof(name));
         RegCloseKey(clsidKey);
     }
-    return S_OK;
+    // Where the unelevated companion leaves the phone's modes (#10).
+    return mycam::CreateVcamModesKey();
 }
 
 STDAPI DllUnregisterServer() {
+    mycam::DeleteVcamModesKey();
     LSTATUS st = RegDeleteTreeW(HKEY_LOCAL_MACHINE, ClsidKey().c_str());
     return (st == ERROR_SUCCESS || st == ERROR_FILE_NOT_FOUND) ? S_OK : HRESULT_FROM_WIN32(st);
 }

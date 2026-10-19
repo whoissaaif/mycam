@@ -3,6 +3,8 @@
 #include <initguid.h>
 #include <mfvirtualcamera.h>
 
+#include "../common/vcam_modes.h"
+
 namespace mycam {
 
 namespace {
@@ -11,13 +13,6 @@ namespace {
 constexpr GUID kPinNameVideoCapture = {0xfb6c4281, 0x0353, 0x11d1, {0x90, 0x5f, 0x00, 0x00, 0xc0, 0xcc, 0x16, 0xba}};
 
 constexpr LONGLONG kSecond = 10'000'000; // 100 ns units
-
-// Offered to apps; the first is the default. 4K, 60 and 120 fps match the phone modes (1.3, 120 in 1.3.2).
-struct Format { UINT32 width, height, fps; };
-constexpr Format kFormats[] = {
-    {1920, 1080, 30}, {1280, 720, 30}, {3840, 2160, 30}, {1920, 1080, 60}, {1280, 720, 60}, {1920, 1080, 120},
-    {1280, 720, 120}, {640, 480, 30}, {640, 360, 30},
-};
 
 HRESULT CreateVideoType(UINT32 width, UINT32 height, UINT32 fps, IMFMediaType** out) {
     ComPtr<IMFMediaType> type;
@@ -300,13 +295,16 @@ HRESULT MediaSource::RuntimeClassInitialize(IMFAttributes* activatorAttributes) 
     if (FAILED(hr)) return hr;
     if (activatorAttributes) activatorAttributes->CopyAllItems(attributes_.Get());
 
-    IMFMediaType* types[ARRAYSIZE(kFormats)] = {};
-    for (size_t i = 0; i < ARRAYSIZE(kFormats); ++i) {
-        hr = CreateVideoType(kFormats[i].width, kFormats[i].height, kFormats[i].fps, &types[i]);
+    // Only the formats the phone reported (#10), read each time an app opens the camera.
+    VcamFormat formats[kVcamFormatCount];
+    const size_t count = OfferedFormats(ReadVcamModes(), formats);
+    IMFMediaType* types[kVcamFormatCount] = {};
+    for (size_t i = 0; i < count; ++i) {
+        hr = CreateVideoType(formats[i].width, formats[i].height, formats[i].fps, &types[i]);
         if (FAILED(hr)) break;
     }
     ComPtr<IMFStreamDescriptor> sd;
-    if (SUCCEEDED(hr)) hr = MFCreateStreamDescriptor(0, ARRAYSIZE(types), types, &sd);
+    if (SUCCEEDED(hr)) hr = MFCreateStreamDescriptor(0, DWORD(count), types, &sd);
     if (SUCCEEDED(hr)) {
         ComPtr<IMFMediaTypeHandler> handler;
         hr = sd->GetMediaTypeHandler(&handler);

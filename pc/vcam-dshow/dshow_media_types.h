@@ -6,15 +6,14 @@
 #include <windows.h>
 #include <dshow.h>
 
+#include "../common/vcam_modes.h"
+
 namespace mycam {
 
-// Same formats as pc/vcam/media_source.cpp's kFormats, offered through DirectShow instead of Media
-// Foundation. Keep the two lists in sync if the phone's capability set changes.
-struct DShowFormat { UINT32 width, height, fps; };
-constexpr DShowFormat kDShowFormats[] = {
-    {1920, 1080, 30}, {1280, 720, 30}, {3840, 2160, 30}, {1920, 1080, 60}, {1280, 720, 60}, {1920, 1080, 120},
-    {1280, 720, 120}, {640, 480, 30}, {640, 360, 30},
-};
+// The same formats as the Media Foundation camera (pc/common/vcam_modes.h). The pin lists only the ones
+// the phone reported (#10); MatchesKnownFormat still accepts any of them.
+using DShowFormat = VcamFormat;
+constexpr const auto& kDShowFormats = kVcamFormats;
 
 // NV12, {3231564E-0000-0010-8000-00AA00389B71} — the standard FOURCC-derived DirectShow subtype GUID,
 // same pixel layout pc/vcam/frame_reader.cpp already renders (tightly packed, Y plane then UV).
