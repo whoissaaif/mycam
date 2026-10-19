@@ -95,6 +95,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [ ] iPhone native app + usbmux transport on the PC (only if a Mac and the developer program become available) [9.2]
 ## Done
 
+- [x] The phone's Resolution list no longer offers 4K before the camera has reported it [3.2, #11]
 - [x] Before the camera opens, the CAMERA packet keeps zoom and EV inside their placeholder ranges [3.3, #16]
 - [x] A failed decoder init retries and logs at most every 2 s, not on every frame [#15]
 - [x] 4K: H.264 decodes on the GPU (D3D11/DXVA), CPU as fallback; 4K30 tested with a phone [3.4, #8]
