@@ -339,6 +339,16 @@ a {
   filter: brightness(1.05);
 }
 
+.hero .btn-primary {
+  background: #fff;
+  color: var(--blue-mid);
+  box-shadow: 0 6px 18px rgba(5, 30, 70, 0.3);
+}
+
+.hero .btn-primary:hover {
+  filter: brightness(0.97);
+}
+
 .btn-secondary {
   background: rgba(255, 255, 255, 0.92);
   color: var(--blue-mid);
@@ -879,19 +889,26 @@ a {
   .nav-bar.open .nav-links {
     display: flex;
     position: absolute;
-    top: 64px;
+    top: calc(100% + 10px);
     left: 20px;
     right: 20px;
     flex-direction: column;
     align-items: stretch;
-    background: var(--blue-dark);
-    padding: 10px;
-    border-radius: 14px;
-    gap: 2px;
+    background: rgba(11, 61, 145, 0.97);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: var(--shadow-nav);
+    padding: 8px;
+    border-radius: 18px;
+    gap: 4px;
   }
 
   .nav-bar.open .nav-links a {
-    padding: 13px 10px;
+    display: block;
+    padding: 12px 16px;
+    font-size: 1rem;
+    border-radius: 12px;
   }
 
   .nav-bar.open .nav-github {
