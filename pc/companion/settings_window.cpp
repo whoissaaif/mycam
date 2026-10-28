@@ -905,6 +905,10 @@ struct SettingsWindow::Impl {
             t.e.liveRegion = true;
             py += 8 + hint.h;
         }
+        // Off: the window stops asking for video, so the phone camera only runs for apps (#87 made the preview
+        // keep it streaming on its own).
+        py += kGap;
+        AddToggle(kShowPreview, L"Sho&w preview", PreviewOn(), kNone, x, &py, pvW);
 
         // The controls column, in a card.
         const float cx = x + pvW + colGap, cw = ctlW;
@@ -1489,6 +1493,11 @@ struct SettingsWindow::Impl {
         case kBack: model->setFacing(proto::kFacingBack); StartApplying(3, proto::kFacingBack, s); break;
         case kFront: model->setFacing(proto::kFacingFront); StartApplying(3, proto::kFacingFront, s); break;
         case kMirror: model->setMirror(!model->mirror()); break;
+        case kShowPreview:
+            if (model->setPreviewOn) model->setPreviewOn(!PreviewOn());
+            if (!PreviewOn()) ClosePreview();
+            ScheduleTimers();
+            break;
         case kFill: model->setFill(!model->fill()); break;
         case kQ720: model->command(proto::kCmdSetQuality, proto::kQuality720p); StartApplying(1, proto::kQuality720p, s); break;
         case kQ1080: model->command(proto::kCmdSetQuality, proto::kQuality1080p); StartApplying(1, proto::kQuality1080p, s); break;
@@ -1612,12 +1621,14 @@ struct SettingsWindow::Impl {
         else KillTimer(hwnd, kTimerAnim);
         // The preview polls the shared frame at <= 15 fps while frames are fresh, and checks twice a second
         // for an app starting the camera otherwise. Only the Camera page shows it.
-        if (visible && page == Page::Camera) SetTimer(hwnd, kTimerPreview, previewFresh ? 66 : 500, nullptr);
+        if (visible && page == Page::Camera && PreviewOn()) SetTimer(hwnd, kTimerPreview, previewFresh ? 66 : 500, nullptr);
         else {
             KillTimer(hwnd, kTimerPreview);
-            if (!visible) ClosePreview();
+            if (!visible || !PreviewOn()) ClosePreview();
         }
     }
+
+    bool PreviewOn() const { return !model->previewOn || model->previewOn(); }
 
     void ClosePreview() {
         if (!previewOpen && !previewFresh) return;
@@ -1747,7 +1758,7 @@ struct SettingsWindow::Impl {
 
         const bool liveVideo = previewFresh && ((s.state == LinkState::Streaming && !s.lockPaused) || model->testPattern);
         if (chips && !liveVideo && artKind == 2) {
-            const std::wstring text = L"The preview starts when an app uses the camera.";
+            const std::wstring text = PreviewOn() ? L"Starting the preview…" : L"The preview is off. Apps still get the camera.";
             const Size t = paint.Measure(Font::BodyBold, text, p.W() - 40);
             const float h = t.h + 12;
             paint.DarkPill(MakeBox(p.l + (p.W() - t.w - 28) / 2, p.t + (p.H() - h) / 2, t.w + 28, h), text);
