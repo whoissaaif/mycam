@@ -22,8 +22,10 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
         that interface, and registers a device interface GUID so libusb sees it; vendored libusb patched for
         vendor-named children and a busy adb interface. Debugging off (`0e8d:2008`, UsbDk open ->
         `LIBUSB_ERROR_OTHER`): 3 tries per plug-in + libusb errors in the log; cause still to be measured
-  - [~] Cable → Wi-Fi when unplugged (#70); Wi-Fi → cable only once the cable opens (#67): built, device
-        test pending. PC: auto-connect runs for 30 s after a cable session ends (paired phones only, search
+  - [x] Cable → Wi-Fi when unplugged (#70); Wi-Fi → cable only once the cable opens (#67): tested on the CMF
+        Phone 1 (2026-10-28, installed build): unplug → Wi-Fi in 3.4 s with "Find phones on Wi-Fi" on and
+        1.3 s with it off; plugged in during Wi-Fi → stayed on Wi-Fi until the cable opened, then switched.
+        The "cable fails" case was only seen as the old loop before the fix, not re-run. PC: auto-connect runs for 30 s after a cable session ends (paired phones only, search
         on or off); during Wi-Fi a new phone is switched to accessory mode and test-opened, and only an
         accessory that opens ends Wi-Fi (one that fails isn't retried until replugged). Phone: Wi-Fi mode
         saved on is turned back on when the cable starts the app; a cable plugged in during Wi-Fi waits
