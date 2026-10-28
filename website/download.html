@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<script>
+(function () {
+  function applyDir(dir) {
+    document.documentElement.classList.remove("mycam-dir-left", "mycam-dir-right");
+    if (dir === "left" || dir === "right") {
+      document.documentElement.classList.add("mycam-dir-" + dir);
+    }
+  }
+  var nav = performance.getEntriesByType && performance.getEntriesByType("navigation")[0];
+  var isBack = nav ? nav.type === "back_forward" : (performance.navigation && performance.navigation.type === 2);
+  var dir = isBack ? "right" : sessionStorage.getItem("mycamDir");
+  sessionStorage.removeItem("mycamDir");
+  applyDir(dir);
+
+  window.addEventListener("pageshow", function (event) {
+    if (event.persisted) {
+      applyDir(null);
+      void document.documentElement.offsetWidth;
+      applyDir("right");
+    }
+  });
+})();
+</script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Download — MyCam</title>
+<meta name="description" content="Get MyCam for Windows, Android, or iPhone (no install needed). Free, open source, easy to use.">
+<link rel="canonical" href="https://mycam.dev/download.html">
+<link rel="icon" href="assets/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Inter:wght@400;500;600;700&display=optional">
+<link rel="stylesheet" href="css/style.css?v=2">
+</head>
+<body>
+
+<header class="site-header">
+  <nav class="nav-bar">
+    <a href="/" class="nav-logo">
+      <img src="assets/logo.png" alt="MyCam logo">
+      MyCam
+    </a>
+    <ul class="nav-links">
+      <li><a href="features.html">Features</a></li>
+      <li><a href="how-it-works.html">How It Works</a></li>
+      <li><a href="download.html" class="active">Download</a></li>
+      <li><a href="faq.html">FAQ</a></li>
+      <li><a href="about.html">About</a></li>
+    </ul>
+    <div class="nav-right">
+      <a class="nav-github" href="https://github.com/whoissaaif/mycam" target="_blank" rel="noopener" aria-label="GitHub">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" aria-hidden="true"><path d="M12 .5C5.73.5.98 5.24.98 11.52c0 4.84 3.14 8.94 7.49 10.39.55.1.75-.24.75-.53 0-.26-.01-1.13-.02-2.04-3.05.66-3.69-1.3-3.69-1.3-.5-1.26-1.21-1.6-1.21-1.6-.99-.68.07-.66.07-.66 1.1.08 1.68 1.13 1.68 1.13.97 1.67 2.55 1.19 3.17.91.1-.71.38-1.19.69-1.46-2.44-.28-5-1.22-5-5.42 0-1.2.43-2.17 1.13-2.94-.11-.28-.49-1.4.11-2.92 0 0 .92-.3 3.02 1.12a10.5 10.5 0 0 1 5.5 0c2.1-1.42 3.02-1.12 3.02-1.12.6 1.52.22 2.64.11 2.92.7.77 1.13 1.74 1.13 2.94 0 4.21-2.57 5.14-5.02 5.41.39.34.74 1.01.74 2.03 0 1.47-.01 2.65-.01 3.01 0 .29.2.64.76.53 4.35-1.45 7.48-5.55 7.48-10.39C23.02 5.24 18.27.5 12 .5Z"/></svg>
+      </a>
+      <a class="btn-download-nav" href="download.html">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path fill="#f35325" d="M3 4.2C5.3 3.2 7.8 3 11.4 4.3l-1 6.5C7 9.6 4.6 9.8 2 10.8Z"/><path fill="#81bc06" d="M12.5 4.6c3.5 1.2 6.5 1.2 9.9-.4l-1 6.5c-3.4 1.6-6.2 1.6-9.9.4Z"/><path fill="#05a6f0" d="M1.8 12c2.6-1 5-1.2 8.4 0l-1 6.6c-3.3-1.2-5.7-1-8.4 0Z"/><path fill="#ffba08" d="M11.3 12.3c3.7 1.2 6.5 1.2 9.9-.4l-1 6.5c-3.4 1.6-6.2 1.6-9.9.4Z"/></svg>
+        Download
+      </a>
+    </div>
+    <button class="nav-toggle" aria-label="Toggle menu">
+      <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18"/></svg>
+    </button>
+  </nav>
+</header>
+
+<section class="hero hero-left">
+  <div class="hero-inner">
+    <span class="hero-eyebrow">DOWNLOAD</span>
+    <h1>Get MyCam<br>on your <span class="highlight">device.</span></h1>
+    <p class="lede">Free, open source, and easy to use.<br>Turn your phone into a high quality webcam in minutes.</p>
+  </div>
+</section>
+
+<section class="section">
+  <div class="download-grid">
+    <div class="download-card">
+      <svg class="platform-icon" viewBox="0 0 24 24" fill="currentColor"><path fill="#f35325" d="M3 4.2C5.3 3.2 7.8 3 11.4 4.3l-1 6.5C7 9.6 4.6 9.8 2 10.8Z"/><path fill="#81bc06" d="M12.5 4.6c3.5 1.2 6.5 1.2 9.9-.4l-1 6.5c-3.4 1.6-6.2 1.6-9.9.4Z"/><path fill="#05a6f0" d="M1.8 12c2.6-1 5-1.2 8.4 0l-1 6.6c-3.3-1.2-5.7-1-8.4 0Z"/><path fill="#ffba08" d="M11.3 12.3c3.7 1.2 6.5 1.2 9.9-.4l-1 6.5c-3.4 1.6-6.2 1.6-9.9.4Z"/></svg>
+      <h3>Windows</h3>
+      <p class="status">Stable release</p>
+      <a class="btn btn-primary" href="https://github.com/whoissaaif/mycam/releases/latest/download/MyCam-Setup-1.5.1.exe">Download</a>
+      <p class="meta">v1.5.1 · 12.1 MB · Windows 10/11</p>
+    </div>
+    <div class="download-card">
+      <svg class="platform-icon" viewBox="0 0 24 24" fill="#3ddc84"><path d="M17.6 9.48 19.44 6.3a.42.42 0 0 0-.15-.57.42.42 0 0 0-.57.15L16.9 9.1a9.9 9.9 0 0 0-9.8 0L5.28 5.88a.42.42 0 0 0-.57-.15.42.42 0 0 0-.15.57L6.4 9.48A10.3 10.3 0 0 0 1.5 18h21a10.3 10.3 0 0 0-4.9-8.52ZM7 15a1 1 0 1 1 0-2 1 1 0 0 1 0 2Zm10 0a1 1 0 1 1 0-2 1 1 0 0 1 0 2Z"/></svg>
+      <h3>Android</h3>
+      <p class="status">Stable release</p>
+      <a class="btn btn-primary" href="https://github.com/whoissaaif/mycam/releases/latest/download/MyCam-1.5.1.apk">Get APK</a>
+      <p class="meta">v1.5.1 · 3.1 MB</p>
+    </div>
+    <div class="download-card">
+      <svg class="platform-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M16.3 1c.1 1-.3 2-.9 2.7-.6.7-1.6 1.3-2.5 1.2-.1-1 .4-2 1-2.7C14.5 1.4 15.5 1 16.3 1ZM19.6 17.1c-.4.9-.6 1.3-1.1 2.1-.7 1.1-1.7 2.5-3 2.5-1.1 0-1.4-.7-2.9-.7s-1.9.7-2.9.7c-1.3 0-2.2-1.3-2.9-2.4-2-3-2.2-6.5-1-8.3.9-1.3 2.2-2 3.5-2 1.3 0 2.1.7 3.2.7 1 0 1.7-.7 3.2-.7 1.1 0 2.3.6 3.1 1.6-2.8 1.5-2.3 5.5.8 6.5Z"/></svg>
+      <h3>iPhone / iPad</h3>
+      <p class="status">No install needed</p>
+      <a class="btn btn-primary" href="how-it-works.html">See how it works</a>
+      <p class="meta">Scan a QR code in Safari to connect</p>
+    </div>
+    <div class="download-card">
+      <svg class="platform-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M16.3 1c.1 1-.3 2-.9 2.7-.6.7-1.6 1.3-2.5 1.2-.1-1 .4-2 1-2.7C14.5 1.4 15.5 1 16.3 1ZM19.6 17.1c-.4.9-.6 1.3-1.1 2.1-.7 1.1-1.7 2.5-3 2.5-1.1 0-1.4-.7-2.9-.7s-1.9.7-2.9.7c-1.3 0-2.2-1.3-2.9-2.4-2-3-2.2-6.5-1-8.3.9-1.3 2.2-2 3.5-2 1.3 0 2.1.7 3.2.7 1 0 1.7-.7 3.2-.7 1.1 0 2.3.6 3.1 1.6-2.8 1.5-2.3 5.5.8 6.5Z"/></svg>
+      <h3>macOS</h3>
+      <p class="status">Coming soon</p>
+      <a class="btn btn-outline" href="https://github.com/whoissaaif/mycam" target="_blank" rel="noopener">Follow on GitHub</a>
+    </div>
+    <div class="download-card">
+      <svg class="platform-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="2" y="4" width="20" height="16" rx="2"/>
+        <path d="m6 9 3 3-3 3"/>
+        <path d="M12 15h6"/>
+      </svg>
+      <h3>Linux</h3>
+      <p class="status">Coming soon</p>
+      <a class="btn btn-outline" href="https://github.com/whoissaaif/mycam" target="_blank" rel="noopener">Follow on GitHub</a>
+    </div>
+  </div>
+
+  <div class="download-foot">
+    Latest version: v1.5.1
+    <span class="sep">·</span>
+    <a href="https://github.com/whoissaaif/mycam/releases/latest" target="_blank" rel="noopener">View release notes →</a>
+    <div class="github-line">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 .5C5.73.5.98 5.24.98 11.52c0 4.84 3.14 8.94 7.49 10.39.55.1.75-.24.75-.53 0-.26-.01-1.13-.02-2.04-3.05.66-3.69-1.3-3.69-1.3-.5-1.26-1.21-1.6-1.21-1.6-.99-.68.07-.66.07-.66 1.1.08 1.68 1.13 1.68 1.13.97 1.67 2.55 1.19 3.17.91.1-.71.38-1.19.69-1.46-2.44-.28-5-1.22-5-5.42 0-1.2.43-2.17 1.13-2.94-.11-.28-.49-1.4.11-2.92 0 0 .92-.3 3.02 1.12a10.5 10.5 0 0 1 5.5 0c2.1-1.42 3.02-1.12 3.02-1.12.6 1.52.22 2.64.11 2.92.7.77 1.13 1.74 1.13 2.94 0 4.21-2.57 5.14-5.02 5.41.39.34.74 1.01.74 2.03 0 1.47-.01 2.65-.01 3.01 0 .29.2.64.76.53 4.35-1.45 7.48-5.55 7.48-10.39C23.02 5.24 18.27.5 12 .5Z"/></svg>
+      <a href="https://github.com/whoissaaif/mycam" target="_blank" rel="noopener">View on GitHub</a>
+    </div>
+  </div>
+</section>
+
+<footer class="site-footer">
+  <div class="footer-inner">
+    <a href="/" class="footer-brand">
+      <img src="assets/logo.png" alt="MyCam logo">
+      MyCam
+    </a>
+    <ul class="footer-links">
+      <li><a href="features.html">Features</a></li>
+      <li><a href="how-it-works.html">How It Works</a></li>
+      <li><a href="download.html">Download</a></li>
+      <li><a href="faq.html">FAQ</a></li>
+      <li><a href="about.html">About</a></li>
+      <li><a href="privacy.html">Privacy</a></li>
+      <li><a href="https://github.com/whoissaaif/mycam" target="_blank" rel="noopener">GitHub</a></li>
+      <li><a href="mailto:support@mycam.dev">support@mycam.dev</a></li>
+    </ul>
+  </div>
+  <p class="footer-note">MyCam is free and open source, licensed under MIT.</p>
+</footer>
+
+<script src="js/main.js?v=2"></script>
+</body>
+</html>
