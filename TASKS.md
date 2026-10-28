@@ -156,8 +156,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 | 1.1.0 | 2026-10-09 | Pause on phone and PC, auto-pause on Windows lock, status pictures, Aero phone app. |
 | 1.0.0 | 2026-10-09 | First installer: tray status icons, Aero settings window, Inno Setup. |
 
-Release steps: bump the versions (`app/build.gradle.kts`, `installer/mycam.iss`, `installer/build.ps1`),
-run `installer\build.ps1` and `gradlew assembleDebug`, commit, tag `vX.Y.Z`, push, then
+Release steps: bump `versionName` and `versionCode` in `app/build.gradle.kts`, the only copy (the About page,
+the installer and the `.deb` read it), run `installer\build.ps1` and `gradlew assembleRelease`, commit, tag `vX.Y.Z`, push, then
 `gh release create vX.Y.Z <exe> <apk>`.
 
 ## Decisions

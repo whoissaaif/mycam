@@ -1,14 +1,22 @@
 ﻿<#
   Builds the MyCam installer: installer\output\MyCam-Setup-<version>.exe
     powershell -ExecutionPolicy Bypass -File installer\build.ps1 [-Version 1.0.0]
+  -Version defaults to versionName in app\build.gradle.kts.
 
   1. Builds the PC side (Release, pc\build-release) and runs the unit tests.
   2. Downloads the UsbDk driver package (hash-checked) and its license into installer\redist.
   3. Compiles installer\mycam.iss with Inno Setup 6 (winget install JRSoftware.InnoSetup).
 #>
-param([string]$Version = '1.6.0')
+param([string]$Version)
 $ErrorActionPreference = 'Stop'
 $root = Resolve-Path "$PSScriptRoot\.."
+
+# One version for Android and PC (CLAUDE.md): read it from the app, not a copy kept here.
+if (-not $Version) {
+    $m = Select-String -Path (Join-Path $root 'app\build.gradle.kts') -Pattern 'versionName = "([0-9.]+)"'
+    if (-not $m) { throw 'versionName not found in app\build.gradle.kts' }
+    $Version = $m.Matches[0].Groups[1].Value
+}
 
 $cmake = (Get-Command cmake -ErrorAction SilentlyContinue).Source
 if (-not $cmake) { $cmake = 'C:\Program Files\CMake\bin\cmake.exe' }
