@@ -249,6 +249,13 @@ All of it is drawn from scratch by scripts in `design/tools/` (shared library `l
 - ✅ Release checklist in [TASKS.md](TASKS.md#releases).
 - ⏳ Decide public vs. private before sharing (download links and the phone's "get the app" link only
   work for you while the repo is private).
+- 🟡 **Update check (#79)**: all three apps ask GitHub once a day which release is the latest and show
+  "Version X is available" on their About page (Windows: the About card and a Settings switch; Linux: two
+  tray menu items, the daemon doing the asking; Android: the About card). On by default, off with "Tell me
+  when a new version is out", and `website/privacy.html` says exactly what the request sends. It reads
+  `releases/latest`, so a pre-release (v1.6.0 while it isn't marked Latest) is deliberately not offered.
+  Shared rules in `pc/companion/update_version.cpp` and `UpdateCheck.kt`, with the same tests on both
+  sides; the request itself is per platform (WinHTTP, OpenSSL, `HttpsURLConnection`).
 
 ---
 

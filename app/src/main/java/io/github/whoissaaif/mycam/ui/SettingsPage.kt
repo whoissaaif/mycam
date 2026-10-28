@@ -14,6 +14,11 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -26,6 +31,7 @@ import io.github.whoissaaif.mycam.PairedPc
 import io.github.whoissaaif.mycam.PhonePreview
 import io.github.whoissaaif.mycam.Protocol
 import io.github.whoissaaif.mycam.R
+import io.github.whoissaaif.mycam.UpdateCheck
 import io.github.whoissaaif.mycam.WebcamService
 import io.github.whoissaaif.mycam.ui.theme.V2
 import io.github.whoissaaif.mycam.ui.v2.Choice
@@ -125,6 +131,7 @@ fun SettingsPage(
                 stringResource(R.string.about_version, appVersionName(LocalContext.current)),
                 style = MaterialTheme.typography.bodyMedium, color = V2.Subtle,
             )
+            UpdateRow()
             XpLink(stringResource(R.string.about_privacy), onClick = {
                 try { uri.openUri(PRIVACY_URL) } catch (_: Exception) {}
             })
@@ -135,6 +142,40 @@ fun SettingsPage(
             XpLink(stringResource(R.string.about_licences), onClick = onLicences)
         }
     }
+}
+
+/**
+ * "Version X is available" and the switch that allows the check (issue #79). Self-contained: the check
+ * runs when this page is on screen, at most once a day, and nothing else in the app has to know.
+ */
+@Composable
+private fun UpdateRow() {
+    val context = LocalContext.current
+    val uri = LocalUriHandler.current
+    val prefs = remember { context.getSharedPreferences(WebcamService.PREFS, Context.MODE_PRIVATE) }
+    val version = remember { appVersionName(context) }
+    var on by remember { mutableStateOf(UpdateCheck.enabled(prefs)) }
+    var newer by remember { mutableStateOf(UpdateCheck.available(prefs, version)) }
+    LaunchedEffect(on) {
+        if (on) {
+            UpdateCheck.refresh(prefs, version)
+            newer = UpdateCheck.available(prefs, version)
+        }
+    }
+    newer?.let {
+        XpLink(stringResource(R.string.about_update, it), onClick = {
+            try { uri.openUri(RELEASES_URL) } catch (_: Exception) {}
+        })
+    }
+    FlatSwitchRow(
+        stringResource(R.string.about_update_toggle), on,
+        onCheckedChange = {
+            on = it
+            UpdateCheck.setEnabled(prefs, it)
+            if (!it) newer = null
+        },
+        detail = stringResource(R.string.about_update_hint),
+    )
 }
 
 /** A white card with a heading. */

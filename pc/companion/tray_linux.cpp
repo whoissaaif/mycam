@@ -15,6 +15,7 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include <gio/gio.h>
 #include <gtk/gtk.h>
 #include <glib-unix.h>
 #include <libayatana-appindicator/app-indicator.h>
@@ -25,6 +26,7 @@
 #include "control_proto.h"
 #include "platform.h"
 #include "status_text.h"
+#include "update_check.h" // Only for the releases URL: the daemon does the checking.
 #include "../third_party/qrcodegen/qrcodegen.hpp"
 
 namespace mycam {
@@ -208,6 +210,8 @@ struct Tray {
     GtkWidget* reconnect = nullptr;
     GtkWidget* wifi = nullptr;
     GtkWidget* autostart = nullptr;
+    GtkWidget* updates = nullptr;  // "Tell me when a new version is out" (#79).
+    GtkWidget* update = nullptr;   // "Version X is available"; hidden while there is nothing newer.
     GtkWidget* start = nullptr;
     GtkWidget* pairing = nullptr; // The "allow this phone?" dialog while a code pairing waits (pairing_dialog.cpp).
     int socket = -1;
@@ -264,7 +268,8 @@ void ShowStatus(const TrayStatus& s, bool running) {
     gtk_menu_item_set_label(GTK_MENU_ITEM(g_tray.pause), s.paused ? "Resume camera" : "Pause camera");
     gtk_widget_set_sensitive(g_tray.pause, running && s.canPause);
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(s.facing ? g_tray.front : g_tray.back), TRUE);
-    for (GtkWidget* w : {g_tray.back, g_tray.front, g_tray.mirror, g_tray.fill, g_tray.iphone, g_tray.reconnect, g_tray.wifi})
+    for (GtkWidget* w : {g_tray.back, g_tray.front, g_tray.mirror, g_tray.fill, g_tray.iphone, g_tray.reconnect,
+                         g_tray.wifi, g_tray.updates})
         gtk_widget_set_sensitive(w, running);
     gtk_widget_set_sensitive(g_tray.quality, running && s.linked);
     for (int q = 0; q < 3; ++q) {
@@ -274,6 +279,11 @@ void ShowStatus(const TrayStatus& s, bool running) {
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(g_tray.mirror), s.mirror);
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(g_tray.fill), s.fill);
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(g_tray.wifi), s.wifi);
+    gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(g_tray.updates), s.updates);
+    if (!s.update.empty()) {
+        gtk_menu_item_set_label(GTK_MENU_ITEM(g_tray.update), ("Version " + s.update + " is available").c_str());
+    }
+    gtk_widget_set_visible(g_tray.update, running && !s.update.empty());
     gtk_widget_set_visible(g_tray.start, !running);
     g_tray.updating = false;
     ShowPairing(s, running);
@@ -369,6 +379,14 @@ GtkWidget* BuildMenu() {
     g_tray.autostart = Check(menu, nullptr, "Start at login", [](GtkCheckMenuItem* i) {
         if (!g_tray.updating) Systemctl(Active(i) ? "enable" : "disable");
     });
+    g_tray.updates = Check(menu, nullptr, "_Tell me when a new version is out",
+                           [](GtkCheckMenuItem* i) { Command(Active(i) ? "updates 1" : "updates 0"); });
+    // Only there when the daemon's last check found something newer; the label carries the version.
+    g_tray.update = Item(menu, "A new version is available", [] {
+        g_app_info_launch_default_for_uri(kReleasesPageUrl, nullptr, nullptr);
+    });
+    gtk_widget_set_no_show_all(g_tray.update, TRUE);
+    gtk_widget_hide(g_tray.update);
     Separator(menu);
     Item(menu, "Quit MyCam", [] {
         Systemctl("stop"); // Like Exit on Windows: the camera goes too. "Start at login" brings it back.

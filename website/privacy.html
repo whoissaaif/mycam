@@ -155,6 +155,16 @@
   <em>watch</em>. While a PC is paused or hasn't been allowed yet, it only ever sees a static "camera
   paused" picture, never a live or frozen frame.</p>
 
+  <h2>The update check</h2>
+  <p>So you don't stay on a version with bugs that are already fixed, MyCam asks GitHub once a day which
+  MyCam release is the latest, and the About page then says "Version X is available". This is the only
+  request either app makes to the internet, and it is an ordinary public request for the release number:
+  nothing about you, your phone, your PC, or your use of MyCam is sent with it — not a version, not an
+  identifier, not an account. GitHub sees it as it sees any visitor to a public page, including your IP
+  address, under <a href="https://docs.github.com/site-policy/privacy-policies/github-general-privacy-statement" target="_blank" rel="noopener">GitHub's
+  privacy statement</a>. You can turn the check off: <em>Tell me when a new version is out</em>, in
+  Settings on the PC and under About on the phone. With it off, neither app contacts the internet at all.</p>
+
   <h2>Local logs</h2>
   <p>The Windows companion writes a log file to your own PC, at <code>%LOCALAPPDATA%\MyCam\mycam.log</code>,
   to help diagnose connection problems. It stays on your machine — MyCam never uploads it anywhere — and it

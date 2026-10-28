@@ -81,6 +81,9 @@ add_executable(MyCamCompanion WIN32
     companion/driver_task.cpp
     companion/log.cpp
     companion/app_settings.cpp
+    companion/update_check.cpp
+    companion/update_check_win.cpp
+    companion/update_version.cpp
     companion/status_text.cpp
     companion/status_images.cpp
     companion/marquee.cpp
@@ -95,7 +98,7 @@ add_executable(MyCamCompanion WIN32
     companion/companion.manifest
 )
 target_link_libraries(MyCamCompanion PRIVATE usb mfplat mfuuid ole32 shell32 advapi32 setupapi newdev cfgmgr32
-    comctl32 d2d1 dwrite windowscodecs dwmapi wtsapi32 taskschd ws2_32 iphlpapi bcrypt crypt32 ncrypt secur32 d3d11 dxgi dcomp dxguid uiautomationcore)
+    comctl32 d2d1 dwrite windowscodecs dwmapi wtsapi32 taskschd ws2_32 winhttp iphlpapi bcrypt crypt32 ncrypt secur32 d3d11 dxgi dcomp dxguid uiautomationcore)
 
 # --- Developer tools (not shipped; install.ps1 copies only the two binaries above) -------------------
 option(MYCAM_BUILD_TOOLS "Build developer tools (capture_test, usb_probe, uia_dump, web_probe)" OFF)
@@ -116,7 +119,7 @@ option(MYCAM_BUILD_TESTS "Build unit tests" ON)
 if(MYCAM_BUILD_TESTS)
     enable_testing()
     add_executable(mycam_tests tests/tests.cpp companion/packet_parser.cpp companion/wifi_crypto.cpp companion/wifi_crypto_common.cpp
-        companion/marquee.cpp
+        companion/marquee.cpp companion/update_version.cpp
         companion/preview_convert.cpp companion/status_text.cpp companion/control_proto.cpp companion/web_proto.cpp vcam/frame_transform.cpp
         vcam-dshow/dshow_media_types.cpp companion/winusb_bind.cpp)
     target_link_libraries(mycam_tests PRIVATE bcrypt strmiids ole32 setupapi newdev cfgmgr32)

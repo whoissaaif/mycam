@@ -29,7 +29,11 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
         fixed through a private advisory, not public issues
   - [ ] Test matrix below, then the release APK (R8 on) on a real phone
   - [ ] Later, not blocking: USB file transfer while MyCam runs (#77), "Can't connect?" help (#78),
-        update check (#79), and the open bugs #4, #10, #20, #22, #64, #68
+        and the open bugs #4, #10, #20, #22, #64, #68
+  - [ ] "Version X is available" on the About pages (#79): done on `feature/update-check` for Windows,
+        Android and Linux — one GitHub request a day, on by default with "Tell me when a new version is
+        out" to turn it off, and the privacy page says what it sends. The Windows request and both apps'
+        version rules are tested; the Linux build and the three About pages are not seen yet
   - [ ] Found while testing #69: a companion started while an older one still holds `mycam.log` runs with no
         log at all (#84); the phone's Pause hint reads as if the camera were already paused (#85)
 - [x] Clean install test: removed everything, installed 1.2.0 from the GitHub release, first-use flow and streaming work

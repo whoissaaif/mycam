@@ -1009,6 +1009,10 @@ struct SettingsWindow::Impl {
             AddToggle(kFill, L"&Fill the frame (crop instead of black bars)", model->fill(), kCardSettings, ix, &cy, iw);
             AddToggle(kAutostart, L"Start MyCam with Windows", model->autostart(), kCardSettings, ix, &cy, iw);
             AddToggle(kWireless, L"Find phones on Wi-Fi (beta)", model->wireless(), kCardSettings, ix, &cy, iw);
+            if (model->checkUpdates) {
+                AddToggle(kCheckUpdates, L"&Tell me when a new version is out", model->checkUpdates(), kCardSettings,
+                          ix, &cy, iw);
+            }
             cy += kCardPad - 2;
             const Box box = MakeBox(x, *y, w, cy - *y);
             cards[ci].box = box;
@@ -1063,6 +1067,16 @@ struct SettingsWindow::Impl {
             v.e.name = v.label = version;
         }
         cy += 48 + kGap;
+        // "Version X is available" (#79): only while the last check found something newer. Nothing is
+        // checked from here; the link just opens the downloads page.
+        const std::wstring newer = model->updateVersion ? model->updateVersion() : std::wstring();
+        if (!newer.empty()) {
+            const std::wstring label = L"Version " + newer + L" is available";
+            const Size u = paint.Measure(Font::Body, label);
+            Item& it = Add(kAboutUpdate, Kind::Link, label, MakeBox(ix, cy, u.w, u.h), kCardAbout);
+            it.e.name = label + L" (opens the downloads page)";
+            cy += u.h + kGap;
+        }
         const std::wstring body = L"MyCam turns an Android phone into a webcam for Windows, over USB or Wi-Fi.";
         const Size b = paint.Measure(Font::Body, body, iw);
         {
@@ -1511,6 +1525,10 @@ struct SettingsWindow::Impl {
         case kReconnect: model->reconnect(); break;
         case kOpenLog: model->openLogFolder(); break;
         case kContact: if (model->contactSupport) model->contactSupport(); break;
+        case kCheckUpdates:
+            if (model->setCheckUpdates) model->setCheckUpdates(!model->checkUpdates());
+            break;
+        case kAboutUpdate: if (model->openReleases) model->openReleases(); break;
         case kForgetPhones: if (model->forgetPhones) model->forgetPhones(); break; // They pair again (with a code).
         case kShowPairing: GoTo(Page::Pairing); break;
         // "Scan for Devices" shows its results, so it goes to Devices (Refresh on that page stays put).

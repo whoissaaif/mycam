@@ -25,6 +25,8 @@
 #include "settings_window.h"
 #include "status_images.h"
 #include "status_text.h"
+#include "platform.h"
+#include "update_check.h"
 #include "winusb_bind.h"
 
 using Microsoft::WRL::ComPtr;
@@ -536,6 +538,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     }
 
     LogInit();
+    StartUpdateCheck(Utf8(ui::kAppVersion)); // One GitHub request in the background, at most once a day (#79).
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     MFStartup(MF_VERSION);
 
@@ -626,6 +629,16 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     model.startWebPairing = [](uint32_t ip) { g_link->StartWebPairing(ip); };
     model.stopWebPairing = [] { g_link->StopWebPairing(); };
     model.forgetWebDevice = [](const std::string& id) { g_link->ForgetWebDevice(id); };
+    // Update check (#79). updateVersion reads what the last check found, so the About page never waits.
+    model.updateVersion = [] { return Wide(UpdateAvailable(Utf8(ui::kAppVersion))); };
+    model.checkUpdates = UpdateCheckEnabled;
+    model.setCheckUpdates = [](bool on) {
+        SetUpdateCheckEnabled(on);
+        if (on) StartUpdateCheck(Utf8(ui::kAppVersion)); // Turned on: look now rather than at the next start.
+    };
+    model.openReleases = [] {
+        ShellExecuteW(nullptr, L"open", Wide(kReleasesPageUrl).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    };
     model.testPattern = testPattern;
     LinkStatus demo;
     const bool demoMode = DemoStatus(&demo);
