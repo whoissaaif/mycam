@@ -68,6 +68,9 @@ const val RELEASES_URL = "https://github.com/whoissaaif/mycam/releases"
 /** Where the About section's Privacy Policy link points. */
 const val PRIVACY_URL = "https://mycam.dev/privacy.html"
 
+/** Where the About section's contact link writes to. */
+const val SUPPORT_EMAIL = "support@mycam.dev"
+
 /** What the main screen can ask the activity to do. Defaults are no-ops (previews). */
 data class ScreenActions(
     val onFacing: (Int) -> Unit = {},

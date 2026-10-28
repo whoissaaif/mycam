@@ -1080,6 +1080,11 @@ struct SettingsWindow::Impl {
             t.e.name = t.label = licence;
             cy += l.h + kGap;
         }
+        // The address is the link text, so it can still be read off without a mail app.
+        const std::wstring contact = std::wstring(L"Contact: ") + kSupportEmail;
+        const Size mail = paint.Measure(Font::Body, contact);
+        Add(kContact, Kind::Link, contact, MakeBox(ix, cy, mail.w, mail.h), kCardAbout);
+        cy += mail.h + kGap;
         const Size link = paint.Measure(Font::Body, L"Open log folder");
         Add(kOpenLog, Kind::Link, L"&Open log folder", MakeBox(ix, cy, link.w, link.h), kCardAbout);
         cy += link.h + kCardPad;
@@ -1505,6 +1510,7 @@ struct SettingsWindow::Impl {
         case kWireless: model->setWireless(!model->wireless()); break;
         case kReconnect: model->reconnect(); break;
         case kOpenLog: model->openLogFolder(); break;
+        case kContact: if (model->contactSupport) model->contactSupport(); break;
         case kForgetPhones: if (model->forgetPhones) model->forgetPhones(); break; // They pair again (with a code).
         case kShowPairing: GoTo(Page::Pairing); break;
         // "Scan for Devices" shows its results, so it goes to Devices (Refresh on that page stays put).

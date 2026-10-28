@@ -128,6 +128,10 @@ fun SettingsPage(
             XpLink(stringResource(R.string.about_privacy), onClick = {
                 try { uri.openUri(PRIVACY_URL) } catch (_: Exception) {}
             })
+            // The address is the link text, so it can still be read off without an email app.
+            XpLink(stringResource(R.string.about_contact, SUPPORT_EMAIL), onClick = {
+                try { uri.openUri("mailto:$SUPPORT_EMAIL") } catch (_: Exception) {}
+            })
             XpLink(stringResource(R.string.about_licences), onClick = onLicences)
         }
     }

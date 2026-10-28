@@ -21,6 +21,7 @@ import io.github.whoissaaif.mycam.Protocol
 import io.github.whoissaaif.mycam.WebcamService.UiState
 import io.github.whoissaaif.mycam.ui.DimScreen
 import io.github.whoissaaif.mycam.ui.FirstRunScreen
+import io.github.whoissaaif.mycam.ui.TAB_SETTINGS
 import io.github.whoissaaif.mycam.ui.WebcamScreen
 import io.github.whoissaaif.mycam.ui.theme.MycamTheme
 import io.github.whoissaaif.mycam.ui.theme.Xp
@@ -105,13 +106,13 @@ class PhoneSnapshots {
     )
 
     @Config(qualifiers = "w360dp-h1400dp-xhdpi")
-    @Test fun settings() = shot("07-settings") { WebcamScreen(settingsState, initialTab = 1) }
+    @Test fun settings() = shot("07-settings") { WebcamScreen(settingsState, initialTab = TAB_SETTINGS) }
 
     @Config(qualifiers = "w360dp-h1700dp-xhdpi")
-    @Test fun settingsLarge() = shot("07-settings-fs13", 1.3f) { WebcamScreen(settingsState, initialTab = 1) }
+    @Test fun settingsLarge() = shot("07-settings-fs13", 1.3f) { WebcamScreen(settingsState, initialTab = TAB_SETTINGS) }
 
     @Config(qualifiers = "w800dp-h600dp-land-xhdpi")
-    @Test fun settingsWide() = shot("07-settings-wide") { WebcamScreen(settingsState, initialTab = 1) }
+    @Test fun settingsWide() = shot("07-settings-wide") { WebcamScreen(settingsState, initialTab = TAB_SETTINGS) }
 
     private fun pairingState() = UiState(
         wirelessOn = true, wirelessAddress = "192.168.1.23", pendingPc = "DESKTOP-ABC", pendingCode = "554294",

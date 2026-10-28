@@ -79,7 +79,7 @@ enum Id : int {
     // "Connect a phone to choose." under the Camera page's controls while nothing is connected.
     kCameraHint = 612,
     // Task links.
-    kReconnect = 700, kOpenLog = 701,
+    kReconnect = 700, kOpenLog = 701, kContact = 702,
     // Right side: preview and live camera controls.
     kPreview = 800, kStatusSentence = 801, kZoomOut = 802, kZoomValue = 803, kZoomIn = 804, kZoomReset = 805,
     kEvDown = 806, kEvValue = 807, kEvUp = 808, kFocusAuto = 809, kFocusLock = 810, kTorch = 811, kAuto = 812,

@@ -14,4 +14,10 @@ void SetAutostart(bool enable);
 // Opens %LOCALAPPDATA%\MyCam (where mycam.log lives) in Explorer.
 void OpenLogFolder();
 
+// Where the About page's contact link writes to.
+constexpr wchar_t kSupportEmail[] = L"support@mycam.dev";
+
+// Starts an email to kSupportEmail in the default mail app.
+void OpenSupportEmail();
+
 } // namespace mycam

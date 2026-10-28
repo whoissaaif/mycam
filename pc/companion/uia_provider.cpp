@@ -885,6 +885,7 @@ std::wstring UiaAutomationId(int id) {
     case kScanList: return L"ScanList";
     case kReconnect: return L"Reconnect";
     case kOpenLog: return L"OpenLog";
+    case kContact: return L"Contact";
     case kPreview: return L"Preview";
     case kStatusSentence: return L"StatusSentence";
     case kZoomOut: return L"ZoomOut";
