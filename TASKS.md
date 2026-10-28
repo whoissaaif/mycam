@@ -9,6 +9,20 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 
 ## Now
 
+- [ ] **1.6.0 stable: Windows and Android join the Linux 1.6.0** (#76). v1.6.0 has only the `.deb` so far
+      and isn't marked Latest; the `.exe` and `.apk` are attached once everything below is done
+  - [ ] Pairing prompts only after Find devices / Connect; auto-connect to paired phones only (#69)
+  - [ ] USB debugging on: the accessory interface gets the MTP driver, so USB never streams (#66)
+  - [ ] Cable → Wi-Fi when unplugged (#70); Wi-Fi → cable only once the cable opens (#67)
+  - [ ] PC preview streams while the window shows it, not only when an app uses the camera (#71)
+  - [ ] support@mycam.dev in both About pages, the website and the README (#72)
+  - [ ] Start-menu shortcut, so Windows search finds MyCam (#73)
+  - [ ] Website in the repo (#74); updated for 1.6.0 and Linux, download links that survive a release (#75)
+  - [ ] Security findings from the local inspection report (pairing, the SYSTEM task, lock screen):
+        fixed through a private advisory, not public issues
+  - [ ] Test matrix below, then the release APK (R8 on) on a real phone
+  - [ ] Later, not blocking: USB file transfer while MyCam runs (#77), "Can't connect?" help (#78),
+        update check (#79), and the open bugs #4, #10, #20, #22, #64, #68
 - [x] Clean install test: removed everything, installed 1.2.0 from the GitHub release, first-use flow and streaming work
 - [ ] Test the remaining scenarios [2.3]
   - [ ] Pause / Resume from the phone's notification
@@ -103,7 +117,7 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 - [~] 30 / 60 / 120 fps choice; 60 and 120 on the back camera through high-speed capture [3.2]: built, test on the phone
 - [~] Screen-reader support (UI Automation) for the settings window and pairing dialog [5.2]: built (`uia_provider.cpp`, checked with `pc/tools/uia_dump`); try with Narrator
 - [ ] Code-sign the installer and companion [5.3] — see [docs/AIYAN-WEBSITE.md](docs/AIYAN-WEBSITE.md)
-- [~] USB debugging on: the accessory shows up as accessory+adb (composite), so WinUSB is now bound to its accessory interface (MI_00) too [2.1, #9]: built and unit-tested; test with a phone that has USB debugging on
+- [~] USB debugging on: the accessory shows up as accessory+adb (composite), so WinUSB is now bound to its accessory interface (MI_00) too [2.1, #9]: built and unit-tested; the CMF Phone 1 shows it isn't enough: there the interface is `MS_COMP_MTP`, not `MI_00`, and already has the MTP driver (#66, under 1.6.0 in Now)
 - [ ] Test the release APK (not just debug) on a phone before every release: R8 only runs on release builds
 - [ ] Uninstaller: remove UsbDk completely (service + UsbDk.sys stay behind after msiexec) [5.3]
 - [ ] Test a clean install on a different PC (Sandbox needs CPU virtualization enabled in firmware) [2.3]
