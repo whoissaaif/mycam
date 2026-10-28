@@ -6,6 +6,7 @@
 #include <wtsapi32.h>
 #include <mfapi.h>
 #include <mfvirtualcamera.h>
+#include <timeapi.h>
 #include <wrl/client.h>
 
 #include <atomic>
@@ -462,6 +463,20 @@ void DemoScanDone() {
     PostMessageW(g_hwnd, WM_STATUS, 0, 0);
 }
 
+// MyCam usually runs with its window closed (tray) or minimised. Since Windows 11 such a process no longer
+// gets a fine timer, so every short wait on the video path (inside Media Foundation's decoder, the GPU
+// readback) rounds up to a 15.6 ms tick: decoding went from ~10 ms to 62 ms a frame and apps got stutter
+// (#95). Opt out of that throttling, and of EcoQoS, for the whole run: the companion is a real-time pipe.
+void KeepTimerResolution() {
+    PROCESS_POWER_THROTTLING_STATE state = {};
+    state.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
+    state.ControlMask = PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION | PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
+    state.StateMask = 0; // Off for both: keep the fine timer and full execution speed.
+    const BOOL ok = SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &state, sizeof(state));
+    const MMRESULT period = timeBeginPeriod(1);
+    Log("timer: power throttling off -> %d, 1 ms timer -> %u", int(ok), unsigned(period));
+}
+
 int QuitRunningInstance() {
     // Current versions use a hidden top-level window; versions before 1.1 used a message-only window.
     HWND other = FindWindowW(L"MyCamCompanion", nullptr);
@@ -544,6 +559,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     }
 
     LogInit();
+    KeepTimerResolution();
     StartUpdateCheck(Utf8(ui::kAppVersion)); // One GitHub request in the background, at most once a day (#79).
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     MFStartup(MF_VERSION);
