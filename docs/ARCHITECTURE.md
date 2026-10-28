@@ -139,7 +139,7 @@ cd pc/build-linux && cpack                # mycam_<version>_amd64.deb (the versi
 ```
 FFmpeg is linked dynamically from the distro, never vendored: MyCam is MIT, FFmpeg LGPL/GPL.
 
-**Installer:** `powershell -ExecutionPolicy Bypass -File installer\build.ps1 -Version X.Y.Z` (needs
+**Installer:** `powershell -ExecutionPolicy Bypass -File installer\build.ps1` (version from `app/build.gradle.kts`; needs
 [Inno Setup 6](https://jrsoftware.org/isinfo.php)). The output is in `installer\output`.
 
 **The iPhone page** has no separate build: the files in `pc/companion/web/` are compiled into

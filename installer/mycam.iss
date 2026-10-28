@@ -4,8 +4,9 @@
 ; Code signing (optional): pass a sign tool to ISCC, e.g.
 ;   ISCC /DSIGN "/Smycam=signtool sign /fd sha256 /tr http://timestamp.digicert.com /td sha256 /a $f" mycam.iss
 
+; AppVersion comes from build.ps1 (versionName in app\build.gradle.kts), never a copy kept here.
 #ifndef AppVersion
-  #define AppVersion "1.6.0"
+  #error Pass /DAppVersion=X.Y.Z, or build with installer\build.ps1
 #endif
 #ifndef BuildDir
   #define BuildDir "..\pc\build-release\Release"
