@@ -618,7 +618,7 @@ PhoneLink::WifiEnd PhoneLink::Handshake(uintptr_t socket, bool forcePair, const 
         status_.pairingCode = std::wstring(code.begin(), code.begin() + 3) + L" " + std::wstring(code.begin() + 3, code.end());
         Publish();
         codeShownAt = NowMs(); // This PC's user gets their own kPairingAnswerMs from here.
-        Log("wifi: pairing with %s, code %s", Utf8(status_.phoneName).c_str(), code.c_str());
+        Log("wifi: pairing with %s (code on screen, never logged)", Utf8(status_.phoneName).c_str());
     } else {
         return WifiEnd::Failed;
     }

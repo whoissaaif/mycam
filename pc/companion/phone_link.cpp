@@ -444,7 +444,8 @@ void PhoneLink::OnInTransfer(libusb_transfer* t) {
         }
         if (!sessionEnding_ && libusb_submit_transfer(t) == LIBUSB_SUCCESS) return;
     } else if (t->status != LIBUSB_TRANSFER_CANCELLED) {
-        Log("session: read failed (status %d), phone disconnected?", int(t->status));
+        // Every queued read fails when the phone is unplugged: say it once.
+        if (!sessionError_) Log("session: read failed (status %d), phone disconnected?", int(t->status));
         sessionError_ = true;
     }
     --inFlight_;
