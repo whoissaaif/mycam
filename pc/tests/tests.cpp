@@ -830,6 +830,8 @@ void TestDiscovery() {
     CHECK(ui::ScanRowIndex(ui::ScanRowId(3, 1), &part) == 3 && part == 1);
     CHECK(ui::ScanRowIndex(ui::ScanRowId(15, 0), &part) == 15 && part == 0);
     CHECK(ui::ScanRowIndex(ui::kScanList, &part) == -1 && ui::ScanRowIndex(ui::ScanRowId(16, 0), &part) == -1);
+    // The About page's version comes from build.gradle.kts through CMake; empty means the regex stopped matching.
+    CHECK(std::count(ui::kAppVersion, ui::kAppVersion + wcslen(ui::kAppVersion), L'.') == 2);
 }
 
 void TestPreviewConvert() {
