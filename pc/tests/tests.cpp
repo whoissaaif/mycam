@@ -854,7 +854,7 @@ void TestPreviewConvert() {
 void TestTrayStatusLine() {
     TrayStatus s;
     s.icon = kIconStreaming;
-    s.canPause = s.linked = s.mirror = true;
+    s.canPause = s.linked = s.mirror = s.pairing = s.wifi = true;
     s.facing = proto::kFacingFront;
     s.quality = proto::kQuality4K;
     s.qualityOk[0] = s.qualityOk[2] = true;
@@ -866,7 +866,7 @@ void TestTrayStatusLine() {
     CHECK(ParseTrayStatus(line, &back));
     CHECK(back.icon == s.icon && back.canPause && !back.paused && back.linked && back.facing == s.facing);
     CHECK(back.quality == s.quality && back.qualityOk[0] && !back.qualityOk[1] && back.qualityOk[2]);
-    CHECK(back.mirror && !back.fill && back.headline == "Streaming");
+    CHECK(back.mirror && !back.fill && back.pairing && back.wifi && back.headline == "Streaming");
     CHECK(back.detail == "Front camera \xC2\xB7 3840 \xC3\x97 2160   from \"My Phone\"");
     CHECK(!ParseTrayStatus("status icon=103", &back) && !ParseTrayStatus("url https://x\ta\tb", &back));
 }
