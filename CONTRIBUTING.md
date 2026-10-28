@@ -18,6 +18,10 @@ ctest --test-dir pc/build -C Release      # PC unit tests (protocol, parser, gol
 
 Both suites run in CI on every pull request (`.github/workflows/ci.yml`).
 
+**The website** (mycam.dev) is plain HTML in `website/`, with no build step: open the pages in a browser
+to check them. Every push to `main` that touches `website/` publishes it through GitHub Pages
+(`.github/workflows/pages.yml`); the custom domain is set in the repo's Pages settings, not in a file.
+
 ## Opening a pull request
 
 - Branch from `main`, keep the change focused, and describe what you tested in the PR.
