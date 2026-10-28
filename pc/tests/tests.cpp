@@ -13,6 +13,7 @@
 #include "../companion/packet_parser.h"
 #include "../companion/marquee.h"
 #include "../companion/protocol.h"
+#include "../companion/update_version.h"
 #include "../companion/wifi_crypto.h"
 #include "../companion/web_proto.h"
 #include "../companion/capabilities.h"
@@ -965,6 +966,17 @@ void TestTrayStatusLine() {
     CHECK(back.mirror && !back.fill && back.pairing && back.wifi && back.headline == "Streaming");
     CHECK(back.detail == "Front camera \xC2\xB7 3840 \xC3\x97 2160   from \"My Phone\"");
     CHECK(!ParseTrayStatus("status icon=103", &back) && !ParseTrayStatus("url https://x\ta\tb", &back));
+
+    // The update fields (#79): nothing to offer by default, and both come back when there is.
+    CHECK(back.updates && back.update.empty());
+    s.updates = false;
+    s.update = "1.7.0";
+    CHECK(ParseTrayStatus(FormatTrayStatus(s), &back));
+    CHECK(!back.updates && back.update == "1.7.0");
+    // A daemon from before they existed: everything else still parses, and the defaults stand.
+    CHECK(ParseTrayStatus("status icon=103 pause=1 paused=0 linked=1 facing=0 quality=1 q=110 mirror=0 fill=0 "
+                          "pairing=0 wifi=0\tStreaming\t", &back));
+    CHECK(back.icon == 103 && back.updates && back.update.empty() && back.headline == "Streaming");
 }
 
 void TestStatusText() {
@@ -1331,6 +1343,43 @@ void TestQrPairing(std::map<std::string, Bytes>& golden) {
 
 } // namespace
 
+// --- Update check (#79) ----------------------------------------------------------------------------
+
+void TestUpdateVersion() {
+    // The tag comes out of a release reply without its "v", whatever else the reply carries.
+    const std::string reply =
+        "{\"url\":\"https://api.github.com/repos/whoissaaif/mycam/releases/1\",\"tag_name\":\"v1.7.0\","
+        "\"name\":\"MyCam 1.7.0\",\"draft\":false}";
+    CHECK(LatestTagFromJson(reply) == "1.7.0");
+    CHECK(LatestTagFromJson("{\"tag_name\": \"1.6.1\"}") == "1.6.1");
+    CHECK(LatestTagFromJson("{\"message\":\"Not Found\"}").empty());
+    CHECK(LatestTagFromJson("").empty());
+    CHECK(LatestTagFromJson("{\"tag_name\":").empty()); // Cut off mid-reply.
+
+    // Newer wins, part by part, and a number is never compared as text ("10" beats "9").
+    CHECK(IsNewerVersion("1.6.1", "1.6.0"));
+    CHECK(IsNewerVersion("1.7.0", "1.6.9"));
+    CHECK(IsNewerVersion("2.0.0", "1.9.9"));
+    CHECK(IsNewerVersion("1.10.0", "1.9.0"));
+    CHECK(IsNewerVersion("1.6.10", "1.6.9"));
+    CHECK(!IsNewerVersion("1.6.0", "1.6.0"));
+    CHECK(!IsNewerVersion("1.6.0", "1.6.1"));
+    CHECK(!IsNewerVersion("1.5.9", "1.6.0"));
+    CHECK(!IsNewerVersion("0.9.9", "1.0.0"));
+
+    // A pre-release is older than the release with the same numbers, and newer than the one before it.
+    CHECK(IsNewerVersion("1.6.0", "1.6.0-beta4"));
+    CHECK(!IsNewerVersion("1.6.0-beta4", "1.6.0"));
+    CHECK(IsNewerVersion("1.7.0-beta1", "1.6.0"));
+
+    // Anything we can't read offers no update, rather than a wrong one.
+    CHECK(!IsNewerVersion("", "1.6.0"));
+    CHECK(!IsNewerVersion("1.6", "1.6.0"));
+    CHECK(!IsNewerVersion("nightly", "1.6.0"));
+    CHECK(!IsNewerVersion("9.9.9", ""));
+    CHECK(!IsNewerVersion("99999999.0.0", "1.6.0")); // Absurd, so refused rather than overflowed.
+}
+
 int main() {
     auto golden = LoadGolden();
     CHECK(!golden.empty());
@@ -1379,6 +1428,7 @@ int main() {
     printf("web: tokens\n");               TestWebTokens();
     printf("web: addresses\n");            TestWebAddresses();
     printf("qr pairing\n");                withGolden(TestQrPairing);
+    printf("update check versions\n");     TestUpdateVersion();
 
     printf("%d checks, %d failed\n", g_checks, g_failures);
     return g_failures ? 1 : 0;

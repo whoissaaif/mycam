@@ -203,6 +203,9 @@
     <string name="section_about">About</string>
     <string name="about_get_windows">Get MyCam for Windows</string>
     <string name="about_version">Version %1$s</string>
+    <string name="about_update">Version %1$s is available</string>
+    <string name="about_update_toggle">Tell me when a new version is out</string>
+    <string name="about_update_hint">Asks GitHub for the latest MyCam release, once a day. Nothing about you or your phone is sent.</string>
     <string name="about_privacy">Privacy Policy</string>
     <string name="about_contact">Contact: %1$s</string>
     <string name="about_licences">Licences</string>

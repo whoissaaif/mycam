@@ -43,6 +43,9 @@ add_executable(mycam-companion
     companion/wifi_crypto_common.cpp
     companion/packet_parser.cpp
     companion/marquee.cpp
+    companion/update_check.cpp
+    companion/update_check_openssl.cpp
+    companion/update_version.cpp
     companion/status_images_ffmpeg.cpp
     third_party/qrcodegen/qrcodegen.cpp
     ${WEB_ASSETS})
@@ -81,7 +84,7 @@ if(MYCAM_BUILD_TESTS)
     enable_testing()
     add_executable(mycam_tests tests/tests.cpp companion/packet_parser.cpp companion/wifi_crypto_openssl.cpp
         companion/wifi_crypto_common.cpp companion/marquee.cpp companion/preview_convert.cpp companion/status_text.cpp
-        companion/control_proto.cpp
+        companion/control_proto.cpp companion/update_version.cpp
         companion/web_proto.cpp vcam/frame_transform.cpp)
     target_link_libraries(mycam_tests PRIVATE OpenSSL::Crypto)
     target_compile_options(mycam_tests PRIVATE -Wall)

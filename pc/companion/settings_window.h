@@ -44,6 +44,11 @@ struct SettingsModel {
     std::function<void(uint32_t)> startWebPairing; // IPv4 the QR code points at (0: the best one).
     std::function<void()> stopWebPairing;
     std::function<void(const std::string&)> forgetWebDevice;
+    // Update check (#79): the newer version to offer ("" for none), the setting, and the releases page.
+    std::function<std::wstring()> updateVersion;
+    std::function<bool()> checkUpdates;
+    std::function<void(bool)> setCheckUpdates;
+    std::function<void()> openReleases;
     bool testPattern = false;                      // --test-pattern: the preview shows the pattern as live
 };
 

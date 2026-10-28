@@ -78,6 +78,8 @@ enum Id : int {
     kConnectedNote = 610, kAvailableNote = 611,
     // "Connect a phone to choose." under the Camera page's controls while nothing is connected.
     kCameraHint = 612,
+    // "Tell me when a new version is out" (#79), in the Settings page's first card.
+    kCheckUpdates = 613,
     // Task links.
     kReconnect = 700, kOpenLog = 701, kContact = 702,
     // Right side: preview and live camera controls.
@@ -94,6 +96,7 @@ enum Id : int {
     kWebDevicesNote = 926, kWebDevicesList = 927, kWebUnavailable = 928,
     // About page.
     kAboutLogo = 950, kAboutName = 951, kAboutVersion = 952, kAboutText = 953, kAboutLicence = 954,
+    kAboutUpdate = 955,             // "Version X is available" (#79); hidden while there is nothing newer.
     // Scan results: one block of ids per row (ScanRowId).
     kScanRowBase = 1000, kScanRowStride = 10, kScanRowsMax = 16,
     // "Connect an iPhone": the network dropdown's entries, and the remembered iPhones (part 0 the row, part 1

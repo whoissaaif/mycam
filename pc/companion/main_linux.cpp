@@ -19,6 +19,7 @@
 #include "phone_link.h"
 #include "platform.h"
 #include "status_images.h"
+#include "update_check.h"
 
 using namespace mycam;
 
@@ -133,6 +134,7 @@ int main(int argc, char** argv) {
     // "Waiting for the phone" / "Camera paused" while there is no live video. They also make MyCam appear in
     // apps at all: with exclusive_caps, v4l2loopback offers a camera only once a frame has been written.
     link.SetStatusImages(LoadStatusImage(kImagePaused), LoadStatusImage(kImageWaiting));
+    StartUpdateCheck(MYCAM_VERSION); // One GitHub request in the background, at most once a day (#79).
     uint64_t mirror = 0, fill = 0, wireless = 0; // The tray's options, kept across restarts.
     StoreGetU64("", "Wireless", &wireless);
     wifi = wifi || wireless != 0; // --wifi turns it on for this run without saving it.

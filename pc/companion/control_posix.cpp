@@ -17,6 +17,7 @@
 #include "platform.h"
 #include "protocol.h"
 #include "status_text.h"
+#include "update_check.h"
 
 namespace mycam {
 
@@ -81,6 +82,8 @@ TrayStatus MakeTrayStatus(const LinkStatus& status, bool mirror, bool fill) {
     t.fill = fill;
     t.pairing = !status.pairingCode.empty();
     t.wifi = status.wirelessSearch;
+    t.updates = UpdateCheckEnabled();
+    t.update = UpdateAvailable(MYCAM_VERSION); // What the last check found; never a request from here (#79).
     return t;
 }
 
@@ -265,6 +268,14 @@ void ControlServer::Command(const std::string& line) {
     else if (cmd == "wifi" && (arg == 0 || arg == 1)) {
         std::lock_guard<std::mutex> lock(lock_);
         SetWifi(arg); // The link publishes the new status, which reaches the tray.
+    } else if (cmd == "updates" && (arg == 0 || arg == 1)) {
+        SetUpdateCheckEnabled(arg);
+        if (arg) StartUpdateCheck(MYCAM_VERSION); // Turned on: look now rather than at the next start.
+        {
+            std::lock_guard<std::mutex> lock(lock_);
+            UpdateStatusLine();
+        }
+        changed_.notify_all();
     } else if (cmd == "allow") link_->AllowPairing();   // The 6-digit code pairing (no effect otherwise).
     else if (cmd == "deny") link_->CancelPairing();
     else if ((cmd == "mirror" || cmd == "fill") && (arg == 0 || arg == 1)) {
