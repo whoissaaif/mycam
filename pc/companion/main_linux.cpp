@@ -133,14 +133,16 @@ int main(int argc, char** argv) {
     // "Waiting for the phone" / "Camera paused" while there is no live video. They also make MyCam appear in
     // apps at all: with exclusive_caps, v4l2loopback offers a camera only once a frame has been written.
     link.SetStatusImages(LoadStatusImage(kImagePaused), LoadStatusImage(kImageWaiting));
+    uint64_t mirror = 0, fill = 0, wireless = 0; // The tray's options, kept across restarts.
+    StoreGetU64("", "Wireless", &wireless);
+    wifi = wifi || wireless != 0; // --wifi turns it on for this run without saving it.
     link.SetWireless(wifi);
-    uint64_t mirror = 0, fill = 0; // The tray's picture options, kept across restarts.
     StoreGetU64("", "Mirror", &mirror);
     StoreGetU64("", "Fill", &fill);
     link.SetMirror(mirror != 0);
     link.SetFill(fill != 0);
     if (pair) link.StartWebPairing(0);
-    ControlServer server(&link, mirror != 0, fill != 0);
+    ControlServer server(&link, mirror != 0, fill != 0, wifi);
     if (server.Start()) control = &server;
     Log("mycam-companion: camera %s at %ux%u%s", device.c_str(), width, height, wifi ? ", Android Wi-Fi on" : "");
     link.Run(); // Until SIGINT / SIGTERM.

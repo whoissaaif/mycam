@@ -206,8 +206,10 @@ struct Tray {
     GtkWidget* fill = nullptr;
     GtkWidget* iphone = nullptr;
     GtkWidget* reconnect = nullptr;
+    GtkWidget* wifi = nullptr;
     GtkWidget* autostart = nullptr;
     GtkWidget* start = nullptr;
+    GtkWidget* pairing = nullptr; // The "allow this phone?" dialog while a code pairing waits (pairing_dialog.cpp).
     int socket = -1;
     guint watch = 0;
     std::string buffer;
@@ -223,6 +225,35 @@ void SetIcon(int id, const std::string& tooltip) {
     app_indicator_set_title(g_tray.indicator, tooltip.c_str());
 }
 
+// A Wi-Fi phone pairing by code waits for this PC too (PROTOCOL.md "The PC asks too"). Open while the
+// daemon says so; closing it without an answer lets the pairing time out, as on Windows.
+void ShowPairing(const TrayStatus& s, bool running) {
+    if (!(running && s.pairing)) {
+        if (g_tray.pairing) gtk_widget_destroy(g_tray.pairing);
+        return;
+    }
+    if (g_tray.pairing) {
+        gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(g_tray.pairing), "%s", s.detail.c_str());
+        return;
+    }
+    g_tray.pairing = gtk_message_dialog_new(nullptr, GTK_DIALOG_MODAL, GTK_MESSAGE_QUESTION, GTK_BUTTONS_NONE, "%s",
+                                            s.headline.c_str());
+    gtk_message_dialog_format_secondary_text(GTK_MESSAGE_DIALOG(g_tray.pairing), "%s", s.detail.c_str());
+    gtk_window_set_title(GTK_WINDOW(g_tray.pairing), "MyCam");
+    gtk_window_set_keep_above(GTK_WINDOW(g_tray.pairing), TRUE);
+    gtk_dialog_add_buttons(GTK_DIALOG(g_tray.pairing), "_Don\u2019t allow", GTK_RESPONSE_REJECT, "_Allow",
+                           GTK_RESPONSE_ACCEPT, nullptr);
+    g_signal_connect(g_tray.pairing, "response", G_CALLBACK(+[](GtkDialog* d, gint response, gpointer) {
+        if (response == GTK_RESPONSE_ACCEPT) Send(g_tray.socket, "allow");
+        else if (response == GTK_RESPONSE_REJECT) Send(g_tray.socket, "deny");
+        gtk_widget_destroy(GTK_WIDGET(d));
+    }), nullptr);
+    g_signal_connect(g_tray.pairing, "destroy", G_CALLBACK(+[](GtkWidget*, gpointer) { g_tray.pairing = nullptr; }),
+                     nullptr);
+    gtk_widget_show_all(g_tray.pairing);
+    gtk_window_present(GTK_WINDOW(g_tray.pairing));
+}
+
 void ShowStatus(const TrayStatus& s, bool running) {
     g_tray.updating = true;
     g_tray.last = s;
@@ -233,7 +264,7 @@ void ShowStatus(const TrayStatus& s, bool running) {
     gtk_menu_item_set_label(GTK_MENU_ITEM(g_tray.pause), s.paused ? "Resume camera" : "Pause camera");
     gtk_widget_set_sensitive(g_tray.pause, running && s.canPause);
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(s.facing ? g_tray.front : g_tray.back), TRUE);
-    for (GtkWidget* w : {g_tray.back, g_tray.front, g_tray.mirror, g_tray.fill, g_tray.iphone, g_tray.reconnect})
+    for (GtkWidget* w : {g_tray.back, g_tray.front, g_tray.mirror, g_tray.fill, g_tray.iphone, g_tray.reconnect, g_tray.wifi})
         gtk_widget_set_sensitive(w, running);
     gtk_widget_set_sensitive(g_tray.quality, running && s.linked);
     for (int q = 0; q < 3; ++q) {
@@ -242,8 +273,10 @@ void ShowStatus(const TrayStatus& s, bool running) {
     }
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(g_tray.mirror), s.mirror);
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(g_tray.fill), s.fill);
+    gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(g_tray.wifi), s.wifi);
     gtk_widget_set_visible(g_tray.start, !running);
     g_tray.updating = false;
+    ShowPairing(s, running);
 }
 
 void Disconnected();
@@ -332,6 +365,7 @@ GtkWidget* BuildMenu() {
     Separator(menu);
     g_tray.iphone = Item(menu, "Connect an _iPhone…", ShowPairWindow);
     g_tray.reconnect = Item(menu, "Reconnect phone", [] { Command("reconnect"); });
+    g_tray.wifi = Check(menu, nullptr, "Find phones on _Wi-Fi", [](GtkCheckMenuItem* i) { Command(Active(i) ? "wifi 1" : "wifi 0"); });
     g_tray.autostart = Check(menu, nullptr, "Start at login", [](GtkCheckMenuItem* i) {
         if (!g_tray.updating) Systemctl(Active(i) ? "enable" : "disable");
     });

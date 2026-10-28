@@ -9,7 +9,8 @@
 //   so it only ever goes over this socket, never to the log.
 // - "watch" (mycam-tray): the daemon sends a status line (control_proto.h) now and on every change, and
 //   takes commands on the same connection until it closes.
-// - A command on its own: "pause 0|1", "facing 0|1", "quality 0|1|2", "mirror 0|1", "fill 0|1", "reconnect".
+// - A command on its own: "pause 0|1", "facing 0|1", "quality 0|1|2", "mirror 0|1", "fill 0|1", "wifi 0|1", "reconnect",
+//   "allow" / "deny" (a Wi-Fi phone's 6-digit code pairing, which this PC must allow too).
 
 #include <stdint.h>
 
@@ -26,8 +27,9 @@ class PhoneLink;
 
 class ControlServer {
 public:
-    // mirror/fill: the saved picture options (the store's "Mirror"/"Fill"), already applied to the link.
-    ControlServer(PhoneLink* link, bool mirror, bool fill) : link_(link), mirror_(mirror), fill_(fill) {}
+    // mirror/fill/wireless: the saved options (the store's "Mirror", "Fill", "Wireless"), already applied.
+    ControlServer(PhoneLink* link, bool mirror, bool fill, bool wireless)
+        : link_(link), mirror_(mirror), fill_(fill), wireless_(wireless) {}
     ControlServer(const ControlServer&) = delete;
     ControlServer& operator=(const ControlServer&) = delete;
     ~ControlServer() { Stop(); }
@@ -43,6 +45,7 @@ private:
     void Watch(int client, std::string buffer);
     void Command(const std::string& line);
     void UpdateStatusLine(); // With lock_ held.
+    void SetWifi(bool on);   // With lock_ held: "Find phones on Wi-Fi", saved.
 
     PhoneLink* link_;
     int listen_ = -1;
@@ -57,7 +60,7 @@ private:
     uint32_t pairedCount_ = 0;
     std::string pairedName_;
     LinkStatus status_;
-    bool mirror_, fill_;
+    bool mirror_, fill_, wireless_;
     std::string statusLine_;
     uint64_t statusSeq_ = 0;      // Bumped whenever statusLine_ changes.
 };

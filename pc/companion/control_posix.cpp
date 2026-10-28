@@ -79,6 +79,8 @@ TrayStatus MakeTrayStatus(const LinkStatus& status, bool mirror, bool fill) {
     for (int q = 0; q < 3; ++q) t.qualityOk[q] = caps::QualityEnabled(t.linked, status.camera, uint8_t(q));
     t.mirror = mirror;
     t.fill = fill;
+    t.pairing = !status.pairingCode.empty();
+    t.wifi = status.wirelessSearch;
     return t;
 }
 
@@ -139,10 +141,22 @@ void ControlServer::OnStatus(const LinkStatus& status) {
         url_ = Utf8(status.webUrl);
         if (status.pairedCount != pairedCount_) pairedName_ = Utf8(status.pairedName);
         pairedCount_ = status.pairedCount;
+        // A phone just paired over Wi-Fi: turn on "Find phones on Wi-Fi" so it reconnects by itself, as
+        // the Windows companion does (main.cpp). It makes this PC announce itself, so it is logged.
+        if (status.pairedCount != status_.pairedCount && status.pairedCount && status.pairedWifi && !wireless_) {
+            Log("wifi: paired a phone over Wi-Fi, so \"Find phones on Wi-Fi\" is now on (the tray turns it off)");
+            SetWifi(true);
+        }
         status_ = status;
         UpdateStatusLine();
     }
     changed_.notify_all();
+}
+
+void ControlServer::SetWifi(bool on) {
+    wireless_ = on;
+    link_->SetWireless(on);
+    StoreSetU64("", "Wireless", on); // The Windows setting's name.
 }
 
 void ControlServer::UpdateStatusLine() {
@@ -248,6 +262,11 @@ void ControlServer::Command(const std::string& line) {
     else if (cmd == "quality" && arg >= proto::kQuality720p && arg <= proto::kQuality4K) {
         link_->RequestCommand(proto::kCmdSetQuality, uint8_t(arg));
     } else if (cmd == "reconnect") link_->RequestReconnect();
+    else if (cmd == "wifi" && (arg == 0 || arg == 1)) {
+        std::lock_guard<std::mutex> lock(lock_);
+        SetWifi(arg); // The link publishes the new status, which reaches the tray.
+    } else if (cmd == "allow") link_->AllowPairing();   // The 6-digit code pairing (no effect otherwise).
+    else if (cmd == "deny") link_->CancelPairing();
     else if ((cmd == "mirror" || cmd == "fill") && (arg == 0 || arg == 1)) {
         // Saved like the Windows tray saves them, and applied at the next frame.
         if (cmd == "mirror") link_->SetMirror(arg);
