@@ -182,7 +182,7 @@
     <string name="pair_differ">If the codes differ, don’t allow.</string>
     <string name="pair_waiting">Waiting %1$s</string>
     <string name="pair_timed_out">Pairing timed out</string>
-    <string name="pair_timed_out_detail">%1$s wasn’t allowed in time. Start again from MyCam on the PC.</string>
+    <string name="pair_timed_out_detail">%1$s wasn’t allowed in time. Open Find Devices here, then Connect on the PC.</string>
     <string name="wireless_allow">Allow</string>
     <string name="wireless_deny">Don’t allow</string>
 

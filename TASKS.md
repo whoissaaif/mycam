@@ -11,10 +11,10 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 
 - [ ] **1.6.0 stable: Windows and Android join the Linux 1.6.0** (#76). v1.6.0 has only the `.deb` so far
       and isn't marked Latest; the `.exe` and `.apk` are attached once everything below is done
-  - [~] Pairing prompts only after Find devices / Connect; auto-connect to paired phones only (#69): built,
-        unit-tested (the phone refuses a new PC before asking unless Find devices was opened in the last
-        2 min); test with a phone: no popup on app open, Find devices + Connect still pairs, paired phone
-        still reconnects by itself
+  - [x] Pairing prompts only after Find devices / Connect; auto-connect to paired phones only (#69): tested
+        on the CMF Phone 1 over Wi-Fi (release APK): no popup when a 1.6.0 PC tries to pair by itself, the new
+        PC leaves an unpaired phone alone, Find devices + Connect pairs, a paired phone reconnects by itself.
+        Tapping a PC in Find devices (the `MYCAM+1` path) not retried
   - [ ] USB debugging on: the accessory interface gets the MTP driver, so USB never streams (#66)
   - [ ] Cable → Wi-Fi when unplugged (#70); Wi-Fi → cable only once the cable opens (#67)
   - [ ] PC preview streams while the window shows it, not only when an app uses the camera (#71)
