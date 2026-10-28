@@ -186,7 +186,8 @@ private:
     uintptr_t udp_ = ~uintptr_t(0);       // SOCKET for discovery (INVALID_SOCKET when closed).
     uintptr_t tcp_ = ~uintptr_t(0);       // SOCKET of the current Wi-Fi session.
     uint64_t lastProbe_ = 0;
-    struct NetPhone { uint16_t port = 0; std::string name; uint64_t lastSeen = 0, retryAfter = 0; bool forcePair = false; };
+    // notPairedLogged: "isn't paired, so it isn't connected by itself" was logged (once per phone, not every 2 s).
+    struct NetPhone { uint16_t port = 0; std::string name; uint64_t lastSeen = 0, retryAfter = 0; bool notPairedLogged = false; };
     // Encrypted Wi-Fi session (PROTOCOL.md "Wireless security"): record keys per direction, received bytes.
     std::shared_ptr<wifi::RecordKey> wifiTx_, wifiRx_;
     std::vector<uint8_t> wifiRxBuf_;

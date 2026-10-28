@@ -11,22 +11,27 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 
 - [ ] **1.6.0 stable: Windows and Android join the Linux 1.6.0** (#76). v1.6.0 has only the `.deb` so far
       and isn't marked Latest; the `.exe` and `.apk` are attached once everything below is done
-  - [ ] Pairing prompts only after Find devices / Connect; auto-connect to paired phones only (#69)
+  - [x] Pairing prompts only after Find devices / Connect; auto-connect to paired phones only (#69): tested
+        on the CMF Phone 1 over Wi-Fi (release APK): no popup when a 1.6.0 PC tries to pair by itself, the new
+        PC leaves an unpaired phone alone, Find devices + Connect pairs, a paired phone reconnects by itself.
+        Tapping a PC in Find devices (the `MYCAM+1` path) not retried
   - [ ] USB debugging on: the accessory interface gets the MTP driver, so USB never streams (#66)
   - [ ] Cable → Wi-Fi when unplugged (#70); Wi-Fi → cable only once the cable opens (#67)
   - [ ] PC preview streams while the window shows it, not only when an app uses the camera (#71)
-  - [~] support@mycam.dev in both About pages, the website and the README (#72): built; PC About checked on
-        screen; phone About link to check on a phone; website contact links in with #74
+  - [x] support@mycam.dev in both About pages, the website and the README (#72): live on mycam.dev; the
+        phone's About link opens an email to it (CMF Phone 1, release APK)
   - [x] Start-menu shortcut, so Windows search finds MyCam (#73): installed and opened from the Start menu;
         a second launch opens the running instance's window
-  - [~] Website on `main` in `website/`, published by `.github/workflows/pages.yml` (#74): built; switch the
-        Pages source from the `gh-pages` branch to the workflow, check mycam.dev, then retire `gh-pages`
+  - [x] Website on `main` in `website/`, published by `.github/workflows/pages.yml` (#74): live on mycam.dev
+        since 2026-10-28; the old `gh-pages` branch is kept for now as a fallback
   - [ ] Website updated for 1.6.0 and Linux, download links that survive a release (#75)
   - [ ] Security findings from the local inspection report (pairing, the SYSTEM task, lock screen):
         fixed through a private advisory, not public issues
   - [ ] Test matrix below, then the release APK (R8 on) on a real phone
   - [ ] Later, not blocking: USB file transfer while MyCam runs (#77), "Can't connect?" help (#78),
         update check (#79), and the open bugs #4, #10, #20, #22, #64, #68
+  - [ ] Found while testing #69: a companion started while an older one still holds `mycam.log` runs with no
+        log at all (#84); the phone's Pause hint reads as if the camera were already paused (#85)
 - [x] Clean install test: removed everything, installed 1.2.0 from the GitHub release, first-use flow and streaming work
 - [ ] Test the remaining scenarios [2.3]
   - [ ] Pause / Resume from the phone's notification

@@ -564,7 +564,7 @@ phone is connected. It runs a one-shot scan: the PC broadcasts the usual discove
 lists every phone that answers within **6 s**, even while "Find phones on Wi-Fi" is off (the setting doesn't
 change). While it runs, the green **marquee** shows with "Looking for phones on this Wi-Fi…" (reduced motion:
 the sentence alone). Then each phone gets a row: its name, its address in subtle text, and "Connected",
-"Paired" or "New: it will ask for a code", with a **Connect** link while no phone is connected. With search
+"Paired" or "New: open Find devices on the phone, then Connect", with a **Connect** link while no phone is connected. With search
 off, nothing connects by itself: Connect runs one Wi-Fi session to that phone (pairing with the dialog as
 usual). With search on, auto-connect works as before and the scan only refreshes the list sooner. A plugged-in
 phone still wins. If nothing answers: "No phone found. On the phone, open MyCam and turn on “Use over

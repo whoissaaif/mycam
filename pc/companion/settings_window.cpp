@@ -752,7 +752,7 @@ struct SettingsWindow::Impl {
             r.name = Wide(p.name);
             r.where = Wide(p.ipText);
             r.connected = p.connected;
-            r.status = p.connected ? L"Connected" : p.paired ? L"Paired" : L"New: it will ask for a code";
+            r.status = p.connected ? L"Connected" : p.paired ? L"Paired" : L"New: open Find devices on the phone, then Connect";
             rows.push_back(std::move(r));
         }
         return rows;
