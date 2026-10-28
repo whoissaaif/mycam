@@ -32,6 +32,11 @@ class WifiHandshake(
     private val askUser: (pcName: String, code: String, pcGone: () -> Boolean) -> Boolean,
     /** QR pairing: the one-time code scanned from this PC's screen (16 bytes), or null if none is pending. */
     private val qrCodeFor: (pcId: ByteArray) -> ByteArray? = { null },
+    /**
+     * Code pairing: whether this phone's user asked to pair just now (Find devices, or a PC tapped there).
+     * If not, a PC without a key is refused before anything is shown (#69).
+     */
+    private val pairingWanted: () -> Boolean = { true },
 ) {
     class Result(
         val input: InputStream,
@@ -94,6 +99,14 @@ class WifiHandshake(
             val keys = WifiCrypto.sessionKeys(z, known, npc, nph)
             if (!finishedFromPc(keys)) { reject(REJECT_AUTH); return null }
             return finish(keys, pcId, pcName, newlyPaired = false)
+        }
+
+        // A PC this phone has no key for (or one asking to pair again) only gets a pairing question if the user
+        // asked for one here; otherwise any PC searching the network would pop it up on its own.
+        if (!pairingWanted()) {
+            android.util.Log.i(TAG, "pairing refused: not asked for on this phone")
+            reject(REJECT_REFUSED)
+            return null
         }
 
         // Pairing: commit to Nb before seeing Na, so nobody in between can steer the code.

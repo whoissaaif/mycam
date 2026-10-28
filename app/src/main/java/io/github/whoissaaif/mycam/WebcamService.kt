@@ -132,6 +132,12 @@ class WebcamService : Service() {
     private var wifiLock: WifiManager.WifiLock? = null
     private var handshaking = false                      // A PC is pairing or proving its pairing key.
     private var pendingAnswer: ((Boolean) -> Unit)? = null // Waiting for Allow / Don't allow on a pairing.
+    /**
+     * Until when (elapsedRealtime) a PC without a key may start a code pairing: set by Find devices and by
+     * tapping a PC there, so the pairing question only follows the user asking for it (#69). Read on the
+     * handshake thread.
+     */
+    @Volatile private var pairingUntil = 0L
     private val pairedPcs by lazy { PairedPcs.open(this) }
     private val nearby = NearbyPcs()
     /** Drops PCs that stopped probing; runs every second while the nearby list isn't empty. */
@@ -368,6 +374,7 @@ class WebcamService : Service() {
             }
         } else {
             wirelessOn = false
+            pairingUntil = 0L
             wireless?.stop()
             wireless = null
             answerPc(false)
@@ -397,6 +404,7 @@ class WebcamService : Service() {
      */
     private fun startScan() {
         main.removeCallbacks(endScan)
+        openPairingWindow()
         publishNearby()
         _state.update { it.copy(scanning = true, wirelessAddress = WirelessServer.localAddress(this)) }
         main.postDelayed(endScan, NearbyPcs.MAX_AGE_MS)
@@ -415,6 +423,7 @@ class WebcamService : Service() {
             return
         }
         main.removeCallbacks(resendInvite)
+        openPairingWindow()
         invitingIp = ip
         invitesLeft = INVITE_TRIES
         _state.update { it.copy(invitingPc = ip) }
@@ -480,6 +489,11 @@ class WebcamService : Service() {
         if (_state.value.invitingPc != null) _state.update { it.copy(invitingPc = null) }
     }
 
+    /** Main thread. The user asked to pair (Find devices, or a PC tapped there): PCs may ask for a while. */
+    private fun openPairingWindow() {
+        pairingUntil = SystemClock.elapsedRealtime() + PAIRING_WINDOW_MS
+    }
+
     /** Main thread. A PC's discovery probe arrived. */
     private fun onProbe(ip: String, port: Int, name: String) {
         if (!wirelessOn) return
@@ -520,6 +534,7 @@ class WebcamService : Service() {
         Thread({
             val result = WifiHandshake(
                 sock, pairedPcs, pairedPcs.phoneId(), WirelessServer.deviceName(this), ::askUser, ::qrCodeFor,
+                pairingWanted = { SystemClock.elapsedRealtime() < pairingUntil },
             ).run()
             main.post {
                 handshaking = false
@@ -633,6 +648,7 @@ class WebcamService : Service() {
         // A new pairing (QR code or 6-digit code): the screen says so and shows the camera. When the camera is
         // still waiting to be allowed, the gate asks and names the PC, so there is no second message.
         if (secure.newlyPaired) {
+            pairingUntil = 0L // One pairing per ask: a second PC can't follow on the same Find devices.
             _state.update {
                 it.copy(pairedPcs = pairedPcs.list(), justPaired = if (cameraBlocked) null else secure.pcName)
             }
@@ -1177,6 +1193,8 @@ class WebcamService : Service() {
         /** "Connect to me" is resent every 2 s, five times, because a single datagram may be lost. */
         private const val INVITE_EVERY_MS = 2_000L
         private const val INVITE_TRIES = 5
+        /** How long after Find devices (or tapping a PC) a new PC may ask to pair: time to go and click Connect. */
+        private const val PAIRING_WINDOW_MS = 120_000L
 
         fun loadCameraSettings(prefs: android.content.SharedPreferences) = CameraStreamer.Settings(
             quality = prefs.getInt("quality", Protocol.QUALITY_1080P),

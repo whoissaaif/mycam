@@ -472,18 +472,25 @@ void PhoneLink::NetScanOnce() {
     if (nearby_.Expire(now, kForgetAfterMs)) nearbyDirty_ = true;
     RefreshNearby();
 
-    // Connect to a phone that answered recently and isn't in back-off.
+    // Connect to a phone that answered recently and isn't in back-off. Only phones this PC is paired with:
+    // reaching a new one would put a pairing question on its screen that nobody asked for (#69). New phones
+    // pair through Connect in the scan list, the phone's Find devices, or the QR code.
+    const std::vector<std::string> paired = PairedNames();
     for (auto& [ip, phone] : netPhones_) {
         if (now - phone.lastSeen > kForgetAfterMs || now < phone.retryAfter) continue;
+        if (std::find(paired.begin(), paired.end(), phone.name) == paired.end()) {
+            if (!phone.notPairedLogged) Log("wifi: %s isn't paired with this PC, so it isn't connected by itself", phone.name.c_str());
+            phone.notPairedLogged = true;
+            continue;
+        }
+        phone.notPairedLogged = false;
         net::Socket s = ConnectTcp(ip, phone.port, 2000);
         if (s == net::kInvalid) {
             Log("wifi: can't connect to %s (%s:%u)", phone.name.c_str(), IpText(ip).c_str(), phone.port);
             phone.retryAfter = now + kRetryUnreachableMs;
             continue;
         }
-        const bool forcePair = phone.forcePair;
-        phone.forcePair = false;
-        switch (RunTcpSession(uintptr_t(s), phone.name, forcePair)) {
+        switch (RunTcpSession(uintptr_t(s), phone.name, false)) {
         case WifiEnd::Ran: phone.retryAfter = NowMs() + kRetryLostMs; break;
         // The user said no (or nobody answered): don't ask again for a while.
         case WifiEnd::Refused: phone.retryAfter = NowMs() + kRetryRefusedMs; break;
@@ -491,8 +498,9 @@ void PhoneLink::NetScanOnce() {
         case WifiEnd::TimedOutHere: phone.retryAfter = NowMs() + kRetryRefusedMs; break;
         // This PC's user said no: never by itself again (Connect, or the phone asking, still work).
         case WifiEnd::RefusedHere: phone.retryAfter = kNever; break;
-        // Our pairing key doesn't work any more (e.g. this PC forgot the phone): pair again, with a code.
-        case WifiEnd::NeedsPairing: phone.forcePair = true; phone.retryAfter = 0; break;
+        // Our pairing key didn't work (the phone forgot this PC), so it was deleted and the phone isn't
+        // paired any more: it pairs again, with a code, once someone asks (Connect or Find devices).
+        case WifiEnd::NeedsPairing: break;
         case WifiEnd::Failed: phone.retryAfter = NowMs() + kRetryUnreachableMs; break;
         }
         lastProbe_ = 0; // Look again right away.

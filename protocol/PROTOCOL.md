@@ -204,6 +204,16 @@ If the phone's user allowed first, the phone keeps a key the PC never stored. Th
 handles it: the next time they connect, the PC has no key, sends REJECT (2) and pairs again with "force
 pairing".
 
+**Pairing only when asked (1.6).** No new messages; this changes when each side starts or accepts a pairing,
+so that a pairing question only appears after someone asked for one:
+
+- The phone accepts a code pairing (including "force pairing") only for 2 minutes after its user opened
+  Find devices or tapped a PC there. Otherwise it answers CLIENT_HELLO with REJECT (1) and shows nothing.
+  QR pairing is unchanged: scanning the code is the user asking.
+- "Find phones on Wi-Fi" on the PC connects by itself only to phones it is paired with (matched by name,
+  as the scan list does). A new phone, or one whose key stopped working, is reached only through Connect,
+  the phone asking (`MYCAM+1`) or the QR code.
+
     K (pairing) = HKDF(ikm = z, salt = Na | Nb, info = "MyCam pair v1", 32)
     session     = HKDF(ikm = z | K, salt = Npc | Nph, info = "MyCam session v1", 96)
                 = PC-to-phone key (32) | phone-to-PC key (32) | finished key kFin (32)

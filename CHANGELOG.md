@@ -23,6 +23,10 @@ or protocol changes). Releases with their installers: https://github.com/whoissa
 - **Windows: MyCam is in the Start menu**, so Windows search finds it. Opening it while MyCam is already in
   the tray shows its window instead of doing nothing. (#73)
 - **A contact address, support@mycam.dev**, in the About pages of both apps and in the README. (#72)
+- **No more pairing questions out of the blue.** Opening MyCam on the phone no longer pops up "Pair with
+  <PC>?" because some PC on the network is searching. A new PC can only ask to pair for 2 minutes after you
+  open Find devices (or tap a PC there), and "Find phones on Wi-Fi" on the PC only reconnects phones it is
+  already paired with. (#69)
 
 No protocol changes: 1.6.0 phones and PCs work with 1.5.x.
 
