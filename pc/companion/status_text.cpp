@@ -49,7 +49,7 @@ StatusView DescribeStatus(const LinkStatus& s, bool cameraRegistered, const std:
                 L"Connecting over USB…", L"Open MyCam on the phone, and tap OK if it asks.", StatusProgress::Working};
     case LinkState::Idle:
         return {L"Ready", camera + (s.wireless ? L" · " + link : L"") + L". Choose “MyCam” as the camera in any app.", kIconReady,
-                camera + L" · " + link + tag, L"Choose “MyCam” as the camera in any app. The camera turns on only while an app uses it."};
+                camera + L" · " + link + tag, L"Choose “MyCam” as the camera in any app. The camera turns on only while an app or this preview uses it."};
     case LinkState::Streaming: {
         std::wstring detail = camera;
         if (s.width) detail += L" · " + std::to_wstring(s.width) + L" × " + std::to_wstring(s.height);
@@ -57,7 +57,7 @@ StatusView DescribeStatus(const LinkStatus& s, bool cameraRegistered, const std:
         std::wstring facts = camera;
         if (s.width) facts += L" · " + std::to_wstring(s.width) + L" × " + std::to_wstring(s.height);
         facts += L" · " + link + tag;
-        return {L"Streaming", detail, kIconStreaming, facts, L"An app is using the camera. Pause it any time; apps then see a “Camera paused” picture."};
+        return {L"Streaming", detail, kIconStreaming, facts, L"The camera is on while an app or this preview uses it. Pause it any time; apps then see a “Camera paused” picture."};
     }
     case LinkState::PhoneError:
         return {L"Camera problem", L"Check the phone. Another app may be using its camera.", kIconError,
