@@ -42,6 +42,11 @@ const char* AccessoryDriverName(AccessoryDriver state);
 // class driver, or WinUSB that libusb can't see). `detail` (optional) names the node and what's wrong.
 bool AccessoryNeedsDriver(std::string* detail = nullptr);
 
+// True if an accessory-mode phone is attached whose accessory interface carries a driver somebody
+// installed on purpose (AccessoryDriver::Foreign). BindAccessoryDrivers() leaves those alone, so USB
+// will never work until the user undoes it: worth saying out loud (#78). `detail` as above.
+bool AccessoryForeignDriver(std::string* detail = nullptr);
+
 // Binds Windows' inbox WinUSB driver to every accessory interface that needs it. Requires admin (run by
 // the SYSTEM scheduled task or a UAC prompt). Only ever touches nodes ClassifyAccessory() accepts.
 // Returns how many devices were bound. The binding persists for that phone.

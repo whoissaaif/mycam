@@ -194,6 +194,21 @@ close the running companion cleanly; the uninstaller asks before removing UsbDk.
 
 ---
 
+### 5.4 "Can't connect?" help (S): 🟡 built, the three screens not seen yet
+The four causes behind nearly every failed connection - the phone's own permission prompt for the cable, a
+charge-only cable or USB mode, phone and PC on different (or guest / isolated) networks, and Windows calling
+the network Public - written out in the three places somebody looks: the PC's **Devices** page, the phone's
+**Connect** page (folded away like the USB help beside it) and a new FAQ entry on the website, each ending
+in the support address. #88 took USB debugging off that list by rebinding WinUSB over a wrong class driver.
+
+And where Windows can tell, the status says so: an accessory interface carrying a driver somebody installed
+on purpose (`AccessoryDriver::Foreign`) is one `BindAccessoryDrivers` deliberately leaves alone, so USB can
+never open that phone. It now reads "Another driver has this phone's cable" with the way out, instead of
+"No phone connected" plus a line in the log. `AccessoryForeignDriver` runs only on the scan path that found
+nothing, so it costs nothing while streaming. (#78)
+
+---
+
 ## 6. Project hygiene: ✅ done
 - ✅ Git, with dev tools kept out of shipped builds (`-DMYCAM_BUILD_TOOLS=ON`).
 - ✅ Unit tests: C++ (`pc/tests`: packet parser, frame transform, BGRA→NV12) and Android (`ProtocolTest`).

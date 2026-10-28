@@ -24,6 +24,16 @@ StatusView DescribeStatus(const LinkStatus& s, bool cameraRegistered, const std:
         return {L"USB driver missing", L"Run the MyCam installer again to set up the USB driver.", kIconError,
                 L"USB can't be used", L"Run the MyCam installer again to set up the USB driver."};
     case LinkState::Searching:
+        // A phone is on the cable in accessory mode, but a driver somebody installed holds its accessory
+        // interface, and MyCam leaves those alone rather than overwriting someone's choice. Saying "plug in
+        // your phone" would send people in circles, so name the cause and the two ways out (#78).
+        if (s.usbDriverBlocked) {
+            return {L"Another driver has this phone's cable",
+                    L"Something else is installed on the phone's USB connection, so MyCam can't open it. Remove "
+                    L"that driver in Device Manager, under the phone's accessory interface — or use Wi-Fi instead.",
+                    kIconError, L"USB is held by another driver",
+                    L"Remove that driver in Device Manager, or use Wi-Fi instead."};
+        }
         if (s.wirelessSearch) {
             return {L"No phone connected",
                     L"Plug in your phone, or turn on “Use over Wi-Fi” in MyCam on the phone (same Wi-Fi).", kIconDisconnected,

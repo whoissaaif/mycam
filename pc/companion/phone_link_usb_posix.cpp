@@ -21,6 +21,7 @@ void PhoneLink::ExitUsb() {
 }
 
 bool PhoneLink::UsbNeedsDriver() { return false; } // No driver binding on Linux.
+bool PhoneLink::UsbForeignDriver() { return false; } // udev hands accessory-mode phones straight to libusb.
 
 bool PhoneLink::RunAccessory(libusb_device* accessory, bool checkOnly) { return RunSession(accessory, ctx_, checkOnly); }
 

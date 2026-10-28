@@ -49,12 +49,19 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
   - [ ] Security findings from the local inspection report (pairing, the SYSTEM task, lock screen):
         fixed through a private advisory, not public issues
   - [ ] Test matrix below, then the release APK (R8 on) on a real phone
-  - [ ] Later, not blocking: USB file transfer while MyCam runs (#77), "Can't connect?" help (#78),
-        and the open bugs #4, #10, #20, #22, #64, #68
+  - [ ] Later, not blocking: USB file transfer while MyCam runs (#77), and the open bugs #4, #10, #20,
+        #22, #64, #68
   - [ ] "Version X is available" on the About pages (#79): done on `feature/update-check` for Windows,
-        Android and Linux — one GitHub request a day, on by default with "Tell me when a new version is
+        Android and Linux - one GitHub request a day, on by default with "Tell me when a new version is
         out" to turn it off, and the privacy page says what it sends. The Windows request and both apps'
         version rules are tested; the Linux build and the three About pages are not seen yet
+  - [ ] "Can't connect?" help (#78): done on `feature/cant-connect-help` - the four usual causes on the
+        PC's Devices page, the phone's Connect page and the website FAQ, each with the support address.
+        Now that #88 rebinds WinUSB over a wrong class driver, the causes are the phone's own permission
+        prompt, a charge-only cable or USB mode, different or isolated networks, and Windows calling the
+        network Public. The Windows status also names an accessory interface held by a driver MyCam leaves
+        alone (AccessoryDriver::Foreign) instead of only logging it. The status sentence is tested; the
+        three screens have not been looked at, and the Foreign case has no hardware to try it on
   - [ ] Found while testing #69: a companion started while an older one still holds `mycam.log` runs with no
         log at all (#84); the phone's Pause hint reads as if the camera were already paused (#85)
 - [x] Clean install test: removed everything, installed 1.2.0 from the GitHub release, first-use flow and streaming work

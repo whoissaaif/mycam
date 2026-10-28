@@ -28,6 +28,10 @@ struct LinkStatus {
     int facing = 0;          // proto::Facing
     uint32_t width = 0, height = 0;
     bool lockPaused = false; // Windows is locked or asleep: MyCam keeps the phone camera off.
+    // A phone is in accessory mode on the cable, but a driver somebody installed holds its accessory
+    // interface (winusb_bind.h AccessoryDriver::Foreign), which MyCam deliberately leaves alone. USB can
+    // never open it, so this is said out loud rather than only logged (#78).
+    bool usbDriverBlocked = false;
     proto::CameraInfo camera; // v3: phone video settings + what its camera supports (valid once received).
     bool wireless = false;        // The current phone is connected over Wi-Fi (else USB).
     bool wirelessSearch = false;  // "Find phones on Wi-Fi" is on.
