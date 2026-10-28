@@ -16,7 +16,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
   - [ ] Cable → Wi-Fi when unplugged (#70); Wi-Fi → cable only once the cable opens (#67)
   - [ ] PC preview streams while the window shows it, not only when an app uses the camera (#71)
   - [ ] support@mycam.dev in both About pages, the website and the README (#72)
-  - [ ] Start-menu shortcut, so Windows search finds MyCam (#73)
+  - [x] Start-menu shortcut, so Windows search finds MyCam (#73): installed and opened from the Start menu;
+        a second launch opens the running instance's window
   - [ ] Website in the repo (#74); updated for 1.6.0 and Linux, download links that survive a release (#75)
   - [ ] Security findings from the local inspection report (pairing, the SYSTEM task, lock screen):
         fixed through a private advisory, not public issues

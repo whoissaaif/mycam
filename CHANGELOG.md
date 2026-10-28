@@ -20,6 +20,8 @@ or protocol changes). Releases with their installers: https://github.com/whoissa
 - **Android: zoom and brightness stay in range** before the camera has opened once. (#52)
 - **Android: a Privacy Policy link** in Settings → About. (#50)
 - **PC: a failing decoder no longer floods the log**; it retries every 2 s instead of on every frame. (#51)
+- **Windows: MyCam is in the Start menu**, so Windows search finds it. Opening it while MyCam is already in
+  the tray shows its window instead of doing nothing. (#73)
 
 No protocol changes: 1.6.0 phones and PCs work with 1.5.x.
 

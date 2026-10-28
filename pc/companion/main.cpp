@@ -35,6 +35,7 @@ namespace {
 constexpr UINT WM_TRAY = WM_APP + 1;
 constexpr UINT WM_STATUS = WM_APP + 2;
 constexpr UINT WM_NEED_DRIVER = WM_APP + 3;
+constexpr UINT WM_SHOW_SETTINGS = WM_APP + 4; // A second launch (Start menu, the exe) asks for the window.
 constexpr UINT kTrayId = 1;
 
 enum MenuId : UINT {
@@ -278,6 +279,9 @@ LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
     case WM_NEED_DRIVER:
         RunDriverBinder();
         return 0;
+    case WM_SHOW_SETTINGS:
+        if (g_settings) g_settings->Show();
+        return 0;
     case WM_TIMER:
         if (wp == kDemoScanTimer) DemoScanDone();
         return 0;
@@ -464,6 +468,18 @@ int QuitRunningInstance() {
     return wait == WAIT_OBJECT_0 ? 0 : 1;
 }
 
+// MyCam is already running (usually in the tray, from "Start with Windows"): opening it again from the
+// Start menu shows that instance's window instead of doing nothing.
+void ShowRunningInstance() {
+    HWND other = FindWindowW(L"MyCamCompanion", nullptr);
+    if (!other) return;
+    DWORD pid = 0;
+    GetWindowThreadProcessId(other, &pid);
+    // This launch came from the user, so it may hand the foreground on; otherwise the window opens behind.
+    AllowSetForegroundWindow(pid);
+    PostMessageW(other, WM_SHOW_SETTINGS, 0, 0);
+}
+
 // True on Windows 11 (build 22000+), where the Frame Server virtual camera API exists. RtlGetVersion
 // (unlike GetVersionExW) always reports the true build number, with no manifest-driven app-compat lying.
 bool IsWindows11OrGreater() {
@@ -514,7 +530,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     if (wcsstr(GetCommandLineW(), L"--quit")) return QuitRunningInstance();
 
     HANDLE single = CreateMutexW(nullptr, TRUE, L"Local\\MyCamCompanion");
-    if (GetLastError() == ERROR_ALREADY_EXISTS) return 0;
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        ShowRunningInstance();
+        return 0;
+    }
 
     LogInit();
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
