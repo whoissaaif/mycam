@@ -67,6 +67,12 @@ Source: "redist\{#UsbDkMsi}"; DestDir: "{app}\redist"; Flags: ignoreversion
 Source: "redist\UsbDk-LICENSE.txt"; DestDir: "{app}\licenses"; Flags: ignoreversion
 Source: "..\pc\third_party\libusb\COPYING"; DestDir: "{app}\licenses"; DestName: "libusb-COPYING.txt"; Flags: ignoreversion
 
+[Icons]
+; The Start menu entry, so Windows search finds MyCam. If it is already running in the tray, this opens its
+; window (the companion hands a second launch over to the first).
+Name: "{autoprograms}\MyCam"; Filename: "{app}\MyCamCompanion.exe"; Parameters: "--settings"; \
+    Comment: "Use your phone as a webcam"
+
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "MyCam"; \
     ValueData: """{app}\MyCamCompanion.exe"""; Tasks: autostart; Flags: uninsdeletevalue
