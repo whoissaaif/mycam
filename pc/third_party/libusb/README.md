@@ -12,4 +12,20 @@ Upstream also ships backends for Linux, macOS, the BSDs, Haiku and Emscripten/We
 systems (autotools, Xcode, Android NDK, MSVC project files), examples and test suite — none of which this
 build ever touches, so they were dropped to cut the vendored tree from 152 files down to this set. To pull
 in a newer libusb release, re-vendor from a fresh checkout of the upstream repo and re-apply this same trim
-(or just copy the files listed above).
+(or just copy the files listed above), then re-apply the local patches below.
+
+## Local patches (marked `MyCam patch` in the source)
+
+`libusb/os/windows_winusb.c` carries two small changes for phones in Android accessory mode with USB
+debugging on (issue #66):
+
+- **Interface numbers of vendor-named composite children.** `set_composite_interface` read the interface
+  number from `MI_xx` in the instance ID. Vendor composite bus drivers (Samsung's `dg_ssudbus`, which claims
+  Google's `18d1:2d01` on any PC that has the Samsung USB driver) name children `...&ADB\...` or
+  `...&MS_COMP_MTP&<model>\...`, so every such child became interface 0. `composite_mi()` now falls back to
+  the `USB\VID_xxxx&PID_xxxx&MI_xx` hardware ID those drivers still publish, and `find_mi_part()` only
+  accepts a real `&MI_xx` part (not `MI_` inside a model name).
+- **One busy interface doesn't fail the whole open.** `winusbx_open` opened every WinUSB interface of a
+  composite device and gave up with `LIBUSB_ERROR_ACCESS` if any was held by another program (WinUSB
+  handles are exclusive; a running adb server holds the phone's adb interface). It now skips those
+  (claiming one then fails with `LIBUSB_ERROR_NOT_FOUND`) and fails only if every interface was busy.

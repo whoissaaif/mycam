@@ -15,7 +15,13 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
         on the CMF Phone 1 over Wi-Fi (release APK): no popup when a 1.6.0 PC tries to pair by itself, the new
         PC leaves an unpaired phone alone, Find devices + Connect pairs, a paired phone reconnects by itself.
         Tapping a PC in Find devices (the `MYCAM+1` path) not retried
-  - [ ] USB debugging on: the accessory interface gets the MTP driver, so USB never streams (#66)
+  - [~] USB debugging on: the accessory interface gets the MTP driver, so USB never streams (#66): built and
+        unit-tested, device test pending. Cause: the Samsung USB driver's composite driver claims 18d1:2d01
+        and names interface 0 `&MS_COMP_MTP&<model>` with WPD on it. The binder now finds the accessory by
+        hardware ID (`&MI_00` under a 2d01/2d04/2d05 parent), replaces a WPD/still-image driver on exactly
+        that interface, and registers a device interface GUID so libusb sees it; vendored libusb patched for
+        vendor-named children and a busy adb interface. Debugging off (`0e8d:2008`, UsbDk open ->
+        `LIBUSB_ERROR_OTHER`): 3 tries per plug-in + libusb errors in the log; cause still to be measured
   - [~] Cable → Wi-Fi when unplugged (#70); Wi-Fi → cable only once the cable opens (#67): built, device
         test pending. PC: auto-connect runs for 30 s after a cable session ends (paired phones only, search
         on or off); during Wi-Fi a new phone is switched to accessory mode and test-opened, and only an
