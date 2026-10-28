@@ -64,6 +64,14 @@ LIVE pill, Selawik font, new launcher icon (adaptive, legacy and themed).
   never got WinUSB and never connected. It now binds interface 0 (`MI_00`, always the accessory) of 2d01,
   2d04 and 2d05, and leaves adb, audio and the audio-only products (2d02, 2d03) alone
   (`IsAccessoryInstance`, unit-tested).
+- 🟡 Not enough (#66, built, needs a phone test): on a PC that ever had Samsung's USB driver, its composite
+  driver (`dg_ssudbus`) claims 18d1:2d01, names the accessory `...&MS_COMP_MTP&<model>` and gives it the WPD
+  MTP driver; a WinUSB composite child also had no device interface GUID, so libusb couldn't see it, and a
+  running adb server made every open fail. Now the accessory is found by hardware ID `&MI_00` under an
+  accessory parent (`ClassifyAccessory`), a WPD/still-image/MS-OS-compatible-ID driver on it is replaced,
+  the binder registers a device interface GUID, and the vendored libusb reads interface numbers from
+  hardware IDs and skips busy interfaces. USB debugging off on the CMF (`0e8d:2008` open fails in UsbDk)
+  gets 3 tries per plug-in and libusb's own errors in the log; cause not confirmed yet.
 
 ### 2.2 Fewer UAC prompts on first use (S): 🟡 built in 1.3.2, needs a new-phone test
 A new phone used to prompt twice: once at install, then again for WinUSB binding.

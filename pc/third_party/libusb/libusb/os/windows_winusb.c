@@ -1358,8 +1358,45 @@ static void get_api_type(HDEVINFO *dev_info, SP_DEVINFO_DATA *dev_info_data,
 	}
 }
 
+// MyCam patch: returns the "MI_xx" of an "&MI_xx" part (two hex digits, then the end, '&' or '\'), or NULL.
+// Plain strstr("MI_") also hits model names ("...&XIAOMI_...") in vendor-named instance IDs.
+static const char *find_mi_part(const char *id)
+{
+	const char *s;
+
+	for (s = id; *s != '\0'; s++) {
+		if (s[0] == '&' && toupper((unsigned char)s[1]) == 'M' && toupper((unsigned char)s[2]) == 'I' && s[3] == '_' &&
+		    isxdigit((unsigned char)s[4]) && isxdigit((unsigned char)s[5]) &&
+		    (s[6] == '\0' || s[6] == '&' || s[6] == '\\'))
+			return s + 1;
+	}
+	return NULL;
+}
+
+// MyCam patch: the "MI_xx" for a composite child. usbccgp puts it in the instance ID; vendor composite drivers
+// (e.g. Samsung's dg_ssudbus: "USB\VID_18D1&PID_2D01&ADB\...") don't, but still list a
+// "USB\VID_xxxx&PID_xxxx&MI_xx" hardware ID. Without this every such child became interface 0.
+static const char *composite_mi(HDEVINFO dev_info, PSP_DEVINFO_DATA dev_info_data, const char *dev_id,
+	char *buf, DWORD size)
+{
+	const char *mi = find_mi_part(dev_id);
+	char *s;
+
+	if (mi != NULL || size < 2)
+		return mi;
+	memset(buf, 0, size);
+	if (!pSetupDiGetDeviceRegistryPropertyA(dev_info, dev_info_data, SPDRP_HARDWAREID, NULL, (PBYTE)buf, size - 2, NULL))
+		return NULL;
+	for (s = buf; *s != '\0'; s += strlen(s) + 1) {
+		mi = find_mi_part(s);
+		if (mi != NULL)
+			return mi;
+	}
+	return NULL;
+}
+
 static int set_composite_interface(struct libusb_context *ctx, struct libusb_device *dev,
-	char *dev_interface_path, char *device_id, int api, int sub_api)
+	char *dev_interface_path, char *device_id, const char *mi_part, int api, int sub_api)
 {
 	struct winusb_device_priv *priv = usbi_get_device_priv(dev);
 	int interface_number;
@@ -1372,7 +1409,7 @@ static int set_composite_interface(struct libusb_context *ctx, struct libusb_dev
 	// Because MI_## are not necessarily in sequential order (some composite
 	// devices will have only MI_00 & MI_03 for instance), we retrieve the actual
 	// interface number from the path's MI value
-	mi_str = strstr(device_id, "MI_");
+	mi_str = mi_part; // MyCam patch: was strstr(device_id, "MI_"); see composite_mi().
 
 	endptr = NULL;
 	// This initialization, while redundant, is needed to make MSVC happy
@@ -1613,6 +1650,7 @@ static int winusb_get_device_list(struct libusb_context *ctx, struct discovered_
 	unsigned int pass, pass_type, i, j;
 	char enumerator[16];
 	char dev_id[MAX_PATH_LENGTH];
+	char hw_ids[2048]; // MyCam patch: SPDRP_HARDWAREID scratch for composite_mi()
 	struct libusb_device *dev, *parent_dev;
 	struct winusb_device_priv *priv, *parent_priv;
 	char *dev_interface_path = NULL;
@@ -1992,7 +2030,8 @@ static int winusb_get_device_list(struct libusb_context *ctx, struct discovered_
 						r = set_hid_interface(ctx, parent_dev, dev_interface_path);
 					} else {
 						usbi_dbg(ctx, "setting composite interface for [%lX]:", parent_dev->session_data);
-						r = set_composite_interface(ctx, parent_dev, dev_interface_path, dev_id, api, sub_api);
+						r = set_composite_interface(ctx, parent_dev, dev_interface_path, dev_id,
+							composite_mi(*dev_info, &dev_info_data, dev_id, hw_ids, sizeof(hw_ids)), api, sub_api);
 					}
 					switch (r) {
 					case LIBUSB_SUCCESS:
@@ -2599,7 +2638,7 @@ static int winusbx_open(int sub_api, struct libusb_device_handle *dev_handle)
 	struct winusb_device_priv *priv = usbi_get_device_priv(dev_handle->dev);
 	struct winusb_device_handle_priv *handle_priv = get_winusb_device_handle_priv(dev_handle);
 	HANDLE file_handle;
-	int i;
+	int i, opened = 0, denied = 0;
 
 	CHECK_WINUSBX_AVAILABLE(sub_api);
 
@@ -2610,6 +2649,13 @@ static int winusbx_open(int sub_api, struct libusb_device_handle *dev_handle)
 			file_handle = windows_open(dev_handle, priv->usb_interface[i].path, GENERIC_READ | GENERIC_WRITE);
 			if (file_handle == INVALID_HANDLE_VALUE) {
 				usbi_err(HANDLE_CTX(dev_handle), "could not open device %s (interface %d): %s", priv->usb_interface[i].path, i, windows_error_str(0));
+				// MyCam patch: WinUSB handles are exclusive, so on a composite device one interface may be in
+				// use by another program (adb holds a phone's adb interface). Open the rest; claiming the busy
+				// one then fails on its own (LIBUSB_ERROR_NOT_FOUND).
+				if ((GetLastError() == ERROR_ACCESS_DENIED) && (priv->apib->id == USB_API_COMPOSITE)) {
+					denied++;
+					continue;
+				}
 				switch (GetLastError()) {
 				case ERROR_FILE_NOT_FOUND: // The device was disconnected
 					return LIBUSB_ERROR_NO_DEVICE;
@@ -2621,9 +2667,12 @@ static int winusbx_open(int sub_api, struct libusb_device_handle *dev_handle)
 			}
 
 			handle_priv->interface_handle[i].dev_handle = file_handle;
+			opened++;
 		}
 	}
 
+	if (denied && !opened)
+		return LIBUSB_ERROR_ACCESS; // MyCam patch: every interface was busy.
 	return LIBUSB_SUCCESS;
 }
 

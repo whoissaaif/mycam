@@ -464,17 +464,99 @@ void TestDShowMediaTypes() {
 // --- pc/companion/winusb_bind: which device instances get WinUSB (#9) ------------------------------
 
 void TestAccessoryInstances() {
-    CHECK(IsAccessoryInstance(L"USB\\VID_18D1&PID_2D00\\0123456789ABCDEF"));        // Accessory only.
-    CHECK(IsAccessoryInstance(L"usb\\vid_18d1&pid_2d00\\0123"));                    // Case doesn't matter.
-    CHECK(IsAccessoryInstance(L"USB\\VID_18D1&PID_2D01&MI_00\\6&1A2B3C4D&0&0000"));  // Accessory + adb (USB debugging).
-    CHECK(!IsAccessoryInstance(L"USB\\VID_18D1&PID_2D01&MI_01\\6&1A2B3C4D&0&0001")); // ...and its adb interface.
-    CHECK(IsAccessoryInstance(L"USB\\VID_18D1&PID_2D04&MI_00\\6&1&0&0000"));         // Accessory + audio.
-    CHECK(IsAccessoryInstance(L"USB\\VID_18D1&PID_2D05&MI_00\\6&1&0&0000"));         // Accessory + audio + adb.
-    CHECK(!IsAccessoryInstance(L"USB\\VID_18D1&PID_2D05&MI_03\\6&1&0&0003"));
-    CHECK(!IsAccessoryInstance(L"USB\\VID_18D1&PID_2D03&MI_00\\6&1&0&0000"));        // Audio only: MI_00 is audio.
-    CHECK(!IsAccessoryInstance(L"USB\\VID_18D1&PID_2D06\\0123"));                    // Not an accessory product.
-    CHECK(!IsAccessoryInstance(L"USB\\VID_18D1&PID_4EE7\\0123"));                    // A Pixel in normal (MTP) mode.
-    CHECK(!IsAccessoryInstance(L"USB\\VID_18D1&PID_2D0"));                           // Truncated.
+    using Ids = std::vector<std::wstring>;
+    const Ids hub = {L"USB\\ROOT_HUB30&VID8086&PID7AE0&REV0011", L"USB\\ROOT_HUB30", L"USB\\ROOT_HUB30\\5&4964544&0&0"};
+    auto kind = [](const Ids& ids, const Ids& parent) { return ClassifyAccessory(ids, parent); };
+    auto parentOf = [](const wchar_t* pid) {
+        std::wstring dev = std::wstring(L"USB\\VID_18D1&PID_") + pid;
+        return Ids{dev + L"&REV_0223", dev, dev + L"\\0011664B6000994"};
+    };
+
+    // Plain accessory mode: the whole device, whatever its serial, in any case.
+    CHECK(kind({L"USB\\VID_18D1&PID_2D00&REV_0223", L"USB\\VID_18D1&PID_2D00", L"USB\\VID_18D1&PID_2D00\\0123456789ABCDEF"}, hub) == AccessoryKind::Device);
+    CHECK(kind({L"usb\\vid_18d1&pid_2d00\\0123"}, hub) == AccessoryKind::Device);
+
+    // USB debugging on, Windows' composite driver (usbccgp): interface 0 named &MI_00.
+    CHECK(kind({L"USB\\VID_18D1&PID_2D01&REV_0223&MI_00", L"USB\\VID_18D1&PID_2D01&MI_00", L"USB\\VID_18D1&PID_2D01&MI_00\\6&1A2B3C4D&0&0000"},
+               parentOf(L"2D01")) == AccessoryKind::Interface);
+    CHECK(kind({L"USB\\VID_18D1&PID_2D01&MI_01", L"USB\\VID_18D1&PID_2D01&MI_01\\6&1A2B3C4D&0&0001"}, parentOf(L"2D01")) == AccessoryKind::None); // adb
+    CHECK(kind({L"USB\\VID_18D1&PID_2D04&MI_00\\6&1&0&0000"}, parentOf(L"2D04")) == AccessoryKind::Interface); // + audio
+    CHECK(kind({L"USB\\VID_18D1&PID_2D05&MI_00\\6&1&0&0000"}, parentOf(L"2D05")) == AccessoryKind::Interface); // + audio + adb
+    CHECK(kind({L"USB\\VID_18D1&PID_2D05&MI_03\\6&1&0&0003"}, parentOf(L"2D05")) == AccessoryKind::None);
+
+    // USB debugging on, Samsung's composite driver (dg_ssudbus) on the parent (issue #66, seen on a CMF Phone 1):
+    // the child isn't named &MI_00 at all, but its hardware IDs still say so.
+    const Ids samsungAccessory = {
+        L"USB\\VID_18D1&PID_2D01&REV_0223&MS_COMP_MTP&A015", L"USB\\VID_18D1&PID_2D01&MS_COMP_MTP&A015",
+        L"USB\\SAMSUNG_MOBILE&MS_COMP_MTP&A015", L"USB\\SAMSUNG_MOBILE&MI_00", L"USB\\Vid_18D1&Pid_2D01&MI_00",
+        L"USB\\Vid_18D1&Pid_2D01&Class_FF&SubClass_FF&Prot_00", L"USB\\SAMSUNG_MOBILE&Class_FF&SubClass_FF&Prot_00",
+        L"USB\\VID_18D1&PID_2D01&MS_COMP_MTP&A015\\7&28A98E0F&0&0000"};
+    const Ids samsungAdb = {
+        L"USB\\VID_18D1&PID_2D01&REV_0223&ADB", L"USB\\VID_18D1&PID_2D01&ADB", L"USB\\SAMSUNG_MOBILE&ADB",
+        L"USB\\SAMSUNG_MOBILE&MI_01", L"USB\\Vid_18D1&Pid_2D01&MI_01", L"USB\\Vid_18D1&Pid_2D01&Class_FF&SubClass_42&Prot_01",
+        L"USB\\VID_18D1&PID_2D01&ADB\\7&28A98E0F&0&0001"};
+    CHECK(kind(samsungAccessory, parentOf(L"2D01")) == AccessoryKind::Interface);
+    CHECK(kind(samsungAdb, parentOf(L"2D01")) == AccessoryKind::None);
+    CHECK(kind(parentOf(L"2D01"), hub) == AccessoryKind::None);           // The composite parent itself.
+    CHECK(kind(samsungAccessory, hub) == AccessoryKind::None);            // MI_00 only counts under its accessory parent.
+    CHECK(kind(samsungAccessory, parentOf(L"2D04")) == AccessoryKind::None); // ...of the same product.
+
+    // Never an accessory.
+    CHECK(kind({L"USB\\VID_18D1&PID_2D03&MI_00\\6&1&0&0000"}, parentOf(L"2D03")) == AccessoryKind::None); // Audio only: MI_00 is audio.
+    CHECK(kind({L"USB\\VID_18D1&PID_2D02\\0123"}, hub) == AccessoryKind::None);                           // Audio only.
+    CHECK(kind({L"USB\\VID_18D1&PID_2D06\\0123"}, hub) == AccessoryKind::None);                           // Not an accessory product.
+    CHECK(kind({L"USB\\VID_18D1&PID_4EE7\\0123"}, hub) == AccessoryKind::None);                           // A Pixel in normal (MTP) mode.
+    CHECK(kind({L"USB\\VID_18D1&PID_2D0"}, hub) == AccessoryKind::None);                                  // Truncated.
+    CHECK(kind({L"USB\\VID_18D1&PID_2D00X"}, hub) == AccessoryKind::None);                                // Trailing junk.
+    CHECK(kind({L"USB\\VID_0E8D&PID_2008&REV_0223", L"USB\\VID_0E8D&PID_2008\\0011664B6000994"}, hub) == AccessoryKind::None); // An MTP phone.
+    CHECK(kind({L"USB\\VID_04E8&PID_6860&MS_COMP_MTP&SAMSUNG_ANDROID\\7&1DE06CCD&0&0000", L"USB\\VID_04E8&PID_6860&MI_00"},
+               {L"USB\\VID_04E8&PID_6860"}) == AccessoryKind::None);                                    // A Samsung phone's MTP.
+    CHECK(kind({L"USB\\VID_04E8&PID_2D00"}, hub) == AccessoryKind::None);                                 // Not Google's VID.
+    CHECK(kind({L"USB\\VID_04E8&PID_2D01&MI_00"}, {L"USB\\VID_04E8&PID_2D01"}) == AccessoryKind::None);
+}
+
+void TestAccessoryDrivers() {
+    const wchar_t* wpd = L"{EEC5AD98-8080-425F-922A-DABF3DE3F69A}";
+    const wchar_t* usbDevice = L"{88BAE032-5A81-49F0-BC3D-A4FF138216D6}";
+    auto info = [](const wchar_t* service, const wchar_t* cls, const wchar_t* matching, bool guid = false) {
+        AccessoryDriverInfo i;
+        i.service = service;
+        i.classGuid = cls;
+        i.matchingId = matching;
+        i.hasInterfaceGuid = guid;
+        return i;
+    };
+    using K = AccessoryKind;
+    using D = AccessoryDriver;
+
+    AccessoryDriverInfo none;
+    none.hasProblem = true;
+    none.problem = 28; // CM_PROB_FAILED_INSTALL
+    CHECK(ClassifyAccessoryDriver(K::Device, none) == D::Missing);
+    CHECK(ClassifyAccessoryDriver(K::Interface, none) == D::Missing);
+    none.problem = 1; // CM_PROB_NOT_CONFIGURED
+    CHECK(ClassifyAccessoryDriver(K::Device, none) == D::Missing);
+    AccessoryDriverInfo installing; // No driver yet and no problem: Windows is still at it.
+    CHECK(ClassifyAccessoryDriver(K::Device, installing) == D::Ready);
+
+    // WinUSB: a whole device is found through the hub; a composite child needs its interface GUID.
+    CHECK(ClassifyAccessoryDriver(K::Device, info(L"WINUSB", usbDevice, L"usb\\ms_comp_winusb")) == D::Ready);
+    CHECK(ClassifyAccessoryDriver(K::Interface, info(L"WinUSB", usbDevice, L"usb\\ms_comp_winusb")) == D::NoInterfaceGuid);
+    CHECK(ClassifyAccessoryDriver(K::Interface, info(L"WINUSB", usbDevice, L"usb\\ms_comp_winusb", true)) == D::Ready);
+    CHECK(ClassifyAccessoryDriver(K::Interface, info(L"libusbK", usbDevice, L"USB\\VID_18D1&PID_2D01&MI_00")) == D::Ready);
+
+    // The WPD MTP driver on the accessory (issue #66), or anything picked through an MS OS compatible ID.
+    CHECK(ClassifyAccessoryDriver(K::Interface, info(L"WUDFWpdMtp", wpd, L"usb\\ms_comp_mtp")) == D::WrongClass);
+    CHECK(ClassifyAccessoryDriver(K::Device, info(L"WUDFWpdMtp", L"{eec5ad98-8080-425f-922a-dabf3de3f69a}", L"")) == D::WrongClass);
+    CHECK(ClassifyAccessoryDriver(K::Interface, info(L"usbscan", L"{6BDD1FC6-810F-11D0-BEC7-08002BE2092F}", L"USB\\Class_06")) == D::WrongClass);
+    CHECK(ClassifyAccessoryDriver(K::Interface, info(L"SomeDrv", L"{00000000-0000-0000-0000-000000000001}", L"USB\\MS_COMP_RNDIS")) == D::WrongClass);
+
+    // A driver someone picked on purpose for this exact ID stays.
+    CHECK(ClassifyAccessoryDriver(K::Interface, info(L"VendorDrv", L"{00000000-0000-0000-0000-000000000001}", L"USB\\VID_18D1&PID_2D01&MI_00")) == D::Foreign);
+    CHECK(ClassifyAccessoryDriver(K::None, info(L"WUDFWpdMtp", wpd, L"usb\\ms_comp_mtp")) == D::Foreign);
+
+    CHECK(NeedsWinUsbBinding(D::Missing) && NeedsWinUsbBinding(D::WrongClass) && NeedsWinUsbBinding(D::NoInterfaceGuid));
+    CHECK(!NeedsWinUsbBinding(D::Ready) && !NeedsWinUsbBinding(D::Foreign));
 }
 #endif
 
@@ -1260,6 +1342,7 @@ int main() {
 #ifdef _WIN32
     printf("dshow media types\n");         TestDShowMediaTypes();
     printf("winusb accessory ids\n");      TestAccessoryInstances();
+    printf("winusb accessory drivers\n");  TestAccessoryDrivers();
 #endif
     printf("marquee geometry\n");          TestMarqueeGeometry();
     printf("marquee chunk positions\n");   TestMarqueeChunkPositions();

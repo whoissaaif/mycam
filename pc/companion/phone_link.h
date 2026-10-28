@@ -103,7 +103,7 @@ private:
 
     void ScanOnce();
     bool LooksLikeAndroid(libusb_device* dev);
-    void SwitchToAccessory(libusb_device* dev);
+    bool SwitchToAccessory(libusb_device* dev);      // False: couldn't open the phone (worth retrying).
     void RunSession(libusb_device* dev, libusb_context* ctx);
     libusb_device* FindAccessory(libusb_context* ctx);
 
@@ -224,6 +224,8 @@ private:
     libusb_context* winusbCtx_ = nullptr; // WinUSB backend: streams from accessory-mode phones (WinUSB-bound).
     libusb_context* sessionCtx_ = nullptr;
     std::set<std::string> probed_;
+    struct SwitchRetry { int attempts; uint64_t lastMs; };
+    std::map<std::string, SwitchRetry> switchRetry_; // Probed phones whose open failed (a few more tries).
 
     // Session state (worker thread only).
     libusb_device_handle* handle_ = nullptr;

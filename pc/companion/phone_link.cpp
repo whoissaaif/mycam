@@ -21,6 +21,8 @@ constexpr uint16_t kGoogleVid = 0x18D1;
 constexpr int kAoaGetProtocol = 51;
 constexpr int kAoaSendString = 52;
 constexpr int kAoaStart = 53;
+constexpr int kSwitchAttempts = 3;          // Opens tried per plug-in before a phone is left alone.
+constexpr uint64_t kSwitchRetryMs = 3000;   // Between those tries.
 
 // USB vendors that make Android phones. Used together with interface checks to decide which devices
 // are worth asking to switch into accessory mode.
@@ -123,11 +125,22 @@ void PhoneLink::ScanOnce() {
         // Ask each phone once per plug-in; the set entry goes away when it is unplugged.
         if (!probed_.count(key) && LooksLikeAndroid(list[i])) {
             probed_.insert(key);
-            SwitchToAccessory(list[i]);
+            if (!SwitchToAccessory(list[i])) switchRetry_[key] = {1, NowMs()};
+        } else if (auto retry = switchRetry_.find(key); retry != switchRetry_.end() &&
+                                                       NowMs() - retry->second.lastMs >= kSwitchRetryMs) {
+            // Opening can fail while Windows is still starting the phone's own (MTP) driver right after
+            // plug-in; try a few more times before giving up until the next plug-in.
+            ++retry->second.attempts;
+            retry->second.lastMs = NowMs();
+            Log("scan: retrying the accessory switch (attempt %d of %d)", retry->second.attempts, kSwitchAttempts);
+            if (SwitchToAccessory(list[i]) || retry->second.attempts >= kSwitchAttempts) switchRetry_.erase(retry);
         }
     }
     for (auto it = probed_.begin(); it != probed_.end();) {
         it = present.count(*it) ? std::next(it) : probed_.erase(it);
+    }
+    for (auto it = switchRetry_.begin(); it != switchRetry_.end();) {
+        it = present.count(it->first) ? std::next(it) : switchRetry_.erase(it);
     }
 
     if (accessory) {
@@ -204,13 +217,13 @@ bool PhoneLink::LooksLikeAndroid(libusb_device* dev) {
     return !excluded && (phoneInterface || knownVendor);
 }
 
-void PhoneLink::SwitchToAccessory(libusb_device* dev) {
+bool PhoneLink::SwitchToAccessory(libusb_device* dev) {
     libusb_device_handle* h = nullptr;
     libusb_device_descriptor desc = {};
     libusb_get_device_descriptor(dev, &desc);
     int openResult = libusb_open(dev, &h);
     Log("scan: phone-like device %04x:%04x, open -> %s", desc.idVendor, desc.idProduct, libusb_error_name(openResult));
-    if (openResult != LIBUSB_SUCCESS) return;
+    if (openResult != LIBUSB_SUCCESS) return false;
 
     uint8_t version[2] = {};
     int r = libusb_control_transfer(h, LIBUSB_ENDPOINT_IN | LIBUSB_REQUEST_TYPE_VENDOR, kAoaGetProtocol, 0, 0,
@@ -228,6 +241,7 @@ void PhoneLink::SwitchToAccessory(libusb_device* dev) {
         if (ok) libusb_control_transfer(h, LIBUSB_ENDPOINT_OUT | LIBUSB_REQUEST_TYPE_VENDOR, kAoaStart, 0, 0, nullptr, 0, 1000);
     }
     libusb_close(h);
+    return true;
 }
 
 libusb_device* PhoneLink::FindAccessory(libusb_context* ctx) {
