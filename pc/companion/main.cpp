@@ -609,6 +609,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     model.setFacing = [](int facing) { g_link->RequestFacing(facing); };
     model.reconnect = [] { g_link->RequestReconnect(); };
     model.openLogFolder = OpenLogFolder;
+    model.contactSupport = OpenSupportEmail;
     model.paused = [] { return CurrentStatus().state == LinkState::Paused; };
     model.setPaused = [](bool pause) { g_link->RequestPause(pause); };
     model.fill = [] { return g_fill; };

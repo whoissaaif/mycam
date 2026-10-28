@@ -49,4 +49,9 @@ void OpenLogFolder() {
     ShellExecuteW(nullptr, L"open", dir.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
 
+void OpenSupportEmail() {
+    const std::wstring url = std::wstring(L"mailto:") + kSupportEmail;
+    ShellExecuteW(nullptr, L"open", url.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+}
+
 } // namespace mycam

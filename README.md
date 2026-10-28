@@ -113,6 +113,10 @@ until it's replugged.
 - **The picture freezes when the iPhone locks:** expected — Safari stops the camera in the background, and
   the session waits 5 minutes for you to return.
 
+**Still stuck?** Email [support@mycam.dev](mailto:support@mycam.dev), or
+[open an issue](https://github.com/whoissaaif/mycam/issues) with `mycam.log` attached (it names your phones
+and shows local network addresses, so look it over first).
+
 ## Known limits
 
 - **Windows 10 (1809+) or 11.** On Windows 11, MyCam uses the `MFCreateVirtualCamera` Frame Server API;

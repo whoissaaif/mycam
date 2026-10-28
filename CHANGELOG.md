@@ -22,6 +22,7 @@ or protocol changes). Releases with their installers: https://github.com/whoissa
 - **PC: a failing decoder no longer floods the log**; it retries every 2 s instead of on every frame. (#51)
 - **Windows: MyCam is in the Start menu**, so Windows search finds it. Opening it while MyCam is already in
   the tray shows its window instead of doing nothing. (#73)
+- **A contact address, support@mycam.dev**, in the About pages of both apps and in the README. (#72)
 
 No protocol changes: 1.6.0 phones and PCs work with 1.5.x.
 

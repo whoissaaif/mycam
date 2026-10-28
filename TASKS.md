@@ -15,7 +15,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
   - [ ] USB debugging on: the accessory interface gets the MTP driver, so USB never streams (#66)
   - [ ] Cable → Wi-Fi when unplugged (#70); Wi-Fi → cable only once the cable opens (#67)
   - [ ] PC preview streams while the window shows it, not only when an app uses the camera (#71)
-  - [ ] support@mycam.dev in both About pages, the website and the README (#72)
+  - [~] support@mycam.dev in both About pages, the website and the README (#72): built; PC About checked on
+        screen; phone About link to check on a phone; website pages edited locally, committed with #74
   - [x] Start-menu shortcut, so Windows search finds MyCam (#73): installed and opened from the Start menu;
         a second launch opens the running instance's window
   - [ ] Website in the repo (#74); updated for 1.6.0 and Linux, download links that survive a release (#75)

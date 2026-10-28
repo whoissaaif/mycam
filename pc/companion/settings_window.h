@@ -26,6 +26,7 @@ struct SettingsModel {
     std::function<void(int)> setFacing; // proto::Facing
     std::function<void()> reconnect;
     std::function<void()> openLogFolder;
+    std::function<void()> contactSupport;
     std::function<bool()> paused;
     std::function<void(bool)> setPaused;
     std::function<bool()> fill;
