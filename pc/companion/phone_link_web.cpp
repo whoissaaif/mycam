@@ -93,7 +93,7 @@ void PhoneLink::WebScanOnce() {
         if (now - lastUsbCheck > 2000) {
             lastUsbCheck = now;
             if (UsbPhoneArrived()) { // The cable wins, as with Android over Wi-Fi.
-                Log("web: a phone was plugged in; switching to the cable");
+                Log("web: a phone's cable opened; switching to the cable");
                 sessionError_ = true;
             }
         }

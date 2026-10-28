@@ -64,6 +64,15 @@ LIVE pill, Selawik font, new launcher icon (adaptive, legacy and themed).
   never got WinUSB and never connected. It now binds interface 0 (`MI_00`, always the accessory) of 2d01,
   2d04 and 2d05, and leaves adb, audio and the audio-only products (2d02, 2d03) alone
   (`IsAccessoryInstance`, unit-tested).
+- 🟡 Not enough (#66, built, needs a phone test): on a PC that ever had Samsung's USB driver, its composite
+  driver (`dg_ssudbus`) claims 18d1:2d01, names the accessory `...&MS_COMP_MTP&<model>` and gives it the WPD
+  MTP driver; a WinUSB composite child also had no device interface GUID, so libusb couldn't see it, and a
+  running adb server made every open fail. Now the accessory is found by hardware ID `&MI_00` under an
+  accessory parent (`ClassifyAccessory`), a WPD/still-image/MS-OS-compatible-ID driver on it is replaced,
+  the binder registers a device interface GUID, and the vendored libusb reads interface numbers from
+  hardware IDs and skips busy interfaces. On the CMF Phone 1 the binding works and it streams with adb
+  stopped; with adb running the open still failed, under investigation (libusb now logs which interfaces
+  were busy). USB debugging off works: its `LIBUSB_ERROR_OTHER` was a half-installed UsbDk.
 
 ### 2.2 Fewer UAC prompts on first use (S): 🟡 built in 1.3.2, needs a new-phone test
 A new phone used to prompt twice: once at install, then again for WinUSB binding.
@@ -373,6 +382,10 @@ side shares one single-threaded session loop with USB (no new threads). No pairi
 - [ ] Security: pairing, TLS, and refusing unpaired devices; review before release
 - [ ] Bitrate/latency tuning for Wi-Fi; default to 1080p30 when wireless
 - [ ] Testing: 2.4 vs 5 GHz, hotspot, Wi-Fi drop and reconnect, switching between cable and Wi-Fi
+- [~] Switching between cable and Wi-Fi (#70, #67, 1.6.0): built, device test pending. Pulling the cable
+      carries on over Wi-Fi for a paired phone (the PC auto-connects for 30 s after a cable session, search
+      on or off); plugging in switches to the cable only once it opens on both sides (the PC test-opens the
+      accessory, the phone waits for the PC's first bytes), and a cable that fails leaves Wi-Fi alone
 
 ## 12. QR pairing for Android (M): 🟡 built and tested on the CMF Phone 1 (2026-10-13); iPhone and a second phone left
 

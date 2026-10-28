@@ -75,6 +75,19 @@ inline bool ParseDiscoveryQrRequest(const std::string& text, uint16_t* port, std
     return true;
 }
 
+// Cable to Wi-Fi (#70): for this long after a cable session ends (the cable was pulled, say), auto-connect also
+// runs while "Find phones on Wi-Fi" is off, so a phone paired over Wi-Fi with Wi-Fi mode on carries on over
+// Wi-Fi. Auto-connect only ever reaches paired phones (#69); the cable doesn't say which phone it was, so any
+// paired phone that answers counts. cableEndedAt: when the cable session ended (0: none).
+constexpr uint64_t kCableFallbackMs = 30000;
+inline bool InCableFallback(uint64_t cableEndedAt, uint64_t now) {
+    return cableEndedAt != 0 && now - cableEndedAt < kCableFallbackMs;
+}
+// Whether auto-connect may reach paired phones now. search: "Find phones on Wi-Fi".
+inline bool AutoConnectOn(bool search, uint64_t cableEndedAt, uint64_t now) {
+    return search || InCableFallback(cableEndedAt, now);
+}
+
 // The phones found on the network, in the order they first answered, one per IP address, at most kMax.
 class NearbyList {
 public:
