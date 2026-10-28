@@ -488,6 +488,21 @@ void ShowRunningInstance() {
     PostMessageW(other, WM_SHOW_SETTINGS, 0, 0);
 }
 
+// Minimising the window used to drop decoding from ~7 ms a frame to a flat ~62 ms, which is 4 ticks of the
+// default 15.625 ms clock: with every window of this process minimised, Windows 11 treats it as background
+// and throws away the timer resolution the media pipeline asks for, so the decoder's own waits get
+// coalesced. Apps on the MyCam camera then got stuttering video, and people minimise MyCam during calls.
+// Telling Windows to keep honouring that request costs nothing and leaves the decode at ~7 ms either way
+// (#95). EXECUTION_SPEED throttling is not the cause and is left alone. Pre-Windows 11 this just fails.
+void KeepTimersUnthrottled() {
+    PROCESS_POWER_THROTTLING_STATE state = {};
+    state.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
+    state.ControlMask = PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION; // This policy is ours to set...
+    state.StateMask = 0;                                                 // ...and it is off: don't throttle.
+    const BOOL ok = SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &state, sizeof(state));
+    Log("timers: keep the timer resolution in the background -> %d", int(ok));
+}
+
 // True on Windows 11 (build 22000+), where the Frame Server virtual camera API exists. RtlGetVersion
 // (unlike GetVersionExW) always reports the true build number, with no manifest-driven app-compat lying.
 bool IsWindows11OrGreater() {
@@ -544,6 +559,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     }
 
     LogInit();
+    KeepTimersUnthrottled(); // Before anything decodes: minimising the window must not slow it down (#95).
     StartUpdateCheck(Utf8(ui::kAppVersion)); // One GitHub request in the background, at most once a day (#79).
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     MFStartup(MF_VERSION);

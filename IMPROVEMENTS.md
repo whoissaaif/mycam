@@ -194,6 +194,17 @@ close the running companion cleanly; the uninstaller asks before removing UsbDk.
 
 ---
 
+### 5.3b Realtime decoding while the window is away (S): ✅
+Minimising the MyCam window (or leaving it fully covered, as it is during a call) dropped decoding from
+~7 ms a frame to a flat ~62 ms, so every app on the camera got stuttering video and the phone cut its
+bitrate to the 2 Mbps floor. Windows 11 ignores the timer resolution the media pipeline asks for once a
+process has no visible window, and 62.5 ms is 4 ticks of the default 15.625 ms clock. `main.cpp` now opts
+the process out of timer-resolution throttling at start-up: one call, no `timeBeginPeriod` and no power
+cost, measured either way with `pc/tools/minimise_probe`. EcoQoS (`EXECUTION_SPEED`) was measured and is not
+the cause, so it is left alone. (#95)
+
+---
+
 ### 5.4 "Can't connect?" help (S): 🟡 built, the three screens not seen yet
 The four causes behind nearly every failed connection - the phone's own permission prompt for the cable, a
 charge-only cable or USB mode, phone and PC on different (or guest / isolated) networks, and Windows calling

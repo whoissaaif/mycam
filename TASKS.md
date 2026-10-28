@@ -62,6 +62,13 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
         three screens have not been looked at, and the Foreign case has no hardware to try it on
   - [ ] Found while testing #69: a companion started while an older one still holds `mycam.log` runs with no
         log at all (#84); the phone's Pause hint reads as if the camera were already paused (#85)
+  - [x] Minimising the window slowed decoding to ~62 ms a frame (#95): fixed on
+        `fix/no-timer-throttling-when-minimised`. Windows 11 drops the timer resolution the media pipeline
+        asks for once every window of the process is minimised or fully covered, so the decoder's own waits
+        were coalesced to 4 ticks of the 15.6 ms clock. One SetProcessInformation call at start-up undoes it.
+        Measured with `pc/tools/minimise_probe` (built with -DMYCAM_BUILD_TOOLS=ON), which drives the real
+        decoder and minimises itself: 7 ms visible, 62 ms minimised, 7 ms throughout with the fix. Not yet
+        run with a phone streaming into an app
 - [x] Clean install test: removed everything, installed 1.2.0 from the GitHub release, first-use flow and streaming work
 - [ ] Test the remaining scenarios [2.3]
   - [ ] Pause / Resume from the phone's notification
