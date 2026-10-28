@@ -20,8 +20,11 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
         and names interface 0 `&MS_COMP_MTP&<model>` with WPD on it. The binder now finds the accessory by
         hardware ID (`&MI_00` under a 2d01/2d04/2d05 parent), replaces a WPD/still-image driver on exactly
         that interface, and registers a device interface GUID so libusb sees it; vendored libusb patched for
-        vendor-named children and a busy adb interface. Debugging off (`0e8d:2008`, UsbDk open ->
-        `LIBUSB_ERROR_OTHER`): 3 tries per plug-in + libusb errors in the log; cause still to be measured
+        vendor-named children and a busy adb interface. On the CMF Phone 1: binding works and it streams
+        with adb stopped; with an adb server running the open still failed (`LIBUSB_ERROR_ACCESS`), so the
+        busy-interface patch now logs which interfaces were busy/opened; retest pending. Debugging off
+        (`0e8d:2008`) switches and streams: the earlier `LIBUSB_ERROR_OTHER` was a half-installed UsbDk
+        (helper DLL and filter gone), fixed by reinstalling it. The 3 tries per plug-in stay (harmless)
   - [ ] Cable → Wi-Fi when unplugged (#70); Wi-Fi → cable only once the cable opens (#67)
   - [ ] PC preview streams while the window shows it, not only when an app uses the camera (#71)
   - [x] support@mycam.dev in both About pages, the website and the README (#72): live on mycam.dev; the
