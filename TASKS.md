@@ -17,7 +17,12 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
         Tapping a PC in Find devices (the `MYCAM+1` path) not retried
   - [ ] USB debugging on: the accessory interface gets the MTP driver, so USB never streams (#66)
   - [ ] Cable → Wi-Fi when unplugged (#70); Wi-Fi → cable only once the cable opens (#67)
-  - [ ] PC preview streams while the window shows it, not only when an app uses the camera (#71)
+  - [ ] PC preview streams while the window shows it, not only when an app uses the camera (#71): fixed on
+        `fix/preview-keeps-stream-alive` -- polling the preview marks `consumerTick`, so it counts as using
+        the camera like an app, and with no app it opens the session-local frame section the companion falls
+        back to. Checked on Windows without any app on the camera: one preview poll makes
+        `FrameWriter::ConsumerActive` true and the preview then reads a written frame. Not yet run end to
+        end with a phone (video in the window with nothing else on the camera)
   - [x] support@mycam.dev in both About pages, the website and the README (#72): live on mycam.dev; the
         phone's About link opens an email to it (CMF Phone 1, release APK)
   - [x] Start-menu shortcut, so Windows search finds MyCam (#73): installed and opened from the Start menu;

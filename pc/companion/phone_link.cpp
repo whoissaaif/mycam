@@ -393,11 +393,12 @@ bool PhoneLink::SessionLoop(const std::function<void()>& pump) {
         }
 
         if (writer_.ConsumerActive(kConsumerWindowMs)) lastConsumer = now;
-        // Video is wanted only if an app is using the camera and nothing has paused it.
+        // Video is wanted only while something is asking the virtual camera for frames -- an app, or the
+        // window's own preview (preview_source.cpp, #71) -- and nothing has paused it.
         bool wanted = lastConsumer && now - lastConsumer < kStopGraceMs && !phonePaused_ && !lockPaused_;
         if (wanted && (!startSent_ || (!phoneStreaming_ && now - lastStart > 3000))) {
             // (Re)start the phone camera; repeated if the phone reported an error or never started.
-            Log("session: app is using the camera -> START");
+            Log("session: the camera is in use (app or preview) -> START");
             if (!SendCommand(proto::kCmdStart)) break;
             startSent_ = true;
             lastStart = now;
@@ -405,7 +406,7 @@ bool PhoneLink::SessionLoop(const std::function<void()>& pump) {
         } else if (!wanted && (startSent_ || (phoneStreaming_ && now - lastStop > 3000))) {
             // Also stops a phone that is streaming without being asked, e.g. after the companion crashed
             // or was killed mid-stream and the phone kept its camera on.
-            Log("session: camera not wanted (no app, paused or Windows locked) -> STOP");
+            Log("session: camera not wanted (nothing reading it, paused or Windows locked) -> STOP");
             if (!SendCommand(proto::kCmdStop)) break;
             startSent_ = false;
             lastStop = now;
