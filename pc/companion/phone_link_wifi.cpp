@@ -216,7 +216,7 @@ void PhoneLink::BroadcastProbe() {
 }
 
 // Answers: "MYCAM!1 <tcp port> <phone name>". Fills the scan list, and the auto-connect table while
-// "Find phones on Wi-Fi" is on.
+// "Find phones on Wi-Fi" is on (or just after a cable session ended, InCableFallback).
 //
 // Also "MYCAM+1 <tcp port> <phone name>": that phone's user picked this PC in its own list and wants a
 // session now (PROTOCOL.md "The phone asks for a session"). It is treated exactly like Connect here, so a
@@ -259,7 +259,7 @@ void PhoneLink::ReadAnswers(uint64_t now) {
             connectRequest_ = ip;
             continue;
         }
-        if (!wireless_) continue;
+        if (!AutoConnectOn(wireless_, cableEndedAt_, now)) continue;
         NetPhone& phone = netPhones_[ip];
         if (phone.lastSeen == 0) {
             phone.name = name.empty() ? ipText : name;
@@ -449,7 +449,11 @@ void PhoneLink::NetScanOnce() {
         RunManualConnect(ip);
         return;
     }
-    if (!wireless_) {
+    uint64_t now = NowMs();
+    // Right after a cable session ended, auto-connect runs for a while even with the search off (#70): a phone
+    // paired over Wi-Fi carries on there when the cable is pulled.
+    const bool fallback = InCableFallback(cableEndedAt_, now);
+    if (!AutoConnectOn(wireless_, cableEndedAt_, now)) {
         // The socket lingers after a scan (or the QR code) so a phone that lists this PC can still ask it to
         // connect.
         const bool qrShowing = web_ && web_->Pairing();
@@ -462,7 +466,6 @@ void PhoneLink::NetScanOnce() {
         return;
     }
     if (!EnsureUdp()) return;
-    uint64_t now = NowMs();
     if (now - lastProbe_ >= kProbeEveryMs) {
         lastProbe_ = now;
         BroadcastProbe();
@@ -484,13 +487,21 @@ void PhoneLink::NetScanOnce() {
             continue;
         }
         phone.notPairedLogged = false;
+        // Just after the cable came out the phone may still hold its end of it for a moment and turn Wi-Fi
+        // away, so during the fallback an unreachable phone is tried again as soon as a dropped one.
+        const uint64_t retryUnreachable = fallback ? kRetryLostMs : kRetryUnreachableMs;
         net::Socket s = ConnectTcp(ip, phone.port, 2000);
         if (s == net::kInvalid) {
             Log("wifi: can't connect to %s (%s:%u)", phone.name.c_str(), IpText(ip).c_str(), phone.port);
-            phone.retryAfter = now + kRetryUnreachableMs;
+            phone.retryAfter = now + retryUnreachable;
             continue;
         }
-        switch (RunTcpSession(uintptr_t(s), phone.name, false)) {
+        if (fallback) Log("wifi: the cable link ended; carrying on with %s over Wi-Fi", phone.name.c_str());
+        fallbackSession_ = fallback && !wireless_; // Keeps the session going with the search off.
+        const WifiEnd end = RunTcpSession(uintptr_t(s), phone.name, false);
+        fallbackSession_ = false;
+        if (end == WifiEnd::Ran) cableEndedAt_ = 0; // Carried on: the fallback is over.
+        switch (end) {
         case WifiEnd::Ran: phone.retryAfter = NowMs() + kRetryLostMs; break;
         // The user said no (or nobody answered): don't ask again for a while.
         case WifiEnd::Refused: phone.retryAfter = NowMs() + kRetryRefusedMs; break;
@@ -501,7 +512,7 @@ void PhoneLink::NetScanOnce() {
         // Our pairing key didn't work (the phone forgot this PC), so it was deleted and the phone isn't
         // paired any more: it pairs again, with a code, once someone asks (Connect or Find devices).
         case WifiEnd::NeedsPairing: break;
-        case WifiEnd::Failed: phone.retryAfter = NowMs() + kRetryUnreachableMs; break;
+        case WifiEnd::Failed: phone.retryAfter = NowMs() + retryUnreachable; break;
         }
         lastProbe_ = 0; // Look again right away.
         break;
@@ -717,7 +728,7 @@ PhoneLink::WifiEnd PhoneLink::RunTcpSession(uintptr_t socket, const std::string&
             } else if (now - lastUsbCheck > 2000) {
                 lastUsbCheck = now;
                 if (UsbPhoneArrived()) {
-                    Log("wifi: a phone was plugged in; switching to the cable");
+                    Log("wifi: a phone's cable opened; switching to the cable");
                     sessionError_ = true;
                 }
             }

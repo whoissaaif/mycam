@@ -771,6 +771,20 @@ void TestUiModel() {
     CHECK(!off.Offscreen());
 }
 
+// Cable to Wi-Fi (#70): auto-connect runs for kCableFallbackMs after a cable session ended, search on or off.
+void TestCableFallback() {
+    const uint64_t ended = 1000000;
+    CHECK(!InCableFallback(0, 5000));                       // No cable session yet.
+    CHECK(InCableFallback(ended, ended));
+    CHECK(InCableFallback(ended, ended + kCableFallbackMs - 1));
+    CHECK(!InCableFallback(ended, ended + kCableFallbackMs));
+    CHECK(!AutoConnectOn(false, 0, ended));                 // Search off, no cable: nothing connects by itself.
+    CHECK(AutoConnectOn(true, 0, ended));                   // Search on: always.
+    CHECK(AutoConnectOn(false, ended, ended + 2000));       // Search off, cable just pulled: the fallback.
+    CHECK(!AutoConnectOn(false, ended, ended + kCableFallbackMs + 1));
+    CHECK(AutoConnectOn(true, ended, ended + kCableFallbackMs + 1));
+}
+
 void TestDiscovery() {
     // Parsing the phone's answer: "MYCAM!1 <tcp port> <phone name>".
     uint16_t port = 0;
@@ -1273,6 +1287,7 @@ int main() {
     printf("ui capabilities\n");           TestCapabilities();
     printf("ui element model\n");          TestUiModel();
     printf("wi-fi discovery list\n");      TestDiscovery();
+    printf("cable to wi-fi fallback\n");   TestCableFallback();
     printf("preview convert\n");           TestPreviewConvert();
     printf("status text\n");               TestStatusText();
     printf("tray status line\n");          TestTrayStatusLine();

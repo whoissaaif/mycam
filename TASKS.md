@@ -16,7 +16,12 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
         PC leaves an unpaired phone alone, Find devices + Connect pairs, a paired phone reconnects by itself.
         Tapping a PC in Find devices (the `MYCAM+1` path) not retried
   - [ ] USB debugging on: the accessory interface gets the MTP driver, so USB never streams (#66)
-  - [ ] Cable → Wi-Fi when unplugged (#70); Wi-Fi → cable only once the cable opens (#67)
+  - [~] Cable → Wi-Fi when unplugged (#70); Wi-Fi → cable only once the cable opens (#67): built, device
+        test pending. PC: auto-connect runs for 30 s after a cable session ends (paired phones only, search
+        on or off); during Wi-Fi a new phone is switched to accessory mode and test-opened, and only an
+        accessory that opens ends Wi-Fi (one that fails isn't retried until replugged). Phone: Wi-Fi mode
+        saved on is turned back on when the cable starts the app; a cable plugged in during Wi-Fi waits
+        for the PC's first bytes before it takes over
   - [ ] PC preview streams while the window shows it, not only when an app uses the camera (#71)
   - [x] support@mycam.dev in both About pages, the website and the README (#72): live on mycam.dev; the
         phone's About link opens an email to it (CMF Phone 1, release APK)

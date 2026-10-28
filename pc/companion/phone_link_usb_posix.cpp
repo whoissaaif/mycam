@@ -22,7 +22,7 @@ void PhoneLink::ExitUsb() {
 
 bool PhoneLink::UsbNeedsDriver() { return false; } // No driver binding on Linux.
 
-void PhoneLink::RunAccessory(libusb_device* accessory) { RunSession(accessory, ctx_); }
+bool PhoneLink::RunAccessory(libusb_device* accessory, bool checkOnly) { return RunSession(accessory, ctx_, checkOnly); }
 
 const char* PhoneLink::BackendName(libusb_context*) const { return "usbfs"; }
 
