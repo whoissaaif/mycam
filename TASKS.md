@@ -20,8 +20,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
         and names interface 0 `&MS_COMP_MTP&<model>` with WPD on it. The binder now finds the accessory by
         hardware ID (`&MI_00` under a 2d01/2d04/2d05 parent), replaces a WPD/still-image driver on exactly
         that interface, and registers a device interface GUID so libusb sees it; vendored libusb patched for
-        vendor-named children and a busy adb interface. On the CMF Phone 1: binding works and it streams
-        and with an adb server running (2026-10-28: "interface(s) 1 in use by another program, opened: 0",
+        vendor-named children and a busy adb interface. On the CMF Phone 1: binding works and it streams with adb
+        stopped and with an adb server running (2026-10-28: "interface(s) 1 in use by another program, opened: 0",
         then "accessory opened via WinUSB", and `adb devices` still lists the phone). Debugging off
         (`0e8d:2008`) switches and streams: the earlier `LIBUSB_ERROR_OTHER` was a half-installed UsbDk
         (helper DLL and filter gone), fixed by reinstalling it. The 3 tries per plug-in stay (harmless)
@@ -33,7 +33,12 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
         accessory that opens ends Wi-Fi (one that fails isn't retried until replugged). Phone: Wi-Fi mode
         saved on is turned back on when the cable starts the app; a cable plugged in during Wi-Fi waits
         for the PC's first bytes before it takes over
-  - [ ] PC preview streams while the window shows it, not only when an app uses the camera (#71)
+  - [ ] PC preview streams while the window shows it, not only when an app uses the camera (#71): fixed on
+        `fix/preview-keeps-stream-alive` -- polling the preview marks `consumerTick`, so it counts as using
+        the camera like an app, and with no app it opens the session-local frame section the companion falls
+        back to. Checked on Windows without any app on the camera: one preview poll makes
+        `FrameWriter::ConsumerActive` true and the preview then reads a written frame. Not yet run end to
+        end with a phone (video in the window with nothing else on the camera)
   - [x] support@mycam.dev in both About pages, the website and the README (#72): live on mycam.dev; the
         phone's About link opens an email to it (CMF Phone 1, release APK)
   - [x] Start-menu shortcut, so Windows search finds MyCam (#73): installed and opened from the Start menu;
