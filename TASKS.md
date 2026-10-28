@@ -18,8 +18,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
   - [ ] USB debugging on: the accessory interface gets the MTP driver, so USB never streams (#66)
   - [ ] Cable → Wi-Fi when unplugged (#70); Wi-Fi → cable only once the cable opens (#67)
   - [ ] PC preview streams while the window shows it, not only when an app uses the camera (#71)
-  - [~] support@mycam.dev in both About pages, the website and the README (#72): built; PC About checked on
-        screen; phone About link to check on a phone; website contact links in with #74
+  - [x] support@mycam.dev in both About pages, the website and the README (#72): live on mycam.dev; the
+        phone's About link opens an email to it (CMF Phone 1, release APK)
   - [x] Start-menu shortcut, so Windows search finds MyCam (#73): installed and opened from the Start menu;
         a second launch opens the running instance's window
   - [x] Website on `main` in `website/`, published by `.github/workflows/pages.yml` (#74): live on mycam.dev
@@ -30,6 +30,8 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
   - [ ] Test matrix below, then the release APK (R8 on) on a real phone
   - [ ] Later, not blocking: USB file transfer while MyCam runs (#77), "Can't connect?" help (#78),
         update check (#79), and the open bugs #4, #10, #20, #22, #64, #68
+  - [ ] Found while testing #69: a companion started while an older one still holds `mycam.log` runs with no
+        log at all (#84); the phone's Pause hint reads as if the camera were already paused (#85)
 - [x] Clean install test: removed everything, installed 1.2.0 from the GitHub release, first-use flow and streaming work
 - [ ] Test the remaining scenarios [2.3]
   - [ ] Pause / Resume from the phone's notification
