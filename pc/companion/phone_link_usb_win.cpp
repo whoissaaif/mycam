@@ -38,16 +38,14 @@ void PhoneLink::ExitUsb() {
 
 bool PhoneLink::UsbNeedsDriver() { return AccessoryNeedsDriver(); }
 
-void PhoneLink::RunAccessory(libusb_device* accessory) {
+bool PhoneLink::RunAccessory(libusb_device* accessory, bool checkOnly) {
     // Prefer WinUSB: UsbDk refuses to redirect a device that already has a working driver, and the
     // accessory gets WinUSB bound on first connection (see winusb_bind.cpp).
     libusb_device* viaWinUsb = winusbCtx_ ? FindAccessory(winusbCtx_) : nullptr;
-    if (viaWinUsb) {
-        RunSession(viaWinUsb, winusbCtx_);
-        libusb_unref_device(viaWinUsb);
-    } else {
-        RunSession(accessory, ctx_);
-    }
+    if (!viaWinUsb) return RunSession(accessory, ctx_, checkOnly);
+    const bool opened = RunSession(viaWinUsb, winusbCtx_, checkOnly);
+    libusb_unref_device(viaWinUsb);
+    return opened;
 }
 
 const char* PhoneLink::BackendName(libusb_context* ctx) const { return ctx == ctx_ ? "UsbDk" : "WinUSB"; }

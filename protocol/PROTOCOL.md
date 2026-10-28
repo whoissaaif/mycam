@@ -140,11 +140,19 @@ first and ignores the rest while it is connecting.
 carry the usual packets and commands (the same bytes as over USB) inside encrypted records, and the session
 continues exactly as over USB (`HELLO` every 2 s until answered, and so on).
 
-One PC at a time. A USB connection always wins: the phone closes a Wi-Fi session when a cable link opens,
-and the PC ends a Wi-Fi session when a phone is plugged in so the cable can take over.
+One PC at a time. A USB connection wins, once it works (1.6): the PC ends a Wi-Fi session only when a
+plugged-in phone's accessory has actually opened (an accessory that fails to open isn't tried again during
+Wi-Fi until it is unplugged), and the phone keeps its Wi-Fi session until the first bytes arrive over the
+cable, then switches. So a cable the PC can't open never costs a working Wi-Fi stream.
+
+**Cable to Wi-Fi (1.6).** When a cable session ends (the cable was pulled, say), the PC auto-connects for
+30 s as if "Find phones on Wi-Fi" were on, so a paired phone with "Use over Wi-Fi" on carries on over Wi-Fi.
+As always, auto-connect only reaches phones the PC is paired with. A phone with "Use over Wi-Fi" saved on
+turns it back on when the cable starts it, so it stays findable while on the cable.
 
 **Retries.** The phone refused, or nobody answered within 60 s: the PC waits 2 minutes before trying that
-phone again. A working session dropped: 2 s. The phone couldn't be reached: 10 s.
+phone again. A working session dropped: 2 s. The phone couldn't be reached: 10 s (2 s in the 30 s after a
+cable session ended, when the phone may still be letting go of the cable).
 
 ## Wireless security (1.4)
 

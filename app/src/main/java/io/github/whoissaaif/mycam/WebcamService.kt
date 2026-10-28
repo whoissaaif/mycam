@@ -30,12 +30,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import java.io.ByteArrayInputStream
 import java.io.FileInputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.net.Socket
 import java.io.FileOutputStream
 import java.io.IOException
+import java.io.SequenceInputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -124,6 +126,13 @@ class WebcamService : Service() {
     @Volatile private var linkId = 0 // Bumped per link, so a late "read ended" from an old link is ignored.
     private var readerThread: Thread? = null
     private var foreground = false
+    /**
+     * A cable plugged in while Wi-Fi is the link (#67): its accessory is open, but Wi-Fi carries on until the PC
+     * speaks over the cable, so a cable the PC can't open (no driver, access denied) doesn't cost the stream.
+     * Main thread.
+     */
+    private class PendingCable(val accessory: UsbAccessory, val pfd: ParcelFileDescriptor)
+    private var pendingCable: PendingCable? = null
 
     // Wireless mode (main thread).
     private val main by lazy { Handler(mainLooper) }
@@ -243,6 +252,12 @@ class WebcamService : Service() {
                 val id = linkId
                 camera.post { onLinkLost(id) }
             }
+            val p = pendingCable
+            if (p != null && (detached == null || detached == p.accessory)) {
+                Log.i(TAG, "Accessory detached before the PC used it")
+                dropPendingCable()
+                if (!linked && !wirelessOn) stopSelf()
+            }
         }
     }
 
@@ -349,8 +364,14 @@ class WebcamService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (acc != null && acc != accessory) openAccessory(acc)
-        else if (!linked && !wirelessOn) stopSelf()
+        if (acc != null && acc != accessory && acc != pendingCable?.accessory) {
+            // Wi-Fi mode was on last time: be findable again, so pulling the cable can carry on over Wi-Fi (#70).
+            // Opened from the home screen, MainActivity turns it back on the same way.
+            if (!wirelessOn && getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(PREF_WIRELESS, false)) setWireless(true)
+            openAccessory(acc)
+        } else if (!linked && !wirelessOn && pendingCable == null) {
+            stopSelf()
+        }
         return START_NOT_STICKY
     }
 
@@ -390,7 +411,7 @@ class WebcamService : Service() {
             if (socket != null) {
                 val id = linkId
                 camera.post { onLinkLost(id) }
-            } else if (!linked) {
+            } else if (!linked && pendingCable == null) {
                 stopSelf()
             }
         }
@@ -719,10 +740,16 @@ class WebcamService : Service() {
     }
 
     private fun openAccessory(acc: UsbAccessory) {
-        // The cable wins over Wi-Fi: drop a wireless link (and any PC waiting for approval).
+        val usb = getSystemService(UsbManager::class.java)
+        if (socket != null) {
+            // Wi-Fi is the link: the cable takes over only once the PC uses it (#67).
+            val fd = try { usb.openAccessory(acc) } catch (e: SecurityException) { null }
+            if (fd == null) Log.w(TAG, "Couldn't open the accessory; staying on Wi-Fi") else holdCable(acc, fd)
+            return
+        }
+        // The cable wins over a PC still pairing over Wi-Fi.
         answerPc(false)
         closeLink()
-        val usb = getSystemService(UsbManager::class.java)
         val fd = try { usb.openAccessory(acc) } catch (e: SecurityException) { null }
         if (fd == null) {
             _state.update { it.copy(error = getString(R.string.error_open_accessory)) }
@@ -732,6 +759,51 @@ class WebcamService : Service() {
         accessory = acc
         pfd = fd
         startLink(FileOutputStream(fd.fileDescriptor), FileInputStream(fd.fileDescriptor), wirelessPc = null)
+    }
+
+    /**
+     * Main thread. Keeps a just-opened cable aside while Wi-Fi is the link (#67) and waits, on a thread of its
+     * own, for the PC's first bytes over it: only then does the cable take over, with those bytes fed in first.
+     * A cable the PC never opens just waits there until it is pulled out.
+     */
+    private fun holdCable(acc: UsbAccessory, fd: ParcelFileDescriptor) {
+        dropPendingCable()
+        val p = PendingCable(acc, fd)
+        pendingCable = p
+        Log.i(TAG, "Cable plugged in during a Wi-Fi session: staying on Wi-Fi until the PC uses the cable")
+        Thread({
+            val input = FileInputStream(fd.fileDescriptor)
+            val buf = ByteArray(16384) // AOA reads need at least 16 KiB (see readLoop).
+            val n = try {
+                var r = 0
+                while (r == 0) r = input.read(buf)
+                r
+            } catch (e: IOException) {
+                -1
+            }
+            main.post {
+                if (pendingCable !== p) return@post // Pulled out meanwhile.
+                pendingCable = null
+                if (n < 0) {
+                    try { fd.close() } catch (_: IOException) {}
+                    if (!linked && !wirelessOn) stopSelf()
+                    return@post
+                }
+                Log.i(TAG, "The PC is using the cable: switching from Wi-Fi")
+                answerPc(false)
+                closeLink()
+                accessory = acc
+                pfd = fd
+                startLink(FileOutputStream(fd.fileDescriptor), SequenceInputStream(ByteArrayInputStream(buf, 0, n), input), wirelessPc = null)
+            }
+        }, "accessory-wait").start()
+    }
+
+    /** Main thread. Closes a cable held by [holdCable] (its waiting thread sees the read fail and stops). */
+    private fun dropPendingCable() {
+        val p = pendingCable ?: return
+        pendingCable = null
+        try { p.pfd.close() } catch (_: IOException) {}
     }
 
     /** Main thread. Common start of a USB or Wi-Fi link: reader thread, sensors, wake lock, UI state. */
@@ -780,7 +852,7 @@ class WebcamService : Service() {
         main.post {
             if (id != linkId) return@post
             closeLink()
-            if (!wirelessOn) stopSelf()
+            if (!wirelessOn && pendingCable == null) stopSelf() // A held cable may still take over.
         }
     }
 
@@ -1132,6 +1204,7 @@ class WebcamService : Service() {
         main.removeCallbacks(qrTick)
         pendingAnswer?.invoke(false) // Unblocks a pairing that is waiting for the user.
         pendingAnswer = null
+        dropPendingCable()
         closeLink()
         _state.update { UiState(facing = facing, paused = paused, camera = camSettings, pairedPcs = pairedPcs.list()) }
         super.onDestroy()

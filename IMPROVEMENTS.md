@@ -373,6 +373,10 @@ side shares one single-threaded session loop with USB (no new threads). No pairi
 - [ ] Security: pairing, TLS, and refusing unpaired devices; review before release
 - [ ] Bitrate/latency tuning for Wi-Fi; default to 1080p30 when wireless
 - [ ] Testing: 2.4 vs 5 GHz, hotspot, Wi-Fi drop and reconnect, switching between cable and Wi-Fi
+- [~] Switching between cable and Wi-Fi (#70, #67, 1.6.0): built, device test pending. Pulling the cable
+      carries on over Wi-Fi for a paired phone (the PC auto-connects for 30 s after a cable session, search
+      on or off); plugging in switches to the cable only once it opens on both sides (the PC test-opens the
+      accessory, the phone waits for the PC's first bytes), and a cable that fails leaves Wi-Fi alone
 
 ## 12. QR pairing for Android (M): 🟡 built and tested on the CMF Phone 1 (2026-10-13); iPhone and a second phone left
 

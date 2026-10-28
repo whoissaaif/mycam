@@ -87,12 +87,7 @@ void PhoneLink::ScanOnce() {
     // Windows has no driver for a phone in accessory mode, and a driverless device makes UsbDk fail to
     // enumerate anything. Ask the UI to bind WinUSB (one UAC prompt per phone; it sticks afterwards).
     if (UsbNeedsDriver()) {
-        uint64_t now = NowMs();
-        if (onNeedDriver_ && (lastDriverRequest_ == 0 || now - lastDriverRequest_ > 20000)) {
-            lastDriverRequest_ = now;
-            Log("scan: accessory-mode phone has no driver, requesting WinUSB binding");
-            onNeedDriver_();
-        }
+        RequestDriver();
         if (status_.state != LinkState::Waiting) {
             status_ = LinkStatus{};
             status_.state = LinkState::Waiting;
@@ -114,12 +109,12 @@ void PhoneLink::ScanOnce() {
     for (ssize_t i = 0; i < count; ++i) {
         libusb_device_descriptor desc;
         if (libusb_get_device_descriptor(list[i], &desc) != LIBUSB_SUCCESS) continue;
+        std::string key = DeviceKey(list[i], desc);
+        present.insert(key);
         if (desc.idVendor == kGoogleVid && IsAccessoryPid(desc.idProduct)) {
             if (!accessory) accessory = list[i];
             continue;
         }
-        std::string key = DeviceKey(list[i], desc);
-        present.insert(key);
         // Ask each phone once per plug-in; the set entry goes away when it is unplugged.
         if (!probed_.count(key) && LooksLikeAndroid(list[i])) {
             probed_.insert(key);
@@ -128,6 +123,9 @@ void PhoneLink::ScanOnce() {
     }
     for (auto it = probed_.begin(); it != probed_.end();) {
         it = present.count(*it) ? std::next(it) : probed_.erase(it);
+    }
+    for (auto it = cableFailed_.begin(); it != cableFailed_.end();) {
+        it = present.count(*it) ? std::next(it) : cableFailed_.erase(it);
     }
 
     if (accessory) {
@@ -144,24 +142,61 @@ void PhoneLink::ScanOnce() {
     }
 }
 
-// During a Wi-Fi session: a phone was just plugged in (or is in accessory mode), so the cable should take
-// over. Phones already asked once (probed_) don't count, so a phone left plugged in that refused doesn't
-// keep ending the Wi-Fi session.
+void PhoneLink::RequestDriver() {
+    const uint64_t now = NowMs();
+    if (onNeedDriver_ && (lastDriverRequest_ == 0 || now - lastDriverRequest_ > 20000)) {
+        lastDriverRequest_ = now;
+        Log("scan: accessory-mode phone has no driver, requesting WinUSB binding");
+        onNeedDriver_();
+    }
+}
+
+// During a Wi-Fi session: true once a plugged-in phone's cable has actually opened, so the cable can take over
+// (#67: ending Wi-Fi for a cable that then failed to open left neither link streaming, over and over). Until
+// then Wi-Fi carries on: a new phone is switched into accessory mode from here (once per plug-in, probed_), a
+// phone without a driver gets one asked for, and an accessory that won't open isn't tried again from here
+// until it is unplugged (cableFailed_).
 bool PhoneLink::UsbPhoneArrived() {
     if (!usbReady_) return false;
-    if (UsbNeedsDriver()) return true;
+    if (UsbNeedsDriver()) {
+        RequestDriver();
+        return false;
+    }
     libusb_device** list = nullptr;
     ssize_t count = libusb_get_device_list(ctx_, &list);
     if (count < 0) return false;
-    bool arrived = false;
-    for (ssize_t i = 0; i < count && !arrived; ++i) {
+    libusb_device* accessory = nullptr;
+    std::string accessoryKey;
+    std::set<std::string> present;
+    for (ssize_t i = 0; i < count; ++i) {
         libusb_device_descriptor desc;
         if (libusb_get_device_descriptor(list[i], &desc) != LIBUSB_SUCCESS) continue;
-        arrived = (desc.idVendor == kGoogleVid && IsAccessoryPid(desc.idProduct)) ||
-                  (!probed_.count(DeviceKey(list[i], desc)) && LooksLikeAndroid(list[i]));
+        const std::string key = DeviceKey(list[i], desc);
+        present.insert(key);
+        if (desc.idVendor == kGoogleVid && IsAccessoryPid(desc.idProduct)) {
+            if (!accessory && !cableFailed_.count(key)) {
+                accessory = list[i];
+                accessoryKey = key;
+            }
+        } else if (!probed_.count(key) && LooksLikeAndroid(list[i])) {
+            probed_.insert(key);
+            Log("wifi: a phone was plugged in; staying on Wi-Fi until its cable opens");
+            SwitchToAccessory(list[i]);
+        }
     }
+    for (auto it = cableFailed_.begin(); it != cableFailed_.end();) {
+        it = present.count(*it) ? std::next(it) : cableFailed_.erase(it);
+    }
+    if (accessory) libusb_ref_device(accessory);
     libusb_free_device_list(list, 1);
-    return arrived;
+    if (!accessory) return false;
+    const bool opens = RunAccessory(accessory, true);
+    libusb_unref_device(accessory);
+    if (!opens) {
+        cableFailed_.insert(accessoryKey);
+        Log("wifi: the cable can't be opened; staying on Wi-Fi (not trying it again until it is plugged in again)");
+    }
+    return opens;
 }
 
 bool PhoneLink::LooksLikeAndroid(libusb_device* dev) {
@@ -246,17 +281,17 @@ libusb_device* PhoneLink::FindAccessory(libusb_context* ctx) {
     return found;
 }
 
-void PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx) {
+bool PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx, bool checkOnly) {
     sessionCtx_ = ctx;
     int openResult = libusb_open(dev, &handle_);
     if (openResult != LIBUSB_SUCCESS) {
         static uint64_t lastWarn = 0;
-        if (NowMs() - lastWarn > 10000) {
+        if (checkOnly || NowMs() - lastWarn > 10000) {
             Log("session: opening accessory failed: %s", libusb_error_name(openResult));
             lastWarn = NowMs();
         }
         handle_ = nullptr;
-        return;
+        return false;
     }
 
     // Interface 0 of the accessory configuration has one bulk IN and one bulk OUT endpoint.
@@ -272,10 +307,18 @@ void PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx) {
         }
         libusb_free_config_descriptor(config);
     }
-    if (!epIn_ || !epOut_ || libusb_claim_interface(handle_, 0) != LIBUSB_SUCCESS) {
+    const int claimResult = epIn_ && epOut_ ? libusb_claim_interface(handle_, 0) : LIBUSB_ERROR_NOT_FOUND;
+    if (claimResult != LIBUSB_SUCCESS) {
+        if (checkOnly) Log("session: claiming the accessory failed: %s", libusb_error_name(claimResult));
         libusb_close(handle_);
         handle_ = nullptr;
-        return;
+        return false;
+    }
+    if (checkOnly) { // It opens: the Wi-Fi session ends, and the next scan runs the real session.
+        libusb_release_interface(handle_, 0);
+        libusb_close(handle_);
+        handle_ = nullptr;
+        return true;
     }
 
     BeginSession(false, "");
@@ -322,6 +365,14 @@ void PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx) {
     libusb_close(handle_);
     handle_ = nullptr;
     ResetAfterSession();
+    // The cable went (or the phone left): a phone paired over Wi-Fi may carry on there (#70, NetScanOnce).
+    // Not after Reconnect, which brings the cable straight back.
+    if (!reconnect && !quit_) {
+        cableEndedAt_ = NowMs();
+        Log("session: the cable link ended; a paired phone may carry on over Wi-Fi for %u s",
+            unsigned(kCableFallbackMs / 1000));
+    }
+    return true;
 }
 
 void PhoneLink::BeginSession(bool wireless, const std::string& phoneName) {

@@ -27,6 +27,13 @@ or protocol changes). Releases with their installers: https://github.com/whoissa
   <PC>?" because some PC on the network is searching. A new PC can only ask to pair for 2 minutes after you
   open Find devices (or tap a PC there), and "Find phones on Wi-Fi" on the PC only reconnects phones it is
   already paired with. (#69)
+- **Pulling the cable carries on over Wi-Fi.** With a phone paired over Wi-Fi and "Use over Wi-Fi" on, the
+  stream continues over Wi-Fi within a few seconds of unplugging, even with "Find phones on Wi-Fi" off on
+  the PC (it looks for paired phones for 30 s after the cable goes). The phone also turns its saved Wi-Fi
+  mode back on when plugging in starts the app. (#70)
+- **Plugging in a cable no longer drops a working Wi-Fi stream** when the cable can't be opened (no
+  driver yet, access denied). Both sides stay on Wi-Fi until the cable actually works, then switch; a
+  cable that fails isn't tried again until it is plugged in again. (#67)
 
 No protocol changes: 1.6.0 phones and PCs work with 1.5.x.
 

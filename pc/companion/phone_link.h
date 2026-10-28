@@ -98,13 +98,16 @@ private:
     bool InitUsb();                                  // Logs how it went; false: no USB phones.
     void ExitUsb();
     bool UsbNeedsDriver();                           // A phone in accessory mode can't be opened yet.
-    void RunAccessory(libusb_device* accessory);     // One USB session with a phone in accessory mode.
+    // One USB session with a phone in accessory mode; checkOnly: just see whether it opens, then close it.
+    // False: it couldn't be opened.
+    bool RunAccessory(libusb_device* accessory, bool checkOnly = false);
     const char* BackendName(libusb_context* ctx) const;
 
     void ScanOnce();
     bool LooksLikeAndroid(libusb_device* dev);
     void SwitchToAccessory(libusb_device* dev);
-    void RunSession(libusb_device* dev, libusb_context* ctx);
+    bool RunSession(libusb_device* dev, libusb_context* ctx, bool checkOnly); // As RunAccessory.
+    void RequestDriver(); // A phone in accessory mode has no driver: asks the UI to bind one (every 20 s at most).
     libusb_device* FindAccessory(libusb_context* ctx);
 
     // Shared by USB and Wi-Fi sessions (all on the worker thread).
@@ -123,7 +126,8 @@ private:
     void PollDiscovery(uint64_t now);
     void ReadAnswers(uint64_t now);
     void RefreshNearby();            // Paired / connected marks, then Publish() if the list changed.
-    bool WifiAllowed() const { return wireless_ || manualSession_; } // A Wi-Fi session may go on.
+    // A Wi-Fi session may go on.
+    bool WifiAllowed() const { return wireless_ || manualSession_ || fallbackSession_; }
     void RunManualConnect(uint32_t ip);
     // QR pairing for the Android app (PROTOCOL.md "QR pairing"): probes while the QR code shows, then the
     // session a phone's "MYCAM#1" asked for (qrRequest_).
@@ -143,7 +147,7 @@ private:
     // Pairing / paired proof / QR pairing, then sets wifiTx_/wifiRx_.
     WifiEnd Handshake(uintptr_t socket, bool forcePair, const std::vector<uint8_t>* qrCode);
     bool ReceiveRecords(uintptr_t socket);               // Decrypts what arrived and feeds the parser.
-    bool UsbPhoneArrived(); // During a Wi-Fi session: a phone was plugged in (the cable takes over).
+    bool UsbPhoneArrived(); // During a Wi-Fi session: a plugged-in phone's cable opens (so the cable takes over).
     bool SendTcp(const uint8_t* data, size_t size);
 
     // iPhone web camera: the page's server (web_server.h), polled from every loop on this thread.
@@ -196,6 +200,10 @@ private:
     std::atomic<uint32_t> connectRequest_{0};
     std::atomic<bool> connectAsked_{false}; // connectRequest_ came from Connect here, not from the network.
     bool manualSession_ = false;  // The current Wi-Fi session was asked for with Connect (search may be off).
+    // Cable to Wi-Fi (#70, discovery.h InCableFallback): when the last cable session ended (0: none), and
+    // whether the current Wi-Fi session is that fallback (search may be off).
+    uint64_t cableEndedAt_ = 0;
+    bool fallbackSession_ = false;
     // A phone that scanned the QR code asked for a session ("MYCAM#1", PROTOCOL.md "QR pairing"): where to
     // connect and the code it proved it has (ip 0: nothing asked).
     struct QrRequest { uint32_t ip = 0; uint16_t port = 0; std::string name; std::vector<uint8_t> code; } qrRequest_;
@@ -224,6 +232,9 @@ private:
     libusb_context* winusbCtx_ = nullptr; // WinUSB backend: streams from accessory-mode phones (WinUSB-bound).
     libusb_context* sessionCtx_ = nullptr;
     std::set<std::string> probed_;
+    // Accessories that didn't open during a Wi-Fi session (#67): Wi-Fi stays on, and they aren't tried again
+    // from there until unplugged (the idle loop still tries them).
+    std::set<std::string> cableFailed_;
 
     // Session state (worker thread only).
     libusb_device_handle* handle_ = nullptr;
