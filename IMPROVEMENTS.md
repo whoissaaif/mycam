@@ -70,8 +70,9 @@ LIVE pill, Selawik font, new launcher icon (adaptive, legacy and themed).
   running adb server made every open fail. Now the accessory is found by hardware ID `&MI_00` under an
   accessory parent (`ClassifyAccessory`), a WPD/still-image/MS-OS-compatible-ID driver on it is replaced,
   the binder registers a device interface GUID, and the vendored libusb reads interface numbers from
-  hardware IDs and skips busy interfaces. USB debugging off on the CMF (`0e8d:2008` open fails in UsbDk)
-  gets 3 tries per plug-in and libusb's own errors in the log; cause not confirmed yet.
+  hardware IDs and skips busy interfaces. On the CMF Phone 1 the binding works and it streams with adb
+  stopped; with adb running the open still failed, under investigation (libusb now logs which interfaces
+  were busy). USB debugging off works: its `LIBUSB_ERROR_OTHER` was a half-installed UsbDk.
 
 ### 2.2 Fewer UAC prompts on first use (S): 🟡 built in 1.3.2, needs a new-phone test
 A new phone used to prompt twice: once at install, then again for WinUSB binding.

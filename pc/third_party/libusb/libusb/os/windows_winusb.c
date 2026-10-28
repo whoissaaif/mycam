@@ -2638,7 +2638,9 @@ static int winusbx_open(int sub_api, struct libusb_device_handle *dev_handle)
 	struct winusb_device_priv *priv = usbi_get_device_priv(dev_handle->dev);
 	struct winusb_device_handle_priv *handle_priv = get_winusb_device_handle_priv(dev_handle);
 	HANDLE file_handle;
+	DWORD err;
 	int i, opened = 0, denied = 0;
+	char busy[3 * USB_MAXINTERFACES + 1] = "", free_list[3 * USB_MAXINTERFACES + 1] = "";
 
 	CHECK_WINUSBX_AVAILABLE(sub_api);
 
@@ -2648,15 +2650,18 @@ static int winusbx_open(int sub_api, struct libusb_device_handle *dev_handle)
 				&& (priv->usb_interface[i].apib->id == USB_API_WINUSBX)) {
 			file_handle = windows_open(dev_handle, priv->usb_interface[i].path, GENERIC_READ | GENERIC_WRITE);
 			if (file_handle == INVALID_HANDLE_VALUE) {
-				usbi_err(HANDLE_CTX(dev_handle), "could not open device %s (interface %d): %s", priv->usb_interface[i].path, i, windows_error_str(0));
+				// MyCam patch: read the error before logging; a log callback may change the last error.
+				err = GetLastError();
+				usbi_err(HANDLE_CTX(dev_handle), "could not open device %s (interface %d): %s", priv->usb_interface[i].path, i, windows_error_str(err));
 				// MyCam patch: WinUSB handles are exclusive, so on a composite device one interface may be in
 				// use by another program (adb holds a phone's adb interface). Open the rest; claiming the busy
 				// one then fails on its own (LIBUSB_ERROR_NOT_FOUND).
-				if ((GetLastError() == ERROR_ACCESS_DENIED) && (priv->apib->id == USB_API_COMPOSITE)) {
+				if ((err == ERROR_ACCESS_DENIED) && (priv->apib->id == USB_API_COMPOSITE)) {
 					denied++;
+					sprintf(busy + strlen(busy), " %d", i);
 					continue;
 				}
-				switch (GetLastError()) {
+				switch (err) {
 				case ERROR_FILE_NOT_FOUND: // The device was disconnected
 					return LIBUSB_ERROR_NO_DEVICE;
 				case ERROR_ACCESS_DENIED:
@@ -2668,11 +2673,18 @@ static int winusbx_open(int sub_api, struct libusb_device_handle *dev_handle)
 
 			handle_priv->interface_handle[i].dev_handle = file_handle;
 			opened++;
+			sprintf(free_list + strlen(free_list), " %d", i);
 		}
 	}
 
-	if (denied && !opened)
-		return LIBUSB_ERROR_ACCESS; // MyCam patch: every interface was busy.
+	// MyCam patch: say which interfaces were busy and which opened (empty "opened" = the one asked for wasn't
+	// there yet, or was busy too).
+	if (denied) {
+		usbi_warn(HANDLE_CTX(dev_handle), "composite device: interface(s)%s in use by another program, opened:%s",
+			busy, opened ? free_list : " none");
+		if (!opened)
+			return LIBUSB_ERROR_ACCESS; // Every interface was busy.
+	}
 	return LIBUSB_SUCCESS;
 }
 

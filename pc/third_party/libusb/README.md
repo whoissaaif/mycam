@@ -29,3 +29,6 @@ debugging on (issue #66):
   composite device and gave up with `LIBUSB_ERROR_ACCESS` if any was held by another program (WinUSB
   handles are exclusive; a running adb server holds the phone's adb interface). It now skips those
   (claiming one then fails with `LIBUSB_ERROR_NOT_FOUND`) and fails only if every interface was busy.
+  It reads the Win32 error right after `CreateFile`, before logging (a log callback can change the last
+  error), and logs one warning naming the busy and the opened interfaces
+  (`composite device: interface(s) 1 in use by another program, opened: 0`).

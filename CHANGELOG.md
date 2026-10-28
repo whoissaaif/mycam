@@ -37,9 +37,9 @@ or protocol changes). Releases with their installers: https://github.com/whoissa
 - **Windows: USB works with USB debugging on.** On PCs that have the Samsung USB driver (installed with
   Smart Switch or for any Samsung phone), the phone's accessory interface got the MTP driver and MyCam never
   connected over the cable. MyCam now recognises the accessory interface however Windows names it, swaps a
-  wrong MTP driver on it for WinUSB (only that interface; adb keeps working), and still connects while adb
-  is running. If switching a phone to MyCam's USB mode fails right after plug-in, it is tried 3 times.
-  (#66, device test pending)
+  wrong MTP driver on it for WinUSB (only that interface; adb keeps working). If switching a phone to
+  MyCam's USB mode fails right after plug-in, it is tried 3 times. (#66; with an adb server running, still
+  being tested)
 
 No protocol changes: 1.6.0 phones and PCs work with 1.5.x.
 
