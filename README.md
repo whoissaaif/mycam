@@ -52,6 +52,7 @@ code on an iPhone and nothing even needs installing.
 | **Windows (PC)** | Download `MyCam-Setup-X.Y.Z.exe` from the [latest release](https://github.com/whoissaaif/mycam/releases/latest) and run it. |
 | **Android** | Download `MyCam-X.Y.Z.apk` from the same release and install it (or build from source — see [Architecture → Build and test](docs/ARCHITECTURE.md#build-and-test-from-source)). |
 | **iPhone / iPad** | Nothing to install — see [iPhone](#iphone) below. |
+| **Linux (preview)** | A `.deb` for Ubuntu and friends, from 1.6.0 (until then, the CI build artifact) — see [Linux](#linux-preview) below. |
 
 ### Setting it up
 
@@ -85,6 +86,16 @@ Resolution, frame rate, zoom and torch are chosen on the PC, from what the iPhon
 iPhone support isn't ready yet; see [docs/iphone-wired.md](docs/iphone-wired.md) for the plan. The full
 protocol and architecture are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#iphone).
 
+## Linux (preview)
+
+MyCam also runs on Linux, as a background service that shows up as a camera called **MyCam**
+(v4l2loopback), with a tray icon carrying the same menu as on Windows. Install the `.deb` with
+`sudo apt install ./mycam_<version>_amd64.deb`; the service and tray then start at every login.
+
+It's a preview: the iPhone over Wi-Fi is tested on Ubuntu 24.04; Android phones (USB and Wi-Fi) are built
+in but not yet tested on Linux, and there's no settings window yet. Install, pairing and troubleshooting
+are in the [Linux guide](pc/linux/README.md).
+
 ## Troubleshooting
 
 The companion writes `%LOCALAPPDATA%\MyCam\mycam.log`, including the phone's own messages ("phone says:
@@ -113,6 +124,8 @@ until it's replugged.
 - **iPhone:** needs a browser with WebCodecs H.264 (current Safari); works over the network only (wired is
   a plan, not yet shipped); the page must stay open in front, since iOS stops the camera when Safari is
   backgrounded.
+- **Linux:** a preview — needs `v4l2loopback`; only the iPhone is tested so far, and there's no settings
+  window yet. See the [Linux guide](pc/linux/README.md).
 
 ## Contributing
 
