@@ -23,6 +23,7 @@ constexpr int kAoaSendString = 52;
 constexpr int kAoaStart = 53;
 constexpr int kSwitchAttempts = 3;          // Opens tried per plug-in before a phone is left alone.
 constexpr uint64_t kSwitchRetryMs = 3000;   // Between those tries.
+constexpr uint64_t kSwitchRetryWifiMs = 10000; // During Wi-Fi: until the plugged-in phone (often locked) lets it through.
 
 // USB vendors that make Android phones. Used together with interface checks to decide which devices
 // are worth asking to switch into accessory mode.
@@ -80,6 +81,7 @@ void PhoneLink::Run() {
             if (web_ && web_->PhonePending()) break; // An iPhone's page wants a session: WebScanOnce runs it.
         }
     }
+    if (switchThread_.joinable()) switchThread_.join(); // Before libusb goes away.
     web_.reset();
     net::Cleanup();
     ExitUsb();
@@ -97,6 +99,10 @@ void PhoneLink::ScanOnce() {
         }
         return;
     }
+
+    // "Scan for USB Devices": switch a plugged-in phone now, even with automatic switching off or asked before.
+    const bool manualSwitch = usbSwitchNow_.exchange(false);
+    if (manualSwitch) probed_.clear();
 
     libusb_device** list = nullptr;
     ssize_t count = libusb_get_device_list(ctx_, &list);
@@ -117,8 +123,9 @@ void PhoneLink::ScanOnce() {
             if (!accessory) accessory = list[i];
             continue;
         }
-        // Ask each phone once per plug-in; the set entry goes away when it is unplugged.
-        if (!probed_.count(key) && LooksLikeAndroid(list[i])) {
+        // Ask each phone once per plug-in; the set entry goes away when it is unplugged. With automatic
+        // switching off, only after "Scan for USB Devices" (manualSwitch).
+        if ((autoUsb_ || manualSwitch) && !probed_.count(key) && LooksLikeAndroid(list[i])) {
             probed_.insert(key);
             if (!SwitchToAccessory(list[i])) switchRetry_[key] = {1, NowMs()};
         } else if (auto retry = switchRetry_.find(key); retry != switchRetry_.end() &&
@@ -144,7 +151,23 @@ void PhoneLink::ScanOnce() {
     if (accessory) {
         libusb_ref_device(accessory);
         libusb_free_device_list(list, 1);
-        RunAccessory(accessory);
+        // MyCam on the phone may not have opened its end yet (its "Open MyCam?" prompt unanswered, or the phone
+        // locked): a session would only time out, holding off Wi-Fi all along. So say HELLO first, and until the
+        // phone takes it leave the cable to Wi-Fi, which switches over once the phone is ready.
+        cableNotReady_ = false;
+        const bool ready = RunAccessory(accessory, true) || !cableNotReady_;
+        if (ready) {
+            cableWaitLogged_ = false;
+            RunAccessory(accessory);
+        } else {
+            if (!cableWaitLogged_) Log("scan: the cable is in, but MyCam on the phone hasn't opened it yet");
+            cableWaitLogged_ = true;
+            if (status_.state != LinkState::Waiting) {
+                status_ = LinkStatus{};
+                status_.state = LinkState::Waiting; // "Open MyCam on the phone, and tap OK if it asks."
+                Publish();
+            }
+        }
         libusb_unref_device(accessory);
     } else {
         libusb_free_device_list(list, 1);
@@ -180,6 +203,8 @@ bool PhoneLink::UsbPhoneArrived() {
         RequestDriver();
         return false;
     }
+    const bool manualSwitch = usbSwitchNow_.exchange(false);
+    if (manualSwitch) probed_.clear();
     libusb_device** list = nullptr;
     ssize_t count = libusb_get_device_list(ctx_, &list);
     if (count < 0) return false;
@@ -196,10 +221,15 @@ bool PhoneLink::UsbPhoneArrived() {
                 accessory = list[i];
                 accessoryKey = key;
             }
-        } else if (!probed_.count(key) && LooksLikeAndroid(list[i])) {
+        } else if ((autoUsb_ || manualSwitch) && !probed_.count(key) && LooksLikeAndroid(list[i])) {
             probed_.insert(key);
             Log("wifi: a phone was plugged in; staying on Wi-Fi until its cable opens");
-            SwitchToAccessory(list[i]);
+            StartSwitch(list[i], key);
+        } else if (key == switchKey_ && !switchBusy_ && !switchOk_ &&
+                   NowMs() - switchDoneAt_ >= kSwitchRetryWifiMs) {
+            // Usually a locked phone: it lets the switch through once it is unlocked.
+            Log("wifi: trying the plugged-in phone's switch to MyCam's USB mode again");
+            StartSwitch(list[i], key);
         }
     }
     for (auto it = cableFailed_.begin(); it != cableFailed_.end();) {
@@ -208,8 +238,16 @@ bool PhoneLink::UsbPhoneArrived() {
     if (accessory) libusb_ref_device(accessory);
     libusb_free_device_list(list, 1);
     if (!accessory) return false;
+    cableNotReady_ = false;
     const bool opens = RunAccessory(accessory, true);
     libusb_unref_device(accessory);
+    if (!opens && cableNotReady_) {
+        // Not an error: MyCam on the phone hasn't opened the cable yet. Asked again on the next check.
+        if (!cableWaitLogged_) Log("wifi: the cable is in, but MyCam on the phone hasn't opened it yet; staying on Wi-Fi");
+        cableWaitLogged_ = true;
+        return false;
+    }
+    cableWaitLogged_ = false;
     if (!opens) {
         cableFailed_.insert(accessoryKey);
         Log("wifi: the cable can't be opened; staying on Wi-Fi (not trying it again until it is plugged in again)");
@@ -257,6 +295,21 @@ bool PhoneLink::LooksLikeAndroid(libusb_device* dev) {
     return !excluded && (phoneInterface || knownVendor);
 }
 
+void PhoneLink::StartSwitch(libusb_device* dev, const std::string& key) {
+    if (switchBusy_) return;
+    if (switchThread_.joinable()) switchThread_.join();
+    libusb_ref_device(dev);
+    switchKey_ = key;
+    switchOk_ = false;
+    switchBusy_ = true;
+    switchThread_ = std::thread([this, dev] {
+        switchOk_ = SwitchToAccessory(dev);
+        libusb_unref_device(dev);
+        switchDoneAt_ = NowMs();
+        switchBusy_ = false;
+    });
+}
+
 bool PhoneLink::SwitchToAccessory(libusb_device* dev) {
     libusb_device_handle* h = nullptr;
     libusb_device_descriptor desc = {};
@@ -269,6 +322,12 @@ bool PhoneLink::SwitchToAccessory(libusb_device* dev) {
     int r = libusb_control_transfer(h, LIBUSB_ENDPOINT_IN | LIBUSB_REQUEST_TYPE_VENDOR, kAoaGetProtocol, 0, 0,
                                     version, sizeof(version), 1000);
     Log("scan: AOA protocol query -> %d (version %d)", r, version[0] | version[1] << 8);
+    // A query that fails outright (not a plain "no") is usually a phone that was plugged in a moment ago and
+    // isn't ready yet: report it like a failed open, so the scan asks again a few times.
+    if (r < 0) {
+        libusb_close(h);
+        return false;
+    }
     if (r == 2 && (version[0] | version[1] << 8) >= 1) {
         const char* strings[] = {proto::kAccessoryManufacturer, proto::kAccessoryModel, proto::kAccessoryDescription,
                                  proto::kAccessoryVersion, proto::kAccessoryUri, proto::kAccessorySerial};
@@ -333,11 +392,25 @@ bool PhoneLink::RunSession(libusb_device* dev, libusb_context* ctx, bool checkOn
         handle_ = nullptr;
         return false;
     }
-    if (checkOnly) { // It opens: the Wi-Fi session ends, and the next scan runs the real session.
+    if (checkOnly) {
+        // The PC's end opening says nothing about the phone's: one still waiting on its "Open MyCam?" prompt, or
+        // locked, or with MyCam closed, hasn't opened the accessory, and Wi-Fi mustn't end for it (every send
+        // would time out). So say HELLO and wait briefly for the answer: only MyCam reading the cable answers
+        // (the first write alone can land in the phone's USB buffer with nobody reading). A phone on Wi-Fi
+        // that holds the cable switches over on these bytes, then answers on the cable.
+        uint8_t packet[proto::kCommandSize];
+        proto::MakeCommand(packet, proto::kCmdHello, 0);
+        int sent = 0, got = 0;
+        int r = libusb_bulk_transfer(handle_, epOut_, packet, sizeof(packet), &sent, 100);
+        if (r == LIBUSB_SUCCESS && sent == int(sizeof(packet))) {
+            std::vector<uint8_t> reply(16384); // AOA reads need the phone's 16 KiB request size.
+            r = libusb_bulk_transfer(handle_, epIn_, reply.data(), int(reply.size()), &got, 300);
+        }
+        cableNotReady_ = r != LIBUSB_SUCCESS || got <= 0;
         libusb_release_interface(handle_, 0);
         libusb_close(handle_);
         handle_ = nullptr;
-        return true;
+        return !cableNotReady_; // It opens and the phone listens: the Wi-Fi session ends, the next scan runs it.
     }
 
     BeginSession(false, "");

@@ -1056,6 +1056,8 @@ struct SettingsWindow::Impl {
             AddToggle(kFill, L"&Fill the frame (crop instead of black bars)", model->fill(), kCardSettings, ix, &cy, iw);
             AddToggle(kAutostart, L"Start MyCam with Windows", model->autostart(), kCardSettings, ix, &cy, iw);
             AddToggle(kWireless, L"Find phones on Wi-Fi (beta)", model->wireless(), kCardSettings, ix, &cy, iw);
+            // Off: a plugged-in phone keeps charging and file transfer until "Scan for USB Devices" (#77).
+            if (model->autoUsb) AddToggle(kAutoUsb, L"Use plugged-in phones as a webcam automatically", model->autoUsb(), kCardSettings, ix, &cy, iw);
             if (model->checkUpdates) {
                 AddToggle(kCheckUpdates, L"&Tell me when a new version is out", model->checkUpdates(), kCardSettings,
                           ix, &cy, iw);
@@ -1574,6 +1576,7 @@ struct SettingsWindow::Impl {
             break;
         case kAutostart: model->setAutostart(!model->autostart()); break;
         case kWireless: model->setWireless(!model->wireless()); break;
+        case kAutoUsb: if (model->setAutoUsb) model->setAutoUsb(!model->autoUsb()); break;
         case kReconnect: model->reconnect(); break;
         case kOpenLog: model->openLogFolder(); break;
         case kContact: if (model->contactSupport) model->contactSupport(); break;
@@ -1588,6 +1591,7 @@ struct SettingsWindow::Impl {
         case kScanNow: StartScan(); GoTo(Page::Devices); break;
         case kScanUsb: // No passive wait: drop the session and look at the bus again (§2.2).
             usbScanAt = Now();
+            if (model->switchUsbNow) model->switchUsbNow(); // Even with automatic switching off.
             model->reconnect();
             break;
         case kPairAllow:

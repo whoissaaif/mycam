@@ -35,23 +35,53 @@ class WirelessServer(
 ) {
     @Volatile private var running = false
     @Volatile private var server: ServerSocket? = null
-    private var discovery: DatagramSocket? = null
+    @Volatile private var discovery: DatagramSocket? = null
     private var multicastLock: WifiManager.MulticastLock? = null
     private val threads = mutableListOf<Thread>()
 
     /** PC names from their discovery messages, by IP address (shown when a PC asks to connect). */
     private val pcNames = ConcurrentHashMap<String, String>()
 
-    fun start() {
-        if (running) return
+    /**
+     * Main thread. Binds both sockets here, before any thread starts, so a [stop] straight after always has
+     * them to close. When the threads bound them, a quick stop found nothing to close, the threads bound
+     * afterwards and ran for good, and the next start failed with "address in use". Binding does no network
+     * I/O, so the main thread is fine. Returns false (and logs why) if a port can't be bound; nothing is left
+     * open then.
+     */
+    @Synchronized
+    fun start(): Boolean {
+        if (running) return true
+        val tcp = try {
+            ServerSocket().apply { reuseAddress = true; bind(InetSocketAddress(Protocol.WIRELESS_TCP_PORT)) }
+        } catch (e: IOException) {
+            Log.w(TAG, "can't listen on port ${Protocol.WIRELESS_TCP_PORT}: ${e.message}")
+            return false
+        }
+        val udp = try {
+            DatagramSocket(null).apply {
+                reuseAddress = true
+                broadcast = true
+                bind(InetSocketAddress(Protocol.WIRELESS_DISCOVERY_PORT))
+            }
+        } catch (e: IOException) {
+            Log.w(TAG, "can't listen on port ${Protocol.WIRELESS_DISCOVERY_PORT}: ${e.message}")
+            try { tcp.close() } catch (_: IOException) {}
+            return false
+        }
+        server = tcp
+        discovery = udp
         running = true
         // Some Wi-Fi drivers drop broadcast packets unless an app holds this lock.
         multicastLock = context.applicationContext.getSystemService(WifiManager::class.java)
             ?.createMulticastLock("MyCam:discovery")?.apply { setReferenceCounted(false); acquire() }
-        threads += Thread(::acceptLoop, "wireless-accept").apply { start() }
-        threads += Thread(::discoveryLoop, "wireless-discovery").apply { start() }
+        threads += Thread({ acceptLoop(tcp) }, "wireless-accept").apply { start() }
+        threads += Thread({ discoveryLoop(udp) }, "wireless-discovery").apply { start() }
+        return true
     }
 
+    /** Main thread. Closes both sockets, which ends their threads. */
+    @Synchronized
     fun stop() {
         running = false
         try { server?.close() } catch (_: IOException) {}
@@ -61,32 +91,30 @@ class WirelessServer(
         multicastLock?.release()
         multicastLock = null
         threads.forEach { it.interrupt() }
+        // On Linux (Android included) closing a socket that a thread is blocked in frees the port only once
+        // that thread has returned: wait for both, briefly, so a start() right after this can bind again.
+        threads.forEach { if (it !== Thread.currentThread()) it.join(250) }
         threads.clear()
     }
 
-    private fun acceptLoop() {
+    private fun acceptLoop(s: ServerSocket) {
         try {
-            val s = ServerSocket().apply { reuseAddress = true; bind(InetSocketAddress(Protocol.WIRELESS_TCP_PORT)) }
-            server = s
             while (running) {
                 val client = s.accept()
+                if (!running) { try { client.close() } catch (_: IOException) {}; break }
                 val ip = client.inetAddress.hostAddress ?: ""
                 onClient(client, pcNames[ip] ?: ip)
             }
         } catch (e: IOException) {
             if (running) Log.w(TAG, "accept ended: ${e.message}")
+        } finally {
+            try { s.close() } catch (_: IOException) {}
         }
     }
 
     /** Answers "MYCAM?1 <pc name>" broadcasts with "MYCAM!1 <tcp port> <phone name>". */
-    private fun discoveryLoop() {
+    private fun discoveryLoop(socket: DatagramSocket) {
         try {
-            val socket = DatagramSocket(null).apply {
-                reuseAddress = true
-                broadcast = true
-                bind(InetSocketAddress(Protocol.WIRELESS_DISCOVERY_PORT))
-            }
-            discovery = socket
             val buf = ByteArray(512)
             val reply = "${Protocol.WIRELESS_HERE} ${Protocol.WIRELESS_TCP_PORT} ${deviceName(context)}".toByteArray()
             while (running) {
@@ -99,13 +127,18 @@ class WirelessServer(
                 }
                 if (!text.startsWith(Protocol.WIRELESS_ASK)) continue
                 val ip = packet.address.hostAddress ?: continue
-                val name = text.substringAfter(' ', "").trim().take(64).takeIf { it.isNotEmpty() }
+                // The PC's name, cleaned as the PC cleans a phone's (it reaches the pairing question).
+                val space = (0 until packet.length).firstOrNull { packet.data[it] == ' '.code.toByte() }
+                val name = space?.let { PcNames.clean(packet.data.copyOfRange(it + 1, packet.length), "") }
+                    ?.takeIf { it.isNotEmpty() }
                 name?.let { pcNames[ip] = it }
                 onProbe(ip, packet.port, name ?: ip)
                 socket.send(DatagramPacket(reply, reply.size, packet.address, packet.port))
             }
         } catch (e: IOException) {
             if (running) Log.w(TAG, "discovery ended: ${e.message}")
+        } finally {
+            socket.close()
         }
     }
 

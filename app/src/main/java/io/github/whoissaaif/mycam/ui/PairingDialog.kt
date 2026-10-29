@@ -102,12 +102,15 @@ fun PairingDialog(
     timedOut: Boolean,
     onAnswer: (Boolean) -> Unit,
     onDismissTimedOut: () -> Unit,
+    /** This phone is already paired with that PC: the question says so. */
+    rePair: Boolean = false,
 ) {
     // Keep the last values while the dialog fades out.
     var lastName by remember { mutableStateOf("") }
     var lastCode by remember { mutableStateOf("") }
+    var lastRePair by remember { mutableStateOf(false) }
     if (pcName != null) lastName = pcName
-    if (code != null) lastCode = code
+    if (code != null) { lastCode = code; lastRePair = rePair }
     val visible = pcName != null
 
     BackHandler(enabled = visible) { if (timedOut) onDismissTimedOut() else onAnswer(false) }
@@ -131,14 +134,14 @@ fun PairingDialog(
                     XpButton(stringResource(R.string.close), onClick = onDismissTimedOut, isDefault = true)
                 }
             } else {
-                PairingBody(lastName, lastCode, deadline, onAnswer)
+                PairingBody(lastName, lastCode, lastRePair, deadline, onAnswer)
             }
         }
     }
 }
 
 @Composable
-private fun PairingBody(pcName: String, code: String, deadline: Long, onAnswer: (Boolean) -> Unit) {
+private fun PairingBody(pcName: String, code: String, rePair: Boolean, deadline: Long, onAnswer: (Boolean) -> Unit) {
     var now by remember { mutableLongStateOf(SystemClock.elapsedRealtime()) }
     LaunchedEffect(deadline) {
         while (true) {
@@ -155,9 +158,17 @@ private fun PairingBody(pcName: String, code: String, deadline: Long, onAnswer: 
     MonitorIllustration(Modifier.fillMaxWidth().height(96.dp))
     Spacer(Modifier.height(12.dp))
     Text(
-        stringResource(R.string.pair_question, pcName), style = MaterialTheme.typography.titleLarge,
-        color = V2.Text, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
+        stringResource(if (rePair) R.string.pair_question_again else R.string.pair_question, pcName),
+        style = MaterialTheme.typography.titleLarge, color = V2.Text, textAlign = TextAlign.Center,
+        modifier = Modifier.fillMaxWidth(),
     )
+    if (rePair) {
+        Spacer(Modifier.height(8.dp))
+        Text(
+            stringResource(R.string.pair_again_detail), style = MaterialTheme.typography.bodyMedium,
+            color = V2.Subtle, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth(),
+        )
+    }
     Spacer(Modifier.height(12.dp))
     Text(stringResource(R.string.pair_check), style = MaterialTheme.typography.bodyMedium, color = V2.Text)
     val shown = WebcamService.formatCode(code)

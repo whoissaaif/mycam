@@ -24,6 +24,10 @@ struct SettingsModel {
     // The Camera page's live preview (saved, default on). Off: the window never keeps the phone streaming.
     std::function<bool()> previewOn;
     std::function<void(bool)> setPreviewOn;
+    // Switch plugged-in phones to MyCam's USB mode by themselves (saved, default on).
+    std::function<bool()> autoUsb;
+    std::function<void(bool)> setAutoUsb;
+    std::function<void()> switchUsbNow; // "Scan for USB Devices": switch a plugged-in phone now.
     std::function<bool()> autostart;
     std::function<void(bool)> setAutostart;
     std::function<void(int)> setFacing; // proto::Facing

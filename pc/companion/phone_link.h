@@ -6,6 +6,7 @@
 #include <mutex>
 #include <set>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "discovery.h"
@@ -57,6 +58,10 @@ public:
         commands_.push_back({cmd, arg});
     }
     void RequestReconnect() { reconnect_ = true; }
+    // "Switch plugged-in phones to MyCam automatically" (default on). Off, a plugged-in phone is left alone
+    // (charging, file transfer) until RequestUsbSwitch: "Scan for USB Devices".
+    void SetAutoUsb(bool on) { autoUsb_ = on; }
+    void RequestUsbSwitch() { usbSwitchNow_ = true; }
     // Wireless mode (beta): also look for phones on the local network and connect over Wi-Fi.
     void SetWireless(bool on) { wireless_ = on; }
     // "Scan for phones": broadcast a probe now and list every phone that answers for kScanWindowMs, even
@@ -179,6 +184,7 @@ private:
     std::mutex commandLock_;
     std::vector<std::pair<uint8_t, uint8_t>> commands_;
     std::atomic<bool> reconnect_{false};
+    std::atomic<bool> autoUsb_{true}, usbSwitchNow_{false};
     std::atomic<int> pendingPause_{-1};
     std::atomic<bool> lockPaused_{false};
     Nv12Image pausedImage_, waitingImage_;
@@ -235,11 +241,24 @@ private:
     libusb_context* winusbCtx_ = nullptr; // WinUSB backend: streams from accessory-mode phones (WinUSB-bound).
     libusb_context* sessionCtx_ = nullptr;
     std::set<std::string> probed_;
+    // During a Wi-Fi session the switch to accessory mode runs on a helper thread: against a locked phone
+    // UsbDk's open can take ~16 s, and the session loop must keep reading Wi-Fi meanwhile. Only the switch
+    // (its own device handle, a few control transfers) runs there; sessions stay on the worker thread. A
+    // failed switch is tried again every kSwitchRetryWifiMs while that phone stays plugged in.
+    void StartSwitch(libusb_device* dev, const std::string& key);
+    std::thread switchThread_;
+    std::atomic<bool> switchBusy_{false}, switchOk_{false};
+    std::atomic<uint64_t> switchDoneAt_{0};
+    std::string switchKey_; // The phone the helper last switched (worker thread).
     struct SwitchRetry { int attempts; uint64_t lastMs; };
     std::map<std::string, SwitchRetry> switchRetry_; // Probed phones whose open failed (a few more tries).
     // Accessories that didn't open during a Wi-Fi session (#67): Wi-Fi stays on, and they aren't tried again
     // from there until unplugged (the idle loop still tries them).
     std::set<std::string> cableFailed_;
+    // The last test-open found the PC's end fine but the phone not taking data yet (MyCam on the phone hasn't
+    // opened its end: its "Open MyCam?" prompt is unanswered, or the phone is locked). Worth asking again.
+    bool cableNotReady_ = false;
+    bool cableWaitLogged_ = false; // ...and that was said once (not every check).
 
     // Session state (worker thread only).
     libusb_device_handle* handle_ = nullptr;

@@ -18,9 +18,9 @@ match the manufacturer and model.
 |---|---|---|
 | 0 | manufacturer | `MyCam` |
 | 1 | model | `MyCam Webcam` |
-| 2 | description | `Use this phone as a USB webcam` |
+| 2 | description | `your PC` (display only: Android shows it in its "Open MyCam to handle …?" prompt; the phone matches manufacturer and model) |
 | 3 | version | `1` |
-| 4 | URI | `https://github.com/whoissaaif/mycam`, shown when the app isn't installed |
+| 4 | URI | empty (1.6): with a URI, Android shows "No installed apps work with this USB accessory" whenever MyCam on the phone doesn't take the cable, which it doesn't unless "Open MyCam when plugged into a PC" is on |
 | 5 | serial | `0001` |
 
 ## Phone → PC packets
@@ -186,7 +186,10 @@ is SHA-256 of messages 1 to 4 exactly as sent (length, type and body).
 **Paired** (the phone knows a pairing key `K` for this PC id, and the PC didn't set "force pairing"):
 SERVER_HELLO has mode 0, then both sides derive the session keys and exchange FINISHED. If the PC doesn't
 have `K` for that phone any more, it sends REJECT and reconnects with "force pairing". If the phone's proof
-check fails (it re-paired or forgot this PC), the PC forgets its key and pairs again.
+check fails (it re-paired or forgot this PC), the PC pairs again. Since 1.6 it keeps its old key until
+that pairing succeeds (a REJECT isn't authenticated). When the phone still has a key for a PC id that
+asks for "force pairing", it says the PC is already paired, and after the pairing the camera has to be
+allowed again (the PC id is sent in the clear, so this may be another device).
 
 **Pairing** (numeric comparison, as in Bluetooth): the phone picks Nb and sends the commitment
 `SHA-256("MyCam commit v1" | Nb | phonePub | pcPub)` in SERVER_HELLO, before it sees Na. The PC sends Na, the

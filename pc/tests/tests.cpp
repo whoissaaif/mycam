@@ -1278,6 +1278,17 @@ void TestWebTokens() {
     CHECK(web::CleanName("A﻿B", "x") == "AB");
     CHECK(web::CleanName("Café ☕", "x") == "Café ☕");                   // Ordinary text is untouched.
     CHECK(web::CleanName(std::string(60, 'x'), "y").size() == 40);        // Still capped.
+    CHECK(web::CleanName("A\xC2\x85" "B", "x") == "AB");                  // NEL (a C1 line break) goes.
+    CHECK(web::CleanName("A\xC2\x80\xC2\x9F" "B", "x") == "AB");          // So does the rest of C1.
+    CHECK(web::CleanName("A\xC2\xA0" "B", "x") == "A\xC2\xA0" "B");       // U+00A0 is just after C1: kept.
+    CHECK(web::CleanName("A\xD8\x9C" "B", "x") == "AB");                  // Arabic letter mark.
+    CHECK(web::CleanName("A\xC0\x8A" "B", "x") == "A");                   // Overlong '\n': not UTF-8, stop.
+    CHECK(web::CleanName("A\xE0\x80\xAF" "B", "x") == "A");               // Overlong '/'.
+    CHECK(web::CleanName("A\xF0\x80\x80\xAF" "B", "x") == "A");           // Overlong 4-byte form.
+    CHECK(web::CleanName("A\xED\xA0\x80" "B", "x") == "A");               // A surrogate half.
+    CHECK(web::CleanName("A\xF4\x90\x80\x80" "B", "x") == "A");           // Past U+10FFFF.
+    CHECK(web::CleanName("\xC0\x8A", "x") == "x");                        // Nothing valid: the fallback.
+    CHECK(web::CleanName("A\xF0\x9F\x93\xB7" "B", "x") == "A\xF0\x9F\x93\xB7" "B"); // An emoji stays.
     CHECK(web::CleanDeviceName("") == "iPhone");                          // The page's default is unchanged.
 
     CHECK(web::SameSecret("abc", "abc") && !web::SameSecret("abc", "abd") && !web::SameSecret("abc", "ab"));

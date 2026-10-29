@@ -50,6 +50,40 @@ or protocol changes). Releases with their installers: https://github.com/whoissa
   turns it off after 10 s and comes back when the PC asks for video again. (#92)
 - **Windows: unplugging can't leave the USB session hung any more.** A read that couldn't be queued again
   was dropped silently, so the session sat at 0 KB/s with no Wi-Fi fallback; it now ends the session. (#13)
+- **Android: "Let this PC use the camera?" is also a notification.** With MyCam in the background, a PC
+  that connected but wasn't allowed yet just showed "Camera paused", and the phone didn't say why. The
+  notification opens MyCam; its Allow only works with the phone unlocked (Android 12 and later).
+- **Android: turning "Use over Wi-Fi" off and on quickly no longer breaks Wi-Fi mode** until MyCam is
+  restarted.
+- **Android: closing the QR scanner right after opening it can't keep the camera busy** any more, which
+  stopped the webcam stream from starting until the app was closed.
+- **Android: the phone can sleep after MyCam closes during a Wi-Fi connection.** A PC that finished
+  connecting just after the app was closed could keep the phone awake until it restarted.
+- **Android: plugging in a locked phone shows only a status screen.** The stream still starts, but the
+  app itself (settings, pairing, the camera question, the preview) only opens once you unlock.
+- **Android: Allow on the pairing notification now asks you to unlock first** (Android 12 and later); on
+  older Android versions the notification has no Allow button and you answer in the app. The lock screen
+  shows only "A PC wants to pair with this phone".
+- **Android: a PC asking to pair again while already paired says so** ("<PC> is already paired. Pair it
+  again?"), and after pairing again the camera has to be allowed again.
+- **Android: PC names are cleaned before the phone shows them** (control characters, line breaks and
+  right-to-left overrides go), the same rules the PC uses for phone names.
+- **Android: Allow on the pairing question and the camera question ignores taps through another app**
+  drawn over MyCam, and says why.
+- **PC: a paired phone is no longer forgotten when a connection is rejected**; pairing again with a code
+  replaces its key.
+- **PC: phone names are cleaned more strictly** (more control characters, and broken UTF-8).
+- **Android: plugging into a PC no longer pops anything up by itself.** A new setting, "Open MyCam when
+  plugged into a PC" (Settings, off by default), decides whether Android offers to open MyCam on plug-in.
+  Off, the phone just charges; tap USB Connection in MyCam to use the cable (Android asks once). The PC no
+  longer sends a "learn more" link with the cable, so Android doesn't show "No installed apps work with
+  this USB accessory" either, and its prompt now reads "Open MyCam to handle your PC?".
+- **Windows: "Use plugged-in phones as a webcam automatically"** (Settings, on by default). Off, a plugged-in
+  phone keeps charging and file transfer until you click "Scan for USB Devices". (#77)
+- **Windows: the PC waits for MyCam on the phone before using the cable.** A plugged-in phone that hasn't
+  opened the cable yet (locked, its prompt unanswered, MyCam closed) no longer makes the PC drop Wi-Fi or sit
+  in a dead USB session: it stays on Wi-Fi and switches once the phone answers. Switching a locked phone to
+  USB mode no longer freezes a running Wi-Fi stream, and it's tried again while the phone stays plugged in.
 
 No protocol changes: 1.6.0 phones and PCs work with 1.5.x.
 

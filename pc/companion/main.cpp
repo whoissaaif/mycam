@@ -64,6 +64,7 @@ SettingsWindow* g_settings = nullptr;
 PairingDialog* g_pairing = nullptr;
 bool g_mirror = false;
 bool g_previewOn = true;
+bool g_autoUsb = true;
 bool g_fill = false;
 bool g_wireless = false; // "Find phones on Wi-Fi" (beta)
 
@@ -163,6 +164,12 @@ void SetMirror(bool mirror) {
     g_mirror = mirror;
     g_link->SetMirror(mirror);
     WriteSetting(L"Mirror", mirror);
+}
+
+void SetAutoUsb(bool on) {
+    g_autoUsb = on;
+    g_link->SetAutoUsb(on);
+    WriteSetting(L"AutoUsb", on);
 }
 
 void SetPreviewOn(bool on) {
@@ -604,6 +611,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
 
     g_mirror = ReadSetting(L"Mirror", 0) != 0;
     g_previewOn = ReadSetting(L"Preview", 1) != 0;
+    g_autoUsb = ReadSetting(L"AutoUsb", 1) != 0;
     g_fill = ReadSetting(L"Fill", 0) != 0;
     g_wireless = ReadSetting(L"Wireless", 0) != 0;
     PhoneLink link([](const LinkStatus& s) {
@@ -614,6 +622,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         PostMessageW(g_hwnd, WM_STATUS, 0, 0);
     }, [] { PostMessageW(g_hwnd, WM_NEED_DRIVER, 0, 0); });
     link.SetMirror(g_mirror);
+    link.SetAutoUsb(g_autoUsb);
     link.SetFill(g_fill);
     link.SetWireless(g_wireless);
     link.SetStatusImages(LoadStatusImage(kImagePaused), LoadStatusImage(kImageWaiting));
@@ -635,6 +644,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     model.setAutostart = SetAutostart;
     model.setFacing = [](int facing) { g_link->RequestFacing(facing); };
     model.reconnect = [] { g_link->RequestReconnect(); };
+    model.autoUsb = [] { return g_autoUsb; };
+    model.setAutoUsb = SetAutoUsb;
+    model.switchUsbNow = [] { g_link->RequestUsbSwitch(); };
     model.openLogFolder = OpenLogFolder;
     model.contactSupport = OpenSupportEmail;
     model.paused = [] { return CurrentStatus().state == LinkState::Paused; };

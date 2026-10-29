@@ -66,6 +66,7 @@ fun SettingsPage(
     onPreview: (Boolean) -> Unit,
     onFindDevices: () -> Unit,
     onLicences: () -> Unit,
+    usbAutoOpen: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -119,6 +120,10 @@ fun SettingsPage(
             FlatSwitchRow(
                 stringResource(R.string.auto_dim_toggle), autoDim, actions.onAutoDim,
                 detail = stringResource(R.string.auto_dim_hint),
+            )
+            FlatSwitchRow(
+                stringResource(R.string.usb_auto_open_toggle), usbAutoOpen, actions.onUsbAutoOpen,
+                detail = stringResource(R.string.usb_auto_open_hint),
             )
         }
 
