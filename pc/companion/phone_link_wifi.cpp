@@ -61,8 +61,6 @@ void SavePairKey(const Bytes& phoneId, const Bytes& key, const std::string& name
     StoreSetString(PairedPath(phoneId), "Name", name);
 }
 
-void ForgetPairKey(const Bytes& phoneId) { StoreDelete(PairedPath(phoneId)); }
-
 // Names of the phones this PC holds a pairing key for. Discovery answers carry only a name (no phone id),
 // so "Paired" in the scan list is matched by name: best effort.
 std::vector<std::string> PairedNames() {
@@ -509,9 +507,10 @@ void PhoneLink::NetScanOnce() {
         case WifiEnd::TimedOutHere: phone.retryAfter = NowMs() + kRetryRefusedMs; break;
         // This PC's user said no: never by itself again (Connect, or the phone asking, still work).
         case WifiEnd::RefusedHere: phone.retryAfter = kNever; break;
-        // Our pairing key didn't work (the phone forgot this PC), so it was deleted and the phone isn't
-        // paired any more: it pairs again, with a code, once someone asks (Connect or Find devices).
-        case WifiEnd::NeedsPairing: break;
+        // Our pairing key didn't work (the phone forgot this PC): it pairs again, with a code, once someone
+        // asks (Connect or Find devices). The key is kept (the REJECT could be forged), so wait a while
+        // before trying it again rather than asking on every probe.
+        case WifiEnd::NeedsPairing: phone.retryAfter = NowMs() + kRetryRefusedMs; break;
         case WifiEnd::Failed: phone.retryAfter = NowMs() + retryUnreachable; break;
         }
         lastProbe_ = 0; // Look again right away.
@@ -674,8 +673,13 @@ PhoneLink::WifiEnd PhoneLink::Handshake(uintptr_t socket, bool forcePair, const 
         return WifiEnd::RefusedHere; // The caller closes the socket; auto-connect leaves this phone alone.
     }
     if (!ok) {
-        // A paired phone that rejects our proof has a different key for us (it re-paired, or forgot us).
-        if (rejected && mode == kModePaired) { ForgetPairKey(phoneId); return WifiEnd::NeedsPairing; }
+        // A paired phone that rejects our proof has a different key for us (it re-paired, or forgot us). The
+        // key stays: a REJECT isn't authenticated, so anyone on the network could send one. A new code
+        // pairing, which the user here has to allow, replaces it.
+        if (rejected && mode == kModePaired) {
+            Log("wifi: the phone didn't take this PC's pairing key: pair again to replace it");
+            return WifiEnd::NeedsPairing;
+        }
         return rejected ? WifiEnd::Refused : WifiEnd::Failed;
     }
     if (!wifi::SameMac(phoneFinished, wifi::Finished(kFin, "PH", h))) {

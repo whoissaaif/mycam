@@ -31,7 +31,7 @@ class WifiHandshakeTest {
                 val phone = Thread {
                     WifiHandshake(
                         phoneSide, pcs, pcs.phoneId(), "Test phone",
-                        askUser = { _, _, _ -> asked.set(true); false },
+                        askUser = { _, _, _, _ -> asked.set(true); false },
                         pairingWanted = { pairingWanted },
                     ).run()
                 }.apply { start() }

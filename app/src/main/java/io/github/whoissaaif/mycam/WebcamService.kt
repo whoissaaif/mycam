@@ -69,6 +69,8 @@ class WebcamService : Service() {
         /** A PC that is pairing over Wi-Fi and waiting for the user to allow it, and the code both screens show. */
         val pendingPc: String? = null,
         val pendingCode: String? = null,
+        /** The pending PC asks to pair again although this phone is already paired with that PC id. */
+        val pendingRePair: Boolean = false,
         /** SystemClock.elapsedRealtime() at which the pending pairing times out (the dialog counts down to it). */
         val pendingDeadline: Long = 0L,
         /** Name of a PC whose pairing request timed out unanswered; the dialog says so until dismissed. */
@@ -599,14 +601,18 @@ class WebcamService : Service() {
     }
 
     /** Handshake thread. Shows "Pair with <PC>? Code …" and waits for Allow / Don't allow (or the timeout). */
-    private fun askUser(pcName: String, code: String, pcGone: () -> Boolean): Boolean {
+    private fun askUser(pcName: String, code: String, rePair: Boolean, pcGone: () -> Boolean): Boolean {
         val latch = java.util.concurrent.CountDownLatch(1)
         val answer = java.util.concurrent.atomic.AtomicBoolean(false)
         main.post {
+            // The service went away before the question could be shown: answer no rather than prompting.
+            if (destroyed) { latch.countDown(); return@post }
             pendingAnswer = { allow -> answer.set(allow); latch.countDown() }
             val deadline = android.os.SystemClock.elapsedRealtime() + APPROVAL_TIMEOUT_MS
-            _state.update { it.copy(pendingPc = pcName, pendingCode = code, pendingDeadline = deadline, pairingTimedOut = null) }
-            showApprovalNotification(pcName, code)
+            _state.update {
+                it.copy(pendingPc = pcName, pendingCode = code, pendingRePair = rePair, pendingDeadline = deadline, pairingTimedOut = null)
+            }
+            showApprovalNotification(pcName, code, rePair)
         }
         // Wait for the answer, the timeout, or the PC hanging up (Cancel pairing on the PC).
         val giveUp = android.os.SystemClock.elapsedRealtime() + APPROVAL_TIMEOUT_MS
@@ -632,7 +638,7 @@ class WebcamService : Service() {
     private fun answerPc(allow: Boolean) {
         val reply = pendingAnswer ?: return
         pendingAnswer = null
-        _state.update { it.copy(pendingPc = null, pendingCode = null, pendingDeadline = 0L) }
+        _state.update { it.copy(pendingPc = null, pendingCode = null, pendingRePair = false, pendingDeadline = 0L) }
         getSystemService(NotificationManager::class.java).cancel(APPROVAL_NOTIFICATION_ID)
         reply(allow && wirelessOn && !linked)
     }
@@ -651,7 +657,32 @@ class WebcamService : Service() {
         if (!linked && !wirelessOn) stopSelf()
     }
 
-    private fun showApprovalNotification(name: String, code: String) {
+    /**
+     * A notification that grants nothing from the lock screen: private there (the lock screen shows only
+     * [publicTitle], with no actions), with the small icon set. Every notification that can let a PC in is
+     * built from this, with its Allow from [unlockedOnlyAction].
+     */
+    private fun privateNotification(channelId: String, publicTitle: CharSequence): NotificationCompat.Builder {
+        val public = NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(R.drawable.ic_stat_webcam)
+            .setContentTitle(publicTitle)
+            .setContentText(getString(R.string.notification_unlock_to_answer))
+            .build()
+        return NotificationCompat.Builder(this, channelId)
+            .setSmallIcon(R.drawable.ic_stat_webcam)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(public)
+    }
+
+    /**
+     * An Allow action that lets a PC in: Android 12+ asks the user to unlock before it runs, even where the
+     * lock screen shows notifications in full. Older versions can't, so add it only from API 31
+     * (Build.VERSION_CODES.S); below that, Allow is answered in the app (the content intent opens it).
+     */
+    private fun unlockedOnlyAction(title: String, intent: PendingIntent): NotificationCompat.Action =
+        NotificationCompat.Action.Builder(0, title, intent).setAuthenticationRequired(true).build()
+
+    private fun showApprovalNotification(name: String, code: String, rePair: Boolean) {
         val nm = getSystemService(NotificationManager::class.java)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             nm.createNotificationChannel(
@@ -663,22 +694,21 @@ class WebcamService : Service() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         val open = PendingIntent.getActivity(this, 2, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
-        nm.notify(
-            APPROVAL_NOTIFICATION_ID,
-            NotificationCompat.Builder(this, APPROVAL_CHANNEL_ID)
-                .setSmallIcon(R.drawable.ic_stat_webcam)
-                .setContentTitle(getString(R.string.wireless_pair_title, name))
-                .setContentText(getString(R.string.wireless_pair_text, formatCode(code)))
-                .setStyle(NotificationCompat.BigTextStyle().bigText(getString(R.string.wireless_pair_text, formatCode(code))))
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setCategory(NotificationCompat.CATEGORY_CALL)
-                .setContentIntent(open)
-                .setAutoCancel(true)
-                .setTimeoutAfter(APPROVAL_TIMEOUT_MS)
-                .addAction(0, getString(R.string.wireless_deny), answer(false, 3))
-                .addAction(0, getString(R.string.wireless_allow), answer(true, 4))
-                .build(),
-        )
+        val builder = privateNotification(APPROVAL_CHANNEL_ID, getString(R.string.wireless_pair_public))
+            .setContentTitle(getString(if (rePair) R.string.wireless_repair_title else R.string.wireless_pair_title, name))
+            .setContentText(getString(R.string.wireless_pair_text, formatCode(code)))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(getString(R.string.wireless_pair_text, formatCode(code))))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_CALL)
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .setTimeoutAfter(APPROVAL_TIMEOUT_MS)
+            .addAction(0, getString(R.string.wireless_deny), answer(false, 3))
+        // Below Android 12 an action can't require unlocking, so Allow is only offered in the app there.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.addAction(unlockedOnlyAction(getString(R.string.wireless_allow), answer(true, 4)))
+        }
+        nm.notify(APPROVAL_NOTIFICATION_ID, builder.build())
     }
 
     /**
@@ -723,9 +753,6 @@ class WebcamService : Service() {
         nm.notify(GATE_NOTIFICATION_ID, builder.build())
     }
 
-    /** A notification action that only runs with the phone unlocked (Android 12+): for anything that grants access. */
-    private fun unlockedOnlyAction(title: String, intent: PendingIntent) =
-        NotificationCompat.Action.Builder(0, title, intent).setAuthenticationRequired(true).build()
 
     private fun cancelCameraGateNotification() =
         getSystemService(NotificationManager::class.java).cancel(GATE_NOTIFICATION_ID)

@@ -124,7 +124,10 @@ class WirelessServer(
                 }
                 if (!text.startsWith(Protocol.WIRELESS_ASK)) continue
                 val ip = packet.address.hostAddress ?: continue
-                val name = text.substringAfter(' ', "").trim().take(64).takeIf { it.isNotEmpty() }
+                // The PC's name, cleaned as the PC cleans a phone's (it reaches the pairing question).
+                val space = (0 until packet.length).firstOrNull { packet.data[it] == ' '.code.toByte() }
+                val name = space?.let { PcNames.clean(packet.data.copyOfRange(it + 1, packet.length), "") }
+                    ?.takeIf { it.isNotEmpty() }
                 name?.let { pcNames[ip] = it }
                 onProbe(ip, packet.port, name ?: ip)
                 socket.send(DatagramPacket(reply, reply.size, packet.address, packet.port))

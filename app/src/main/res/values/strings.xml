@@ -191,6 +191,14 @@
     <string name="pair_waiting">Waiting %1$s</string>
     <string name="pair_timed_out">Pairing timed out</string>
     <string name="pair_timed_out_detail">%1$s wasn’t allowed in time. Open Find Devices here, then Connect on the PC.</string>
+    <string name="wireless_repair_title">%1$s is already paired. Pair it again?</string>
+    <string name="wireless_pair_public">A PC wants to pair with this phone</string>
+    <string name="notification_unlock_to_answer">Unlock your phone to answer.</string>
+    <string name="pair_question_again">%1$s is already paired with this phone. Pair it again?</string>
+    <string name="pair_again_detail">Only allow if you chose to pair again on that PC. The camera stays off until you allow it again.</string>
+    <string name="touch_obscured">Another app is drawing over MyCam, so that tap was ignored. Close it, then try again.</string>
+    <string name="locked_title">MyCam is running</string>
+    <string name="locked_hint">Unlock your phone to change anything</string>
     <string name="wireless_allow">Allow</string>
     <string name="wireless_deny">Don’t allow</string>
 

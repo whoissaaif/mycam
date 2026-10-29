@@ -59,6 +59,20 @@ or protocol changes). Releases with their installers: https://github.com/whoissa
   stopped the webcam stream from starting until the app was closed.
 - **Android: the phone can sleep after MyCam closes during a Wi-Fi connection.** A PC that finished
   connecting just after the app was closed could keep the phone awake until it restarted.
+- **Android: plugging in a locked phone shows only a status screen.** The stream still starts, but the
+  app itself (settings, pairing, the camera question, the preview) only opens once you unlock.
+- **Android: Allow on the pairing notification now asks you to unlock first** (Android 12 and later); on
+  older Android versions the notification has no Allow button and you answer in the app. The lock screen
+  shows only "A PC wants to pair with this phone".
+- **Android: a PC asking to pair again while already paired says so** ("<PC> is already paired. Pair it
+  again?"), and after pairing again the camera has to be allowed again.
+- **Android: PC names are cleaned before the phone shows them** (control characters, line breaks and
+  right-to-left overrides go), the same rules the PC uses for phone names.
+- **Android: Allow on the pairing question and the camera question ignores taps through another app**
+  drawn over MyCam, and says why.
+- **PC: a paired phone is no longer forgotten when a connection is rejected**; pairing again with a code
+  replaces its key.
+- **PC: phone names are cleaned more strictly** (more control characters, and broken UTF-8).
 
 No protocol changes: 1.6.0 phones and PCs work with 1.5.x.
 

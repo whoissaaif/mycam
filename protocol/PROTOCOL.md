@@ -186,7 +186,10 @@ is SHA-256 of messages 1 to 4 exactly as sent (length, type and body).
 **Paired** (the phone knows a pairing key `K` for this PC id, and the PC didn't set "force pairing"):
 SERVER_HELLO has mode 0, then both sides derive the session keys and exchange FINISHED. If the PC doesn't
 have `K` for that phone any more, it sends REJECT and reconnects with "force pairing". If the phone's proof
-check fails (it re-paired or forgot this PC), the PC forgets its key and pairs again.
+check fails (it re-paired or forgot this PC), the PC pairs again. Since 1.6 it keeps its old key until
+that pairing succeeds (a REJECT isn't authenticated). When the phone still has a key for a PC id that
+asks for "force pairing", it says the PC is already paired, and after the pairing the camera has to be
+allowed again (the PC id is sent in the clear, so this may be another device).
 
 **Pairing** (numeric comparison, as in Bluetooth): the phone picks Nb and sends the commitment
 `SHA-256("MyCam commit v1" | Nb | phonePub | pcPub)` in SERVER_HELLO, before it sees Na. The PC sends Na, the

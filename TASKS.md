@@ -44,8 +44,11 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
   - [x] Website on `main` in `website/`, published by `.github/workflows/pages.yml` (#74): live on mycam.dev
         since 2026-10-28; the old `gh-pages` branch is kept for now as a fallback
   - [ ] Website updated for 1.6.0 and Linux, download links that survive a release (#75)
-  - [ ] Security findings from the local inspection report (pairing, the SYSTEM task, lock screen):
-        fixed through a private advisory, not public issues
+  - [~] Security findings from the local inspection report (pairing, lock screen; the SYSTEM-task one is
+        dropped: people choose any install folder). Landed, device test pending: the lock
+        screen after a USB launch, Allow in the pairing notification needs unlocking, pairing again says
+        so and asks for the camera again, the PC keeps a phone's key when a connection is rejected, PC
+        names cleaned on the phone (and more strictly on the PC), no taps through overlays on Allow
   - [~] Phone reliability findings 8–11 from the local inspection report (branch `fix/phone-reliability`):
         a handshake that ends after the service is gone closes its socket instead of taking a wake lock;
         the QR scanner's camera thread waits for a pending open, so the camera is always closed; Wi-Fi

@@ -28,8 +28,9 @@ class WifiHandshake(
     /**
      * Pairing: show the PC name and code, return true if the user allowed it (blocks up to ~60 s). Stop
      * asking (and return false) once [pcGone] says the PC hung up, e.g. "Cancel pairing" on the PC.
+     * [rePair]: this phone already holds a key for that PC id, so the question must say it is pairing again.
      */
-    private val askUser: (pcName: String, code: String, pcGone: () -> Boolean) -> Boolean,
+    private val askUser: (pcName: String, code: String, rePair: Boolean, pcGone: () -> Boolean) -> Boolean,
     /** QR pairing: the one-time code scanned from this PC's screen (16 bytes), or null if none is pending. */
     private val qrCodeFor: (pcId: ByteArray) -> ByteArray? = { null },
     /**
@@ -92,7 +93,8 @@ class WifiHandshake(
             return finish(keys, pcId, pcName, newlyPaired = true)
         }
 
-        val known = if (forcePair) null else store.key(pcId)
+        val stored = store.key(pcId)
+        val known = if (forcePair) null else stored
 
         if (known != null) {
             send(TYPE_SERVER_HELLO, phoneId + phonePub + nph + byteArrayOf(MODE_PAIRED) + name(phoneName))
@@ -119,11 +121,14 @@ class WifiHandshake(
         if (!finishedFromPc(keys)) { reject(REJECT_AUTH); return null }
 
         val code = WifiCrypto.sas(pcPub, phonePub, na, nb)
+        // A PC asking to pair again under an id this phone already has a key for. The id travels in the clear,
+        // so this may not be that PC at all: the question says it is already paired.
+        val rePair = stored != null
         // The PC sends nothing while the user decides. If it hangs up meanwhile (Cancel pairing on the PC, or
         // its timeout), close the question, and never store a key for a pairing the PC abandoned.
         val watch = HangUpWatch().also { it.start() }
         val allowed = try {
-            askUser(pcName, code) { watch.gone }
+            askUser(pcName, code, rePair) { watch.gone }
         } finally {
             watch.finish()
         }
@@ -131,8 +136,9 @@ class WifiHandshake(
         if (!allowed) { reject(REJECT_REFUSED); return null }
         store.put(pcId, pairKey, pcName)
         // The user compared the code and tapped Allow, which is consent for this PC to use the camera. A QR
-        // pairing has no such moment, so it does not set this and the phone asks once, after connecting.
-        store.allowCamera(pcId)
+        // pairing has no such moment, so it does not set this and the phone asks once, after connecting. Nor
+        // does pairing again: the new key may belong to another device, so the camera is asked for afresh.
+        if (rePair) store.revokeCamera(pcId) else store.allowCamera(pcId)
         return finish(keys, pcId, pcName, newlyPaired = true)
     }
 
@@ -224,9 +230,10 @@ class WifiHandshake(
         return byteArrayOf(b.size.toByte()) + b
     }
 
+    /** The PC's name, cleaned ([PcNames]): it reaches the pairing question and the paired list. */
     private fun readName(d: DataInputStream): String {
         val n = d.readUnsignedByte()
-        return String(ByteArray(n).also { d.readFully(it) }, Charsets.UTF_8)
+        return PcNames.clean(ByteArray(n).also { d.readFully(it) }, socket.inetAddress?.hostAddress ?: "PC")
     }
 
     companion object {
@@ -282,6 +289,11 @@ class PairedPcs(private val prefs: SharedPreferences) {
 
     fun allowCamera(pcId: ByteArray) {
         prefs.edit { putBoolean(ALLOW_PREFIX + hex(pcId), true) }
+    }
+
+    /** The PC has to be allowed again (the camera gate asks once it connects). */
+    fun revokeCamera(pcId: ByteArray) {
+        prefs.edit { remove(ALLOW_PREFIX + hex(pcId)) }
     }
 
     /** Forgets one PC (by [PairedPc.id]): it has to pair again, with a code, next time. */
