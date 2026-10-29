@@ -51,8 +51,9 @@ one closes it.
 
 **The tray icon** (top right) shows how MyCam is doing: grey with no phone, blue when ready, green while
 streaming, amber while paused, red on an error. Its menu has the same controls as on Windows: pause and
-resume, back or front camera, quality, mirror, fill the frame, connect an iPhone, reconnect, start at login,
-and quit. **Quit MyCam** stops the camera too; it starts again at the next login, or from the MyCam entry
+resume, back or front camera, quality, mirror, fill the frame, connect an iPhone, reconnect, find phones on
+Wi-Fi, use plugged-in phones as a webcam (turn it off to keep a plugged-in phone for charging and file
+transfer; **Reconnect phone** then switches it on demand), start at login, and quit. **Quit MyCam** stops the camera too; it starts again at the next login, or from the MyCam entry
 in your apps.
 
 **OBS:** right-click the MyCam source → **Properties**, scroll down, and untick **Use Buffering**. With

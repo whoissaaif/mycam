@@ -63,7 +63,7 @@ bool ReadLine(int s, std::string* buffer, std::string* line, int timeoutMs) {
     }
 }
 
-TrayStatus MakeTrayStatus(const LinkStatus& status, bool mirror, bool fill) {
+TrayStatus MakeTrayStatus(const LinkStatus& status, bool mirror, bool fill, bool autoUsb) {
     TrayStatus t;
     // No camera registration to fail on Linux: the v4l2loopback device is opened by the daemon itself.
     const StatusView view = DescribeStatus(status, true);
@@ -83,6 +83,7 @@ TrayStatus MakeTrayStatus(const LinkStatus& status, bool mirror, bool fill) {
     t.pairing = !status.pairingCode.empty();
     t.wifi = status.wirelessSearch;
     t.updates = UpdateCheckEnabled();
+    t.autoUsb = autoUsb;
     t.update = UpdateAvailable(MYCAM_VERSION); // What the last check found; never a request from here (#79).
     return t;
 }
@@ -163,7 +164,7 @@ void ControlServer::SetWifi(bool on) {
 }
 
 void ControlServer::UpdateStatusLine() {
-    std::string line = FormatTrayStatus(MakeTrayStatus(status_, mirror_, fill_));
+    std::string line = FormatTrayStatus(MakeTrayStatus(status_, mirror_, fill_, autoUsb_));
     if (line != statusLine_) {
         statusLine_ = std::move(line);
         ++statusSeq_;
@@ -264,8 +265,20 @@ void ControlServer::Command(const std::string& line) {
     else if (cmd == "facing" && (arg == proto::kFacingBack || arg == proto::kFacingFront)) link_->RequestFacing(arg);
     else if (cmd == "quality" && arg >= proto::kQuality720p && arg <= proto::kQuality4K) {
         link_->RequestCommand(proto::kCmdSetQuality, uint8_t(arg));
-    } else if (cmd == "reconnect") link_->RequestReconnect();
-    else if (cmd == "wifi" && (arg == 0 || arg == 1)) {
+    } else if (cmd == "reconnect") {
+        link_->RequestUsbSwitch(); // As "Scan for USB Devices" on Windows: a plugged-in phone is switched now.
+        link_->RequestReconnect();
+    } else if (cmd == "autousb" && (arg == 0 || arg == 1)) {
+        // "Use plugged-in phones as a webcam automatically" (#77), saved under the Windows setting's name.
+        link_->SetAutoUsb(arg);
+        StoreSetU64("", "AutoUsb", uint64_t(arg));
+        {
+            std::lock_guard<std::mutex> lock(lock_);
+            autoUsb_ = arg;
+            UpdateStatusLine();
+        }
+        changed_.notify_all();
+    } else if (cmd == "wifi" && (arg == 0 || arg == 1)) {
         std::lock_guard<std::mutex> lock(lock_);
         SetWifi(arg); // The link publishes the new status, which reaches the tray.
     } else if (cmd == "updates" && (arg == 0 || arg == 1)) {

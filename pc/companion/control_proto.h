@@ -24,6 +24,7 @@ struct TrayStatus {
     bool pairing = false;
     bool wifi = false;        // "Find phones on Wi-Fi" is on.     // A Wi-Fi phone waits for this PC to allow a code pairing: the detail has the code.
     bool updates = true;      // "Tell me when a new version is out" is on (#79).
+    bool autoUsb = true;      // "Use plugged-in phones as a webcam automatically" is on (#77).
     std::string update;       // A newer release to offer ("1.7.0"), or "" for none. Last on the line.
     std::string headline;     // UTF-8, as the Windows tray shows it.
     std::string detail;
