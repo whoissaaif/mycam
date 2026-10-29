@@ -16,6 +16,11 @@ if(NOT WIN32)
 endif()
 
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>") # Static CRT: no VC++ redist needed.
+# A .pdb next to the Release binaries (not shipped) so a crash report names functions and lines.
+if(MSVC)
+    add_compile_options($<$<CONFIG:Release>:/Zi>)
+    add_link_options($<$<CONFIG:Release>:/DEBUG> $<$<CONFIG:Release>:/OPT:REF> $<$<CONFIG:Release>:/OPT:ICF>)
+endif()
 add_compile_definitions(UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00)
 add_compile_options(/utf-8) # Sources are UTF-8 (status text uses · and ×).
 
@@ -98,7 +103,7 @@ add_executable(MyCamCompanion WIN32
     companion/companion.manifest
 )
 target_link_libraries(MyCamCompanion PRIVATE usb mfplat mfuuid ole32 shell32 advapi32 setupapi newdev cfgmgr32
-    comctl32 d2d1 dwrite windowscodecs dwmapi wtsapi32 taskschd ws2_32 winhttp iphlpapi bcrypt crypt32 ncrypt secur32 d3d11 dxgi dcomp dxguid uiautomationcore)
+    comctl32 d2d1 dwrite windowscodecs dwmapi wtsapi32 taskschd ws2_32 winhttp iphlpapi bcrypt crypt32 ncrypt secur32 d3d11 dxgi dcomp dxguid uiautomationcore dbghelp)
 
 # --- Developer tools (not shipped; install.ps1 copies only the two binaries above) -------------------
 option(MYCAM_BUILD_TOOLS "Build developer tools (capture_test, usb_probe, uia_dump, web_probe, minimise_probe)" OFF)

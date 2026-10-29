@@ -6,6 +6,7 @@
 #include <wtsapi32.h>
 #include <mfapi.h>
 #include <mfvirtualcamera.h>
+#include <dbghelp.h>
 #include <wrl/client.h>
 
 #include <atomic>
@@ -483,6 +484,40 @@ void KeepTimerResolution() {
     Log("timer: keep the timer resolution in the background -> %d", int(ok));
 }
 
+// A crash writes where it happened to %LOCALAPPDATA%\MyCam\crash.txt (its own file: at exit the log may
+// already be closed). Names and lines come from MyCamCompanion.pdb when it sits next to the exe.
+LONG WINAPI WriteCrashReport(EXCEPTION_POINTERS* info) {
+    wchar_t base[MAX_PATH];
+    if (!GetEnvironmentVariableW(L"LOCALAPPDATA", base, MAX_PATH)) return EXCEPTION_CONTINUE_SEARCH;
+    FILE* f = _wfopen((std::wstring(base) + L"\\MyCam\\crash.txt").c_str(), L"w");
+    if (!f) return EXCEPTION_CONTINUE_SEARCH;
+    fprintf(f, "exception 0x%08lX at %p\n", info->ExceptionRecord->ExceptionCode, info->ExceptionRecord->ExceptionAddress);
+    HANDLE process = GetCurrentProcess(), thread = GetCurrentThread();
+    SymSetOptions(SYMOPT_LOAD_LINES | SYMOPT_UNDNAME);
+    SymInitialize(process, nullptr, TRUE);
+    CONTEXT ctx = *info->ContextRecord;
+    STACKFRAME64 frame = {};
+    frame.AddrPC.Offset = ctx.Rip;
+    frame.AddrFrame.Offset = ctx.Rbp;
+    frame.AddrStack.Offset = ctx.Rsp;
+    frame.AddrPC.Mode = frame.AddrFrame.Mode = frame.AddrStack.Mode = AddrModeFlat;
+    for (int i = 0; i < 32 && StackWalk64(IMAGE_FILE_MACHINE_AMD64, process, thread, &frame, &ctx, nullptr,
+                                          SymFunctionTableAccess64, SymGetModuleBase64, nullptr); ++i) {
+        char buf[sizeof(SYMBOL_INFO) + 256] = {};
+        auto* sym = reinterpret_cast<SYMBOL_INFO*>(buf);
+        sym->SizeOfStruct = sizeof(SYMBOL_INFO);
+        sym->MaxNameLen = 255;
+        DWORD64 disp = 0;
+        IMAGEHLP_LINE64 line = {sizeof(line)};
+        DWORD lineDisp = 0;
+        const bool named = SymFromAddr(process, frame.AddrPC.Offset, &disp, sym);
+        const bool lined = SymGetLineFromAddr64(process, frame.AddrPC.Offset, &lineDisp, &line);
+        fprintf(f, "  %s  %s:%lu\n", named ? sym->Name : "?", lined ? line.FileName : "?", lined ? line.LineNumber : 0);
+    }
+    fclose(f);
+    return EXCEPTION_CONTINUE_SEARCH; // Windows still records the crash as before.
+}
+
 int QuitRunningInstance() {
     // Current versions use a hidden top-level window; versions before 1.1 used a message-only window.
     HWND other = FindWindowW(L"MyCamCompanion", nullptr);
@@ -557,6 +592,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     // Used by the installer/uninstaller: close the running companion cleanly (it turns the phone camera
     // off on the way out) and wait for it to exit. Exit code 0 = none running or it closed.
     if (wcsstr(GetCommandLineW(), L"--quit")) return QuitRunningInstance();
+    SetUnhandledExceptionFilter(WriteCrashReport);
 
     HANDLE single = CreateMutexW(nullptr, TRUE, L"Local\\MyCamCompanion");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
@@ -569,6 +605,15 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     StartUpdateCheck(Utf8(ui::kAppVersion)); // One GitHub request in the background, at most once a day (#79).
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED);
     MFStartup(MF_VERSION);
+    // Shut COM and Media Foundation down only after every local below is gone: they are destroyed on the
+    // way out of wWinMain (the virtual camera, the windows' Direct2D and UI Automation objects), and doing it
+    // before them crashed every exit (#20).
+    struct ComScope {
+        ~ComScope() {
+            MFShutdown();
+            CoUninitialize();
+        }
+    } comScope;
 
     ComPtr<IMFVirtualCamera> vcam;
     HRESULT vcamHr;
@@ -732,8 +777,6 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
         vcam->Stop();
         vcam->Shutdown();
     }
-    MFShutdown();
-    CoUninitialize();
     CloseHandle(single);
-    return 0;
+    return 0; // comScope shuts COM and Media Foundation down after the locals are destroyed.
 }
