@@ -269,6 +269,12 @@ bool PhoneLink::SwitchToAccessory(libusb_device* dev) {
     int r = libusb_control_transfer(h, LIBUSB_ENDPOINT_IN | LIBUSB_REQUEST_TYPE_VENDOR, kAoaGetProtocol, 0, 0,
                                     version, sizeof(version), 1000);
     Log("scan: AOA protocol query -> %d (version %d)", r, version[0] | version[1] << 8);
+    // A query that fails outright (not a plain "no") is usually a phone that was plugged in a moment ago and
+    // isn't ready yet: report it like a failed open, so the scan asks again a few times.
+    if (r < 0) {
+        libusb_close(h);
+        return false;
+    }
     if (r == 2 && (version[0] | version[1] << 8) >= 1) {
         const char* strings[] = {proto::kAccessoryManufacturer, proto::kAccessoryModel, proto::kAccessoryDescription,
                                  proto::kAccessoryVersion, proto::kAccessoryUri, proto::kAccessorySerial};
