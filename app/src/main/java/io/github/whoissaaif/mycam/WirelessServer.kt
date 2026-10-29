@@ -91,6 +91,9 @@ class WirelessServer(
         multicastLock?.release()
         multicastLock = null
         threads.forEach { it.interrupt() }
+        // On Linux (Android included) closing a socket that a thread is blocked in frees the port only once
+        // that thread has returned: wait for both, briefly, so a start() right after this can bind again.
+        threads.forEach { if (it !== Thread.currentThread()) it.join(250) }
         threads.clear()
     }
 
