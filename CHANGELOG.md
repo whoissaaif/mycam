@@ -42,6 +42,14 @@ or protocol changes). Releases with their installers: https://github.com/whoissa
 - **Windows: a "Show preview" switch** under the preview on the Camera page (on by default, remembered).
   The preview keeps the phone streaming while the page is open; switched off, the window never asks for
   video, so the phone camera only runs while an app uses it.
+- **Windows: smooth video with the MyCam window closed or minimised.** Windows 11 slows down timers for
+  apps with no visible window, which made decoding take ~62 ms a frame instead of ~10 ms, so apps got
+  stuttering video and the phone cut its bitrate. MyCam now opts out of that throttling. (#95)
+- **The phone's camera turns off when the PC stops reading.** If MyCam on the PC crashes or is killed
+  during a stream over the cable, the phone used to keep its camera on until MyCam started again; now it
+  turns it off after 10 s and comes back when the PC asks for video again. (#92)
+- **Windows: unplugging can't leave the USB session hung any more.** A read that couldn't be queued again
+  was dropped silently, so the session sat at 0 KB/s with no Wi-Fi fallback; it now ends the session. (#13)
 
 No protocol changes: 1.6.0 phones and PCs work with 1.5.x.
 
