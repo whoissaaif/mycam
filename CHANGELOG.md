@@ -39,6 +39,9 @@ or protocol changes). Releases with their installers: https://github.com/whoissa
   connected over the cable. MyCam now recognises the accessory interface however Windows names it, swaps a
   wrong MTP driver on it for WinUSB (only that interface), and connects even while adb is using the phone.
   If switching a phone to MyCam's USB mode fails right after plug-in, it is tried 3 times. (#66)
+- **Windows: a "Show preview" switch** under the preview on the Camera page (on by default, remembered).
+  The preview keeps the phone streaming while the page is open; switched off, the window never asks for
+  video, so the phone camera only runs while an app uses it.
 
 No protocol changes: 1.6.0 phones and PCs work with 1.5.x.
 

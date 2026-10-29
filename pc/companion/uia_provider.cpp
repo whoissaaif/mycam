@@ -875,6 +875,7 @@ std::wstring UiaAutomationId(int id) {
     case kFps60: return L"Fps60";
     case kFps120: return L"Fps120";
     case kMirror: return L"Mirror";
+    case kShowPreview: return L"ShowPreview";
     case kFill: return L"Fill";
     case kAutostart: return L"Autostart";
     case kWireless: return L"Wireless";

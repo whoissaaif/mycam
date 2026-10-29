@@ -90,6 +90,7 @@ enum Id : int {
     kNowMode = 813, kControlsNote = 814,
     kZoomSlider = 815,                                  // Zoom slider (replaces the −/+/1× row).
     kChipRes = 816, kChipFps = 817, kChipCam = 818,      // The three dark pills under the preview.
+    kShowPreview = 819,                                 // "Show preview": off, the window never asks for video.
     // Pairing (the dialog, and the pairing page in the window).
     kPairTitle = 900, kPairCode = 901, kPairHint = 902, kPairProgress = 903, kPairCancel = 904, kPairArt = 905, kPairAllow = 906, kPairOk = 907,
     // "Connect an iPhone" page: the QR code, the steps, the address (and the network to use), and the

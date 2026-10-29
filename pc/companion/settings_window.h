@@ -21,6 +21,9 @@ struct SettingsModel {
     std::function<std::wstring()> backendName; // "Frame Server" or "DirectShow" (docs/WINDOWS10-SUPPORT.md)
     std::function<bool()> mirror;
     std::function<void(bool)> setMirror;
+    // The Camera page's live preview (saved, default on). Off: the window never keeps the phone streaming.
+    std::function<bool()> previewOn;
+    std::function<void(bool)> setPreviewOn;
     std::function<bool()> autostart;
     std::function<void(bool)> setAutostart;
     std::function<void(int)> setFacing; // proto::Facing

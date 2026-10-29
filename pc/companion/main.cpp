@@ -63,6 +63,7 @@ PhoneLink* g_link = nullptr;
 SettingsWindow* g_settings = nullptr;
 PairingDialog* g_pairing = nullptr;
 bool g_mirror = false;
+bool g_previewOn = true;
 bool g_fill = false;
 bool g_wireless = false; // "Find phones on Wi-Fi" (beta)
 
@@ -162,6 +163,11 @@ void SetMirror(bool mirror) {
     g_mirror = mirror;
     g_link->SetMirror(mirror);
     WriteSetting(L"Mirror", mirror);
+}
+
+void SetPreviewOn(bool on) {
+    g_previewOn = on;
+    WriteSetting(L"Preview", on);
 }
 
 void SetFill(bool fill) {
@@ -582,6 +588,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     }
 
     g_mirror = ReadSetting(L"Mirror", 0) != 0;
+    g_previewOn = ReadSetting(L"Preview", 1) != 0;
     g_fill = ReadSetting(L"Fill", 0) != 0;
     g_wireless = ReadSetting(L"Wireless", 0) != 0;
     PhoneLink link([](const LinkStatus& s) {
@@ -607,6 +614,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int) {
     model.backendName = [] { return g_backendName; };
     model.mirror = [] { return g_mirror; };
     model.setMirror = SetMirror;
+    model.previewOn = [] { return g_previewOn; };
+    model.setPreviewOn = SetPreviewOn;
     model.autostart = AutostartEnabled;
     model.setAutostart = SetAutostart;
     model.setFacing = [](int facing) { g_link->RequestFacing(facing); };
