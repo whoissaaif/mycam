@@ -46,6 +46,13 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
   - [ ] Website updated for 1.6.0 and Linux, download links that survive a release (#75)
   - [ ] Security findings from the local inspection report (pairing, the SYSTEM task, lock screen):
         fixed through a private advisory, not public issues
+  - [~] Phone reliability findings 8–11 from the local inspection report (branch `fix/phone-reliability`):
+        a handshake that ends after the service is gone closes its socket instead of taking a wake lock;
+        the QR scanner's camera thread waits for a pending open, so the camera is always closed; Wi-Fi
+        mode binds its ports before its threads start, so a quick off/on can't leave them bound; the
+        camera gate is also a notification (Allow needs the phone unlocked). Unit-tested (Robolectric);
+        device test pending: toggle Wi-Fi mode quickly, close the scanner at once then stream, gate
+        notification with MyCam in the background and from the lock screen
   - [ ] Test matrix below, then the release APK (R8 on) on a real phone
   - [ ] Later, not blocking: USB file transfer while MyCam runs (#77), and the open bugs #4, #10, #20,
         #22, #64, #68

@@ -161,6 +161,8 @@ class WebcamService : Service() {
     private val main by lazy { Handler(mainLooper) }
     private var wireless: WirelessServer? = null
     private var wirelessOn = false
+    /** Main thread. Set in onDestroy: a handshake that finishes later must not open a link. */
+    private var destroyed = false
     private var wifiLock: WifiManager.WifiLock? = null
     private var handshaking = false                      // A PC is pairing or proving its pairing key.
     private var pendingAnswer: ((Boolean) -> Unit)? = null // Waiting for Allow / Don't allow on a pairing.
@@ -580,13 +582,20 @@ class WebcamService : Service() {
                 sock, pairedPcs, pairedPcs.phoneId(), WirelessServer.deviceName(this), ::askUser, ::qrCodeFor,
                 pairingWanted = { SystemClock.elapsedRealtime() < pairingUntil },
             ).run()
-            main.post {
-                handshaking = false
-                if (result != null && wirelessOn && !linked) openSocket(sock, result)
-                else try { sock.close() } catch (_: IOException) {}
-            }
+            main.post { finishHandshake(sock, result) }
         }, "wifi-handshake").start()
         Log.i(TAG, "Wi-Fi connection from $discoveredName (${sock.inetAddress.hostAddress})")
+    }
+
+    /**
+     * Main thread. A handshake ended. Its socket becomes the link only if the service is still alive, wireless
+     * mode is still on and no cable took over meanwhile. After onDestroy the link would take a wake lock and
+     * start a reader whose callbacks go to a quit looper, so nothing would ever release them.
+     */
+    private fun finishHandshake(sock: Socket, result: WifiHandshake.Result?) {
+        handshaking = false
+        if (result != null && !destroyed && wirelessOn && !linked) openSocket(sock, result)
+        else try { sock.close() } catch (_: IOException) {}
     }
 
     /** Handshake thread. Shows "Pair with <PC>? Code …" and waits for Allow / Don't allow (or the timeout). */
@@ -672,6 +681,55 @@ class WebcamService : Service() {
         )
     }
 
+    /**
+     * "Let <PC> use the camera?" as a notification: the gate dialog only shows inside the
+     * app, and in Wi-Fi mode MyCam is usually in the background. Tapping it opens the app, where the dialog is.
+     * Allow grants camera access, so it needs the phone unlocked (Android 12+); on older versions, where an
+     * action can't ask for that, there is no Allow here, only in the app. Locked, the notification shows a
+     * version without actions or the PC's name.
+     */
+    private fun showCameraGateNotification(pcName: String) {
+        val nm = getSystemService(NotificationManager::class.java)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            nm.createNotificationChannel(
+                NotificationChannel(APPROVAL_CHANNEL_ID, getString(R.string.channel_wireless), NotificationManager.IMPORTANCE_HIGH)
+            )
+        }
+        fun answer(allow: Boolean, requestCode: Int) = PendingIntent.getService(
+            this, requestCode, Intent(this, WebcamService::class.java).setAction(ACTION_CAMERA_GATE).putExtra(EXTRA_ALLOW, allow),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val open = PendingIntent.getActivity(this, 5, Intent(this, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE)
+        val locked = NotificationCompat.Builder(this, APPROVAL_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_webcam)
+            .setContentTitle(getString(R.string.gate_title))
+            .setContentText(getString(R.string.gate_notification_public))
+            .setContentIntent(open)
+            .build()
+        val builder = NotificationCompat.Builder(this, APPROVAL_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_stat_webcam)
+            .setContentTitle(getString(R.string.gate_notification_title, pcName))
+            .setContentText(getString(R.string.gate_notification_text))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(getString(R.string.gate_notification_text)))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(locked)
+            .setContentIntent(open)
+            .setAutoCancel(true)
+            .addAction(0, getString(R.string.wireless_deny), answer(false, 6))
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.addAction(unlockedOnlyAction(getString(R.string.wireless_allow), answer(true, 7)))
+        }
+        nm.notify(GATE_NOTIFICATION_ID, builder.build())
+    }
+
+    /** A notification action that only runs with the phone unlocked (Android 12+): for anything that grants access. */
+    private fun unlockedOnlyAction(title: String, intent: PendingIntent) =
+        NotificationCompat.Action.Builder(0, title, intent).setAuthenticationRequired(true).build()
+
+    private fun cancelCameraGateNotification() =
+        getSystemService(NotificationManager::class.java).cancel(GATE_NOTIFICATION_ID)
+
     /** Main thread. Uses a paired, encrypted Wi-Fi connection as the link. */
     private fun openSocket(sock: Socket, secure: WifiHandshake.Result) {
         closeLink()
@@ -687,7 +745,10 @@ class WebcamService : Service() {
         cameraBlocked = !pairedPcs.cameraAllowed(secure.pcId)
         gatedPcId = if (cameraBlocked) secure.pcId else null
         startLink(secure.output, secure.input, wirelessPc = secure.pcName)
-        if (cameraBlocked) _state.update { it.copy(cameraGate = secure.pcName) }
+        if (cameraBlocked) {
+            _state.update { it.copy(cameraGate = secure.pcName) }
+            showCameraGateNotification(secure.pcName) // MyCam is often in the background in Wi-Fi mode.
+        }
         _state.update { it.copy(wirelessPcIp = sock.inetAddress?.hostAddress) }
         // A new pairing (QR code or 6-digit code): the screen says so and shows the camera. When the camera is
         // still waiting to be allowed, the gate asks and names the PC, so there is no second message.
@@ -930,6 +991,7 @@ class WebcamService : Service() {
         val pcId = gatedPcId ?: return
         gatedPcId = null // Answered either way: a second tap does nothing.
         _state.update { it.copy(cameraGate = null) }
+        cancelCameraGateNotification()
         if (!allow) {
             Log.i(TAG, "camera not allowed for this PC: forgetting it and dropping the link")
             pairedPcs.forget(QrPairing.hex(pcId))
@@ -1196,6 +1258,7 @@ class WebcamService : Service() {
         orientationListener?.disable()
         cameraBlocked = false
         gatedPcId = null
+        cancelCameraGateNotification()
         _state.update {
             it.copy(connected = false, streaming = false, resolution = "", wireless = false, wirelessPc = null,
                     wirelessPcIp = null, cameraGate = null)
@@ -1217,7 +1280,10 @@ class WebcamService : Service() {
     }
 
     override fun onDestroy() {
+        destroyed = true
+        wirelessOn = false // Late posts from the server's threads (offerPc, onProbe) then do nothing.
         getSystemService(NotificationManager::class.java).cancel(APPROVAL_NOTIFICATION_ID)
+        cancelCameraGateNotification()
         unregisterReceiver(detachReceiver)
         PhonePreview.onTargetChanged = null
         PhonePreview.cameraStopped()
@@ -1296,6 +1362,8 @@ class WebcamService : Service() {
         fun formatCode(code: String) = if (code.length == 6) code.substring(0, 3) + " " + code.substring(3) else code
         private const val APPROVAL_CHANNEL_ID = "wireless"
         private const val APPROVAL_NOTIFICATION_ID = 2
+        /** "Let <PC> use the camera?" ([showCameraGateNotification]). */
+        private const val GATE_NOTIFICATION_ID = 3
         private const val APPROVAL_TIMEOUT_MS = 60_000L
 
         /** "Connect to me" is resent every 2 s, five times, because a single datagram may be lost. */

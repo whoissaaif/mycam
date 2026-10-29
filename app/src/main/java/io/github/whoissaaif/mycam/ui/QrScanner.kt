@@ -224,6 +224,8 @@ internal class QrCamera private constructor(
     private val main = Handler(Looper.getMainLooper())
     @Volatile private var closed = false
     private var started = false
+    /** Camera thread. openCamera was called and hasn't answered yet: the thread must live until it does. */
+    private var opening = false
     private var device: CameraDevice? = null
     private var session: CameraCaptureSession? = null
     private var reader: ImageReader? = null
@@ -240,9 +242,11 @@ internal class QrCamera private constructor(
             val yuv = ImageReader.newInstance(size.width, size.height, ImageFormat.YUV_420_888, 2).also { reader = it }
             yuv.setOnImageAvailableListener({ decode(it) }, handler)
             try {
+                opening = true
                 manager.openCamera(cameraId, object : CameraDevice.StateCallback() {
                     override fun onOpened(d: CameraDevice) {
-                        if (closed) { d.close(); return }
+                        opening = false
+                        if (closed) { d.close(); thread.quitSafely(); return }
                         device = d
                         @Suppress("DEPRECATION") // The List<Surface> overload works on every supported API level.
                         d.createCaptureSession(listOf(preview, yuv.surface), object : CameraCaptureSession.StateCallback() {
@@ -265,13 +269,14 @@ internal class QrCamera private constructor(
                             }
                         }, handler)
                     }
-                    override fun onDisconnected(d: CameraDevice) = d.close()
+                    override fun onDisconnected(d: CameraDevice) = gone(d)
                     override fun onError(d: CameraDevice, error: Int) {
                         Log.w(TAG, "scanner: camera error $error")
-                        d.close()
+                        gone(d)
                     }
                 }, handler)
             } catch (e: Exception) {
+                opening = false
                 Log.w(TAG, "scanner: can't open the camera", e)
             }
         }
@@ -299,6 +304,20 @@ internal class QrCamera private constructor(
         }
     }
 
+    /** Camera thread. The camera went away or failed (before or after opening): close it, and the thread if done. */
+    private fun gone(d: CameraDevice) {
+        opening = false
+        if (device === d) device = null
+        try { d.close() } catch (_: Exception) {}
+        if (closed) thread.quitSafely()
+    }
+
+    /**
+     * Main thread. Closes the camera on its own thread, then ends the thread. If openCamera hasn't answered
+     * yet, the thread stays until it does: its callback closes the device then. Quitting
+     * straight away left a late onOpened on a dead looper, and the camera stayed open until the process died,
+     * so the webcam stream couldn't get it.
+     */
     fun close() {
         if (closed) return
         closed = true
@@ -308,8 +327,8 @@ internal class QrCamera private constructor(
             try { reader?.close() } catch (_: Exception) {}
             surface?.release()
             session = null; device = null; reader = null; surface = null
+            if (!opening) thread.quitSafely()
         }
-        thread.quitSafely()
     }
 
     companion object {
