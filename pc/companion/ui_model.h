@@ -81,6 +81,7 @@ enum Id : int {
     kCameraHint = 612,
     // "Tell me when a new version is out" (#79), in the Settings page's first card.
     kCheckUpdates = 613,
+    kAutoUsb = 614,                     // "Switch plugged-in phones to MyCam automatically".
     // Task links.
     kReconnect = 700, kOpenLog = 701, kContact = 702,
     kHelpTitle = 703, kHelpList = 704, // "Can't connect?" (#78): the heading and the causes.

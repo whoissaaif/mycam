@@ -97,9 +97,12 @@ inline void MakeCommand(uint8_t out[kCommandSize], Command cmd, uint8_t arg = 0)
 // Accessory identification sent during the AOA handshake. Must match res/xml/accessory_filter.xml.
 constexpr const char* kAccessoryManufacturer = "MyCam";
 constexpr const char* kAccessoryModel = "MyCam Webcam";
-constexpr const char* kAccessoryDescription = "Use this phone as a USB webcam";
+// Shown by Android: "Open MyCam to handle <this>?" and "Always open MyCam when <this> is connected".
+constexpr const char* kAccessoryDescription = "your PC";
 constexpr const char* kAccessoryVersion = "1";
-constexpr const char* kAccessoryUri = "https://github.com/whoissaaif/mycam";
+// Empty on purpose: with a URI, Android shows "No installed apps work with this USB accessory. Learn more at
+// <uri>" whenever MyCam on the phone doesn't take the cable (its "Open MyCam when plugged in" is off, the default).
+constexpr const char* kAccessoryUri = "";
 constexpr const char* kAccessorySerial = "0001";
 
 } // namespace mycam::proto

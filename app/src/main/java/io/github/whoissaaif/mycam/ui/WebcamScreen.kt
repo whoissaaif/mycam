@@ -82,6 +82,10 @@ data class ScreenActions(
     val onForgetPc: (String) -> Unit = {},
     val onForgetAllPcs: () -> Unit = {},
     val onAutoDim: (Boolean) -> Unit = {},
+    /** Settings > "Open MyCam when plugged into a PC". */
+    val onUsbAutoOpen: (Boolean) -> Unit = {},
+    /** USB Connection on the Connect page: use a cable that is plugged in now (asks Android for it). */
+    val onUseUsb: () -> Unit = {},
     val onDismissTimedOut: () -> Unit = {},
     val onScan: () -> Unit = {},
     /** Asks a PC from the nearby list to connect to this phone (the pairing then starts on both). */
@@ -141,6 +145,7 @@ fun WebcamScreen(
     actions: ScreenActions = ScreenActions(),
     autoDim: Boolean = true,
     previewOn: Boolean = true,
+    usbAutoOpen: Boolean = false,
     initialTab: Int = TAB_CONNECT,
     initialScan: Boolean = false,
 ) {
@@ -276,6 +281,7 @@ fun WebcamScreen(
                         2 -> CameraPage(state, previewOn, actions.onPreview, onFacing)
                         else -> SettingsPage(
                             state, applying != null, actions, onCommand, autoDim, previewOn, actions.onPreview,
+                            usbAutoOpen = usbAutoOpen,
                             onFindDevices = onFindDevices, onLicences = { showLicences = true },
                         )
                     }

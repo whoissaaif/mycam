@@ -729,7 +729,7 @@ PhoneLink::WifiEnd PhoneLink::RunTcpSession(uintptr_t socket, const std::string&
             if (!WifiAllowed()) {
                 Log("wifi: turned off on the PC");
                 sessionError_ = true;
-            } else if (now - lastUsbCheck > 2000) {
+            } else if (now - lastUsbCheck > (cableNotReady_ ? 5000u : 2000u)) {
                 lastUsbCheck = now;
                 if (UsbPhoneArrived()) {
                     Log("wifi: a phone's cable opened; switching to the cable");

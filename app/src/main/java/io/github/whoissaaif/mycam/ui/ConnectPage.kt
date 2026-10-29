@@ -96,7 +96,7 @@ fun ConnectPage(
             CardDivider()
             NavRow(
                 LineIcon.Usb, stringResource(R.string.connect_usb), stringResource(R.string.connect_usb_detail),
-                onClick = { usbHelp = !usbHelp },
+                onClick = { usbHelp = !usbHelp; actions.onUseUsb() },
             )
             AnimatedVisibility(usbHelp) {
                 Column(Modifier.padding(start = 52.dp, end = 8.dp, bottom = 8.dp)) {

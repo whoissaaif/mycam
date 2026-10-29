@@ -73,6 +73,17 @@ or protocol changes). Releases with their installers: https://github.com/whoissa
 - **PC: a paired phone is no longer forgotten when a connection is rejected**; pairing again with a code
   replaces its key.
 - **PC: phone names are cleaned more strictly** (more control characters, and broken UTF-8).
+- **Android: plugging into a PC no longer pops anything up by itself.** A new setting, "Open MyCam when
+  plugged into a PC" (Settings, off by default), decides whether Android offers to open MyCam on plug-in.
+  Off, the phone just charges; tap USB Connection in MyCam to use the cable (Android asks once). The PC no
+  longer sends a "learn more" link with the cable, so Android doesn't show "No installed apps work with
+  this USB accessory" either, and its prompt now reads "Open MyCam to handle your PC?".
+- **Windows: "Use plugged-in phones as a webcam automatically"** (Settings, on by default). Off, a plugged-in
+  phone keeps charging and file transfer until you click "Scan for USB Devices". (#77)
+- **Windows: the PC waits for MyCam on the phone before using the cable.** A plugged-in phone that hasn't
+  opened the cable yet (locked, its prompt unanswered, MyCam closed) no longer makes the PC drop Wi-Fi or sit
+  in a dead USB session: it stays on Wi-Fi and switches once the phone answers. Switching a locked phone to
+  USB mode no longer freezes a running Wi-Fi stream, and it's tried again while the phone stays plugged in.
 
 No protocol changes: 1.6.0 phones and PCs work with 1.5.x.
 

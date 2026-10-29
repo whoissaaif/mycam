@@ -18,9 +18,9 @@ match the manufacturer and model.
 |---|---|---|
 | 0 | manufacturer | `MyCam` |
 | 1 | model | `MyCam Webcam` |
-| 2 | description | `Use this phone as a USB webcam` |
+| 2 | description | `your PC` (display only: Android shows it in its "Open MyCam to handle …?" prompt; the phone matches manufacturer and model) |
 | 3 | version | `1` |
-| 4 | URI | `https://github.com/whoissaaif/mycam`, shown when the app isn't installed |
+| 4 | URI | empty (1.6): with a URI, Android shows "No installed apps work with this USB accessory" whenever MyCam on the phone doesn't take the cable, which it doesn't unless "Open MyCam when plugged into a PC" is on |
 | 5 | serial | `0001` |
 
 ## Phone → PC packets

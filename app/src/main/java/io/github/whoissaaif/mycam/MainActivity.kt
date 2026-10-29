@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.KeyguardManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -63,6 +64,9 @@ class MainActivity : ComponentActivity() {
     /** Settings > Phone: dim automatically while streaming (persisted). */
     private var autoDim by mutableStateOf(true)
 
+    /** Settings > "Open MyCam when plugged into a PC": the .UsbAttach alias is enabled (default off). */
+    private var usbAutoOpen by mutableStateOf(false)
+
     /** First-run cards (docs/redesign.md 5.7): until the first connection, or Skip for this launch. */
     private var firstRun by mutableStateOf(false)
 
@@ -120,6 +124,7 @@ class MainActivity : ComponentActivity() {
         val pairedPcs = PairedPcs.open(this)
         WebcamService.showPairedPcs(pairedPcs.list())
         autoDim = prefs.getBoolean(WebcamService.PREF_AUTO_DIM, true)
+        usbAutoOpen = packageManager.getComponentEnabledSetting(usbAttach()) == PackageManager.COMPONENT_ENABLED_STATE_ENABLED
         previewOn = prefs.getBoolean(WebcamService.PREF_PREVIEW, true)
         PhonePreview.setOn(previewOn)
         splash = savedInstanceState == null
@@ -132,7 +137,7 @@ class MainActivity : ComponentActivity() {
             onFacing = ::setFacing, onPause = ::setPaused, onCommand = ::sendCommand, onDim = { dimmed = true },
             onWireless = ::setWireless, onAnswerPc = ::answerPc, onForgetPc = ::forgetPc, onForgetAllPcs = ::forgetPcs,
             onScan = ::scanForPcs, onConnectPc = ::connectToPc, onPreview = ::changePreview,
-            onAutoDim = ::changeAutoDim, onDismissTimedOut = WebcamService::dismissPairingTimedOut,
+            onAutoDim = ::changeAutoDim, onUsbAutoOpen = ::changeUsbAutoOpen, onUseUsb = ::useUsb, onDismissTimedOut = WebcamService::dismissPairingTimedOut,
             onQrScanned = ::pairByQr, onDismissQr = WebcamService::dismissQr,
             onDismissPaired = WebcamService::dismissJustPaired,
             onAnswerCameraGate = { allow -> WebcamService.answerCameraGate(this, allow) },
@@ -176,7 +181,7 @@ class MainActivity : ComponentActivity() {
                             FirstRun.done(prefs)
                             firstRun = false
                         })
-                        else -> WebcamScreen(state = state, actions = actions, autoDim = autoDim, previewOn = previewOn)
+                        else -> WebcamScreen(state = state, actions = actions, autoDim = autoDim, previewOn = previewOn, usbAutoOpen = usbAutoOpen)
                     }
                 }
             }
@@ -289,7 +294,9 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
-        if (WebcamService.state.value.connected) return
+        // Already on the cable: nothing to do. Over Wi-Fi the cable is still handed on, so it can take over once
+        // the PC uses it (the PC stays on Wi-Fi until this phone has opened its end).
+        WebcamService.state.value.let { if (it.connected && !it.wireless) return }
         // Launched by the system when the PC companion switched the phone into accessory mode.
         // The system has already granted access to this accessory.
         val fromIntent = intent?.let {
@@ -438,6 +445,32 @@ class MainActivity : ComponentActivity() {
         previewOn = on
         PhonePreview.setOn(on)
         getSharedPreferences(WebcamService.PREFS, MODE_PRIVATE).edit { putBoolean(WebcamService.PREF_PREVIEW, on) }
+    }
+
+    private fun usbAttach() = ComponentName(this, "$packageName.UsbAttach")
+
+    /** Settings: let Android open MyCam (asking first, or not with "Always") as soon as the PC connects. */
+    private fun changeUsbAutoOpen(on: Boolean) {
+        usbAutoOpen = on
+        packageManager.setComponentEnabledSetting(
+            usbAttach(),
+            if (on) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+            PackageManager.DONT_KILL_APP,
+        )
+    }
+
+    /** USB Connection tapped: a cable plugged in now is asked for (Android's prompt) and used. */
+    private fun useUsb() {
+        val state = WebcamService.state.value
+        if (state.connected && !state.wireless) return
+        val usb = getSystemService(UsbManager::class.java)
+        val acc = usb.accessoryList?.firstOrNull { it.manufacturer == ACCESSORY_MANUFACTURER } ?: return
+        if (usb.hasPermission(acc)) {
+            handleAccessory(acc)
+        } else {
+            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) PendingIntent.FLAG_MUTABLE else 0
+            usb.requestPermission(acc, PendingIntent.getBroadcast(this, 0, Intent(ACTION_USB_PERMISSION).setPackage(packageName), flags))
+        }
     }
 
     private fun changeAutoDim(on: Boolean) {

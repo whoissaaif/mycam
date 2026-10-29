@@ -36,14 +36,22 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- Plug and play: Android offers to open MyCam when the PC companion connects. -->
+        </activity>
+        <!-- "Open MyCam when plugged into a PC" (Settings, off by default): with this enabled, Android offers to
+             open MyCam as soon as the PC companion connects. Off, plugging in only charges; MyCam asks for the
+             cable when it is opened (USB Connection). Switched with PackageManager, so it survives updates. -->
+        <activity-alias
+            android:name=".UsbAttach"
+            android:targetActivity=".MainActivity"
+            android:enabled="false"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED" />
             </intent-filter>
             <meta-data
                 android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED"
                 android:resource="@xml/accessory_filter" />
-        </activity>
+        </activity-alias>
 
         <service
             android:name=".WebcamService"
