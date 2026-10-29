@@ -9,7 +9,19 @@ is no settings window yet.
 
 ## Install
 
-Download `mycam_<version>_amd64.deb`, then:
+In a terminal:
+
+```
+wget -qO- https://mycam.dev/install.sh | sh
+```
+
+(`curl -fsSL https://mycam.dev/install.sh | sh` works too; a fresh Ubuntu has `wget` but not `curl`.)
+
+It downloads the `.deb` from the [latest release](https://github.com/whoissaaif/mycam/releases/latest),
+installs it with apt (asking for your password), and starts MyCam and its tray icon. The script is
+[`website/install.sh`](../../website/install.sh) if you'd like to read it first.
+
+Or by hand: download `mycam_<version>_amd64.deb`, then:
 
 ```
 sudo apt install ./mycam_<version>_amd64.deb

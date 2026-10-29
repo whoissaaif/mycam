@@ -3,6 +3,9 @@
 [Unit]
 Description=MyCam: phone as a webcam
 After=graphical-session.target
+# Not for system accounts: enabled "for every user", it also started for the login screen (gdm), which
+# then held MyCam's ports and the camera device from the user who logs in.
+ConditionUser=!@system
 
 [Service]
 ExecStart=/usr/bin/mycam-companion --daemon
