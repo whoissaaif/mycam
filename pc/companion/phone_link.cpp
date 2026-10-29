@@ -513,7 +513,14 @@ void PhoneLink::OnInTransfer(libusb_transfer* t) {
         if (t->actual_length > 0) {
             FeedBytes(t->buffer, size_t(t->actual_length));
         }
-        if (!sessionEnding_ && libusb_submit_transfer(t) == LIBUSB_SUCCESS) return;
+        if (!sessionEnding_) {
+            const int r = libusb_submit_transfer(t);
+            if (r == LIBUSB_SUCCESS) return;
+            // A read that can't be queued again is gone for good, and once none are left nothing ends the
+            // session: an unplug that failed this way left it at 0 KB/s, with no Wi-Fi fallback (#13).
+            if (!sessionError_) Log("session: can't queue the next read (%s), phone disconnected?", libusb_error_name(r));
+            sessionError_ = true;
+        }
     } else if (t->status != LIBUSB_TRANSFER_CANCELLED) {
         // Every queued read fails when the phone is unplugged: say it once.
         if (!sessionError_) Log("session: read failed (status %d), phone disconnected?", int(t->status));
