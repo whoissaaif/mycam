@@ -3,6 +3,11 @@
 Android app and PC companion share one version (SemVer: PATCH = fixes, MINOR = features, MAJOR = breaking
 or protocol changes). Releases with their installers: https://github.com/whoissaaif/mycam/releases
 
+## Unreleased
+
+- **Linux: one-line install.** `curl -fsSL https://mycam.dev/install.sh | sh` downloads the latest `.deb`,
+  installs it with apt (with the camera module), and starts MyCam and its tray icon.
+
 ## 1.7.0 — Linux beta, a steadier cable, and safer pairing
 
 - **Linux is now a beta.** `mycam_1.7.0_amd64.deb` for Ubuntu 24.04 and similar: the background service,

@@ -70,3 +70,25 @@ jobs:
         with:
           name: mycam-deb
           path: pc/build/*.deb
+
+  install-script:
+    name: Linux install script (shellcheck + install the latest release)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lint
+        run: shellcheck website/install.sh .github/scripts/fill-release.sh
+
+      # The script as a user runs it, on the latest published release. Without recommended packages: the
+      # runner's kernel has no headers for v4l2loopback-dkms to build against.
+      - name: Install the latest release with it
+        run: |
+          echo 'APT::Install-Recommends "false";' | sudo tee /etc/apt/apt.conf.d/99-no-recommends
+          sh website/install.sh
+
+      - name: Check what got installed
+        run: |
+          dpkg -s mycam | grep -E '^(Status|Version):'
+          command -v mycam-companion mycam-tray
+          test -f /lib/udev/rules.d/69-mycam.rules
