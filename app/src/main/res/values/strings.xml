@@ -44,6 +44,10 @@
     <string name="gate_title">Camera access</string>
     <string name="gate_question">Let this PC use the camera?</string>
     <string name="gate_detail">It’s connected, and the camera stays off until you allow it. Only allow a PC you own or trust: it can turn the camera on whenever you are both on the same network. Don’t allow forgets it.</string>
+    <!-- The same question as a notification, for when MyCam is in the background. -->
+    <string name="gate_notification_title">Let %1$s use the camera?</string>
+    <string name="gate_notification_text">It’s connected, and the camera stays off until you allow it.</string>
+    <string name="gate_notification_public">A PC is waiting for camera access. Unlock to answer.</string>
     <string name="paired_ok">OK</string>
     <string name="connect_find">Find Devices</string>
     <string name="connect_find_detail">Search on the same Wi-Fi</string>
