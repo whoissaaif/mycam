@@ -209,6 +209,7 @@ struct Tray {
     GtkWidget* iphone = nullptr;
     GtkWidget* reconnect = nullptr;
     GtkWidget* wifi = nullptr;
+    GtkWidget* autoUsb = nullptr; // "Use plugged-in phones as a webcam automatically" (#77).
     GtkWidget* autostart = nullptr;
     GtkWidget* updates = nullptr;  // "Tell me when a new version is out" (#79).
     GtkWidget* update = nullptr;   // "Version X is available"; hidden while there is nothing newer.
@@ -269,7 +270,7 @@ void ShowStatus(const TrayStatus& s, bool running) {
     gtk_widget_set_sensitive(g_tray.pause, running && s.canPause);
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(s.facing ? g_tray.front : g_tray.back), TRUE);
     for (GtkWidget* w : {g_tray.back, g_tray.front, g_tray.mirror, g_tray.fill, g_tray.iphone, g_tray.reconnect,
-                         g_tray.wifi, g_tray.updates})
+                         g_tray.wifi, g_tray.autoUsb, g_tray.updates})
         gtk_widget_set_sensitive(w, running);
     gtk_widget_set_sensitive(g_tray.quality, running && s.linked);
     for (int q = 0; q < 3; ++q) {
@@ -279,6 +280,7 @@ void ShowStatus(const TrayStatus& s, bool running) {
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(g_tray.mirror), s.mirror);
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(g_tray.fill), s.fill);
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(g_tray.wifi), s.wifi);
+    gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(g_tray.autoUsb), s.autoUsb);
     gtk_check_menu_item_set_active(GTK_CHECK_MENU_ITEM(g_tray.updates), s.updates);
     if (!s.update.empty()) {
         gtk_menu_item_set_label(GTK_MENU_ITEM(g_tray.update), ("Version " + s.update + " is available").c_str());
@@ -376,6 +378,8 @@ GtkWidget* BuildMenu() {
     g_tray.iphone = Item(menu, "Connect an _iPhone…", ShowPairWindow);
     g_tray.reconnect = Item(menu, "Reconnect phone", [] { Command("reconnect"); });
     g_tray.wifi = Check(menu, nullptr, "Find phones on _Wi-Fi", [](GtkCheckMenuItem* i) { Command(Active(i) ? "wifi 1" : "wifi 0"); });
+    g_tray.autoUsb = Check(menu, nullptr, "Use plugged-in phones as a _webcam",
+                           [](GtkCheckMenuItem* i) { Command(Active(i) ? "autousb 1" : "autousb 0"); });
     g_tray.autostart = Check(menu, nullptr, "Start at login", [](GtkCheckMenuItem* i) {
         if (!g_tray.updating) Systemctl(Active(i) ? "enable" : "disable");
     });

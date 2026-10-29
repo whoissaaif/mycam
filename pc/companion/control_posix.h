@@ -27,9 +27,10 @@ class PhoneLink;
 
 class ControlServer {
 public:
-    // mirror/fill/wireless: the saved options (the store's "Mirror", "Fill", "Wireless"), already applied.
-    ControlServer(PhoneLink* link, bool mirror, bool fill, bool wireless)
-        : link_(link), mirror_(mirror), fill_(fill), wireless_(wireless) {}
+    // mirror/fill/wireless/autoUsb: the saved options (the store's "Mirror", "Fill", "Wireless", "AutoUsb"),
+    // already applied.
+    ControlServer(PhoneLink* link, bool mirror, bool fill, bool wireless, bool autoUsb)
+        : link_(link), mirror_(mirror), fill_(fill), wireless_(wireless), autoUsb_(autoUsb) {}
     ControlServer(const ControlServer&) = delete;
     ControlServer& operator=(const ControlServer&) = delete;
     ~ControlServer() { Stop(); }
@@ -60,7 +61,7 @@ private:
     uint32_t pairedCount_ = 0;
     std::string pairedName_;
     LinkStatus status_;
-    bool mirror_, fill_, wireless_;
+    bool mirror_, fill_, wireless_, autoUsb_;
     std::string statusLine_;
     uint64_t statusSeq_ = 0;      // Bumped whenever statusLine_ changes.
 };

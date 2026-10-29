@@ -143,8 +143,11 @@ int main(int argc, char** argv) {
     StoreGetU64("", "Fill", &fill);
     link.SetMirror(mirror != 0);
     link.SetFill(fill != 0);
+    uint64_t autoUsb = 1; // "Use plugged-in phones as a webcam automatically" (#77): on unless turned off.
+    StoreGetU64("", "AutoUsb", &autoUsb);
+    link.SetAutoUsb(autoUsb != 0);
     if (pair) link.StartWebPairing(0);
-    ControlServer server(&link, mirror != 0, fill != 0, wifi);
+    ControlServer server(&link, mirror != 0, fill != 0, wifi, autoUsb != 0);
     if (server.Start()) control = &server;
     Log("mycam-companion: camera %s at %ux%u%s", device.c_str(), width, height, wifi ? ", Android Wi-Fi on" : "");
     link.Run(); // Until SIGINT / SIGTERM.

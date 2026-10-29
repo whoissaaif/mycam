@@ -977,6 +977,12 @@ void TestTrayStatusLine() {
     CHECK(ParseTrayStatus("status icon=103 pause=1 paused=0 linked=1 facing=0 quality=1 q=110 mirror=0 fill=0 "
                           "pairing=0 wifi=0\tStreaming\t", &back));
     CHECK(back.icon == 103 && back.updates && back.update.empty() && back.headline == "Streaming");
+    CHECK(back.autoUsb); // ...and automatic USB stays on.
+
+    // "Use plugged-in phones as a webcam automatically" (#77) comes back too, before the update name.
+    s.autoUsb = false;
+    CHECK(ParseTrayStatus(FormatTrayStatus(s), &back));
+    CHECK(!back.autoUsb && back.update == "1.7.0");
 }
 
 void TestStatusText() {
