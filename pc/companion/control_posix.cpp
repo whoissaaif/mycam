@@ -278,7 +278,7 @@ void ControlServer::Command(const std::string& line) {
             UpdateStatusLine();
         }
         changed_.notify_all();
-    else if (cmd == "wifi" && (arg == 0 || arg == 1)) {
+    } else if (cmd == "wifi" && (arg == 0 || arg == 1)) {
         std::lock_guard<std::mutex> lock(lock_);
         SetWifi(arg); // The link publishes the new status, which reaches the tray.
     } else if (cmd == "updates" && (arg == 0 || arg == 1)) {
