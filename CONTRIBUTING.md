@@ -21,6 +21,9 @@ Both suites run in CI on every pull request (`.github/workflows/ci.yml`).
 **The website** (mycam.dev) is plain HTML in `website/`, with no build step: open the pages in a browser
 to check them. Every push to `main` that touches `website/` publishes it through GitHub Pages
 (`.github/workflows/pages.yml`); the custom domain is set in the repo's Pages settings, not in a file.
+Versions, download links and file sizes are `@@...@@` placeholders, filled in at deploy time from the latest
+GitHub release (`.github/scripts/fill-release.sh`), and publishing a release redeploys the site
+(`.github/workflows/release.yml`): never write a version number into the pages by hand.
 
 ## Opening a pull request
 
