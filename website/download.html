@@ -103,17 +103,22 @@
       <a class="btn btn-outline" href="https://github.com/whoissaaif/mycam" target="_blank" rel="noopener">Follow on GitHub</a>
     </div>
     <div class="download-card">
-      <svg class="platform-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="2" y="4" width="20" height="16" rx="2"/>
-        <path d="m6 9 3 3-3 3"/>
-        <path d="M12 15h6"/>
+      <!-- A penguin, drawn here (not the Linux Foundation's Tux artwork). -->
+      <svg class="platform-icon" viewBox="0 0 24 24" aria-hidden="true">
+        <ellipse cx="12" cy="13.2" rx="6.6" ry="8.6" fill="#1f2937"/>
+        <ellipse cx="12" cy="15.4" rx="4.3" ry="6" fill="#fff"/>
+        <circle cx="10" cy="8.1" r="1.25" fill="#fff"/>
+        <circle cx="14" cy="8.1" r="1.25" fill="#fff"/>
+        <circle cx="10.25" cy="8.3" r="0.55" fill="#1f2937"/>
+        <circle cx="13.75" cy="8.3" r="0.55" fill="#1f2937"/>
+        <path d="M10.4 10.1h3.2L12 12Z" fill="#f5a623"/>
+        <ellipse cx="8.5" cy="21.4" rx="2.5" ry="1" fill="#f5a623"/>
+        <ellipse cx="15.5" cy="21.4" rx="2.5" ry="1" fill="#f5a623"/>
       </svg>
       <h3>Linux</h3>
       <p class="status">Beta</p>
-      <a class="btn btn-primary" href="@@DEB_URL@@">Get .deb</a>
-      <p class="meta">v@@VERSION@@@@DEB_SIZE@@ · Ubuntu 24.04 and similar ·
-        <a href="https://github.com/whoissaaif/mycam/blob/main/pc/linux/README.md" target="_blank" rel="noopener">Linux guide</a></p>
-      <p class="meta">Or in a terminal: <code>wget -qO- https://mycam.dev/install.sh | sh</code></p>
+      <a class="btn btn-primary" href="linux.html">Setup guide</a>
+      <p class="meta">v@@VERSION@@ · Ubuntu 24.04 and similar · <a href="@@DEB_URL@@">.deb</a>@@DEB_SIZE@@</p>
     </div>
   </div>
 
