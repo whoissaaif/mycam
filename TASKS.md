@@ -219,9 +219,16 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
 | 1.1.0 | 2026-10-09 | Pause on phone and PC, auto-pause on Windows lock, status pictures, Aero phone app. |
 | 1.0.0 | 2026-10-09 | First installer: tray status icons, Aero settings window, Inno Setup. |
 
-Release steps: bump `versionName` and `versionCode` in `app/build.gradle.kts`, the only copy (the About page,
-the installer and the `.deb` read it), run `installer\build.ps1` and `gradlew assembleRelease`, commit, tag `vX.Y.Z`, push, then
-`gh release create vX.Y.Z <exe> <apk>`.
+Release steps (one version for all three; every release marked Latest must carry the `.exe`, `.apk` and
+`.deb`, because the update notice and the website both follow Latest):
+1. Bump `versionName` and `versionCode` in `app/build.gradle.kts`, the only copy (the About pages, the
+   installer and the `.deb` read it), update CHANGELOG.md, and merge that as `chore(release): vX.Y.Z`.
+2. On that commit: `installer\build.ps1` and `gradlew assembleRelease` (signed with the local key), then
+   test the release APK on a phone.
+3. Tag `vX.Y.Z` and push the tag: `.github/workflows/release.yml` builds the `.deb` on Ubuntu 24.04 and
+   attaches it to a draft release of that tag.
+4. `gh release upload vX.Y.Z <exe> <apk>`, write the notes, publish as Latest: the website redeploys with
+   the new version and links by itself (`.github/scripts/fill-release.sh`).
 
 ## Decisions
 

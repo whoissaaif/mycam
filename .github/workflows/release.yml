@@ -1,0 +1,50 @@
+# Releases: the Linux .deb is built here and attached to the release, and mycam.dev follows each release.
+#
+# 1. Push the tag (vX.Y.Z): the .deb is built on Ubuntu 24.04 and uploaded to that release, which is created
+#    as a draft if it doesn't exist yet. The .exe and .apk are signed locally and uploaded by hand.
+# 2. Publish the release: the website is deployed again with its version and download links.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  release:
+    types: [published, edited, deleted]
+
+jobs:
+  deb:
+    if: github.event_name == 'push'
+    name: Linux .deb
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y libssl-dev pkg-config libavcodec-dev libavutil-dev libswscale-dev libusb-1.0-0-dev libgtk-3-dev libayatana-appindicator3-dev
+      - name: Build, test and package
+        run: |
+          cmake -S pc -B pc/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build pc/build
+          ctest --test-dir pc/build --output-on-failure
+          cd pc/build && cpack
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          deb=$(ls pc/build/*.deb)
+          case "$deb" in *"_${TAG#v}_"*) ;; *) echo "::error::$deb doesn't match the tag $TAG (version in app/build.gradle.kts?)"; exit 1 ;; esac
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --draft --verify-tag --title "MyCam ${TAG#v}" --notes "Draft: add the .exe and .apk, write the notes, then publish."
+          gh release upload "$TAG" "$deb" --clobber
+
+  website:
+    if: github.event_name == 'release'
+    name: Refresh mycam.dev
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write
+    steps:
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --repo "$GITHUB_REPOSITORY" --ref main

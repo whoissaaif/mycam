@@ -3,23 +3,15 @@
 Android app and PC companion share one version (SemVer: PATCH = fixes, MINOR = features, MAJOR = breaking
 or protocol changes). Releases with their installers: https://github.com/whoissaaif/mycam/releases
 
-## 1.6.0 — Linux (preview)
+## 1.7.0 — Linux beta, a steadier cable, and safer pairing
 
-- **Linux PC companion, a preview.** `mycam_1.6.0_amd64.deb` for Ubuntu 24.04 (and similar): a background
-  service that shows your phone as the **MyCam** camera in Zoom, OBS, Discord and browsers, through
-  v4l2loopback. The phone camera only runs while an app is watching. A tray icon shows the status with the
-  Windows tray's icons and menu (pause, camera, quality, mirror, fill, connect an iPhone, start at login).
-  Tested with an iPhone over Wi-Fi; Android (USB and Wi-Fi) is built in but not tested on Linux yet. No
-  settings window yet. Guide: `pc/linux/README.md`. (#28, #30, #31, #32, #33, #36, #37, #57)
-- **Windows: the About page shows the right version** (it said 1.4.0 since 1.4.0); the build now reads it
-  from the app's version, like the installer. (#56)
-- **Android: the phone sleeps again after a Wi-Fi session.** The wake lock is released when a link ends,
-  not only when the app closes. (#40)
-- **Android: 4K is only offered once the camera reports it**, instead of on every phone until its camera
-  first opened. (#53)
-- **Android: zoom and brightness stay in range** before the camera has opened once. (#52)
-- **Android: a Privacy Policy link** in Settings → About. (#50)
-- **PC: a failing decoder no longer floods the log**; it retries every 2 s instead of on every frame. (#51)
+- **Linux is now a beta.** `mycam_1.7.0_amd64.deb` for Ubuntu 24.04 and similar: the background service,
+  the tray icon with the Windows tray's controls, iPhones over Wi-Fi, and Android over Wi-Fi and USB (built
+  in and tested in CI; Android on a real Linux PC still wants reports). Guide: `pc/linux/README.md`.
+- **Windows: the preview works on its own.** The Camera page shows the phone's live picture without another
+  app using the camera; it streams only while that page is open. (#71, #87)
+- **Version X is available.** Windows, Linux and Android look for a newer release once a day (one GitHub
+  request, nothing sent with it) and say so on the About page or in the tray; a switch turns it off. (#79, #89)
 - **Windows: MyCam is in the Start menu**, so Windows search finds it. Opening it while MyCam is already in
   the tray shows its window instead of doing nothing. (#73)
 - **A contact address, support@mycam.dev**, in the About pages of both apps and in the README. (#72)
@@ -88,6 +80,26 @@ or protocol changes). Releases with their installers: https://github.com/whoissa
 - **Windows: quitting MyCam no longer crashes it.** Every exit crashed while tearing down (COM and Media
   Foundation were shut down before the objects still using them), which also made `--quit` report failure and
   left copies running during installs and upgrades. A crash now also writes `crash.txt` next to the log. (#20)
+
+No protocol changes: 1.7.0 phones and PCs work with 1.5.x and 1.6.0.
+
+## 1.6.0 — Linux (preview)
+
+- **Linux PC companion, a preview.** `mycam_1.6.0_amd64.deb` for Ubuntu 24.04 (and similar): a background
+  service that shows your phone as the **MyCam** camera in Zoom, OBS, Discord and browsers, through
+  v4l2loopback. The phone camera only runs while an app is watching. A tray icon shows the status with the
+  Windows tray's icons and menu (pause, camera, quality, mirror, fill, connect an iPhone, start at login).
+  Tested with an iPhone over Wi-Fi; Android (USB and Wi-Fi) is built in but not tested on Linux yet. No
+  settings window yet. Guide: `pc/linux/README.md`. (#28, #30, #31, #32, #33, #36, #37, #57)
+- **Windows: the About page shows the right version** (it said 1.4.0 since 1.4.0); the build now reads it
+  from the app's version, like the installer. (#56)
+- **Android: the phone sleeps again after a Wi-Fi session.** The wake lock is released when a link ends,
+  not only when the app closes. (#40)
+- **Android: 4K is only offered once the camera reports it**, instead of on every phone until its camera
+  first opened. (#53)
+- **Android: zoom and brightness stay in range** before the camera has opened once. (#52)
+- **Android: a Privacy Policy link** in Settings → About. (#50)
+- **PC: a failing decoder no longer floods the log**; it retries every 2 s instead of on every frame. (#51)
 
 No protocol changes: 1.6.0 phones and PCs work with 1.5.x.
 
