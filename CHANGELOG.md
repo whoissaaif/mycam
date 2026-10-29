@@ -3,13 +3,15 @@
 Android app and PC companion share one version (SemVer: PATCH = fixes, MINOR = features, MAJOR = breaking
 or protocol changes). Releases with their installers: https://github.com/whoissaaif/mycam/releases
 
-## Unreleased
+## 1.7.1 — Linux fixes and a one-line install
 
 - **Linux: one-line install.** `wget -qO- https://mycam.dev/install.sh | sh` downloads the latest `.deb`,
   installs it with apt (with the camera module), and starts MyCam and its tray icon. (`curl` works too.)
 - **Linux: MyCam no longer runs for the login screen.** Enabled for every account, it also started for
   `gdm`, which then held MyCam's ports and, while nobody was logged in, the camera device. Tested in an
   Ubuntu 24.04 VM: an Android phone pairs over Wi-Fi and its video reaches the MyCam camera.
+
+No changes for Windows or Android apart from the version number. No protocol changes.
 
 ## 1.7.0 — Linux beta, a steadier cable, and safer pairing
 
