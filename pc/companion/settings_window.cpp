@@ -1006,7 +1006,7 @@ struct SettingsWindow::Impl {
         } else {
             wchar_t buf[32];
             swprintf_s(buf, L"%.1f×", c.zoomX100 / 100.0);
-            AddSlider(kZoomSlider, L"&Zoom", buf, c.zoomX100 / 100.f, c.zoomMinX100 / 100.f, c.zoomMaxX100 / 100.f, 0.1f,
+            AddSlider(kZoomSlider, L"&Zoom", buf, c.zoomX100 / 100.f, c.zoomMinX100 / 100.f, std::min(c.zoomMaxX100 / 100.f, 25.5f), 0.1f,
                       kCardControls, ix, &cy, iw, Enabled(kZoomSlider, s));
             cy += kGap - 2;
             const bool hasEv = c.evMax > c.evMin;

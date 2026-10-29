@@ -99,6 +99,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        // The live preview mustn't end up in the Recents thumbnail.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) setRecentsScreenshotEnabled(false)
         val prefs = getSharedPreferences(WebcamService.PREFS, MODE_PRIVATE)
         WebcamService.showIdleFacing(prefs.getInt(WebcamService.PREF_FACING, Protocol.FACING_BACK))
         WebcamService.showIdlePaused(prefs.getBoolean(WebcamService.PREF_PAUSED, false))
@@ -131,6 +133,7 @@ class MainActivity : ComponentActivity() {
                 // any touch wakes it. "Dim screen" in the bottom bar works either way.
                 LaunchedEffect(live, autoDim) {
                     if (!live) { dimmed = false; return@LaunchedEffect }
+                    lastTouch = SystemClock.elapsedRealtime() // A stream that just started never dims at once.
                     if (!autoDim) return@LaunchedEffect
                     while (true) {
                         if (SystemClock.elapsedRealtime() - lastTouch >= DIM_AFTER_MS) dimmed = true
@@ -290,7 +293,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** Pause or resume. With a PC connected the service applies it (and tells the PC); otherwise it is saved. */
     /** Wireless mode on/off. The service runs it (and keeps running while it is on). */
     private fun setWireless(on: Boolean) {
         if (on && !granted(Manifest.permission.CAMERA)) {
@@ -371,6 +373,7 @@ class MainActivity : ComponentActivity() {
         )
     }
 
+    /** Pause or resume. With a PC connected the service applies it (and tells the PC); otherwise it is saved. */
     private fun setPaused(paused: Boolean) {
         if (WebcamService.state.value.connected) {
             startService(

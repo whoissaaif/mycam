@@ -1,5 +1,7 @@
 #include "wifi_crypto.h"
 
+#include <cstdlib>
+
 // The primitives from wifi_crypto.h on OpenSSL 3 (libcrypto), for builds without Windows CNG. Must stay
 // byte-compatible with wifi_crypto.cpp: both are checked against protocol/golden.txt "wifi.*".
 
@@ -58,7 +60,7 @@ EVP_PKEY* Pkey(void* p) { return static_cast<EVP_PKEY*>(p); }
 
 Bytes Random(size_t n) {
     Bytes out(n);
-    RAND_bytes(out.data(), int(n));
+    if (RAND_bytes(out.data(), int(n)) != 1) std::abort(); // Never zeros as keys.
     return out;
 }
 

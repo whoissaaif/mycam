@@ -4,6 +4,7 @@
 #include <bcrypt.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 
 namespace mycam::wifi {
@@ -40,7 +41,7 @@ void Nonce(uint32_t dir, uint64_t counter, uint8_t out[12]) {
 
 Bytes Random(size_t n) {
     Bytes out(n);
-    BCryptGenRandom(nullptr, out.data(), ULONG(n), BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+    if (!BCRYPT_SUCCESS(BCryptGenRandom(nullptr, out.data(), ULONG(n), BCRYPT_USE_SYSTEM_PREFERRED_RNG))) std::abort(); // Never zeros as keys.
     return out;
 }
 
