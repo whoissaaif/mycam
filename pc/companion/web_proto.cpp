@@ -345,10 +345,13 @@ bool TokenBook::Forget(const std::string& id) {
 
 namespace {
 
-// Code points that would let a name reach outside its own line in a window: the line and paragraph
-// separators, and the bidirectional overrides and isolates (which can reverse the text around them).
+// Code points that would let a name reach outside its own line in a window: the C1 controls (U+0085 is a
+// line break to some renderers), the line and paragraph separators, and the bidirectional marks, overrides
+// and isolates (which can reverse the text around them).
 bool Unshowable(uint32_t cp) {
-    return cp == 0x2028 || cp == 0x2029 ||                 // Line / paragraph separator.
+    return (cp >= 0x80 && cp <= 0x9F) ||                    // C1 controls, NEL among them.
+           cp == 0x061C ||                                  // Arabic letter mark.
+           cp == 0x2028 || cp == 0x2029 ||                  // Line / paragraph separator.
            cp == 0x200E || cp == 0x200F ||                  // Left-to-right / right-to-left mark.
            (cp >= 0x202A && cp <= 0x202E) ||                // Embedding and override.
            (cp >= 0x2066 && cp <= 0x2069) ||                // Isolates.
@@ -375,7 +378,14 @@ std::string CleanName(const std::string& name, const std::string& fallback) {
         for (size_t k = 1; k < len; ++k) valid &= (uint8_t(name[i + k]) & 0xC0) == 0x80;
         if (!valid) break;
         if (len == 1 && (c < 0x20 || c == 0x7F)) { i += 1; continue; } // Control characters go.
-        if (len > 1 && Unshowable(CodePoint(name.data() + i, len))) { i += len; continue; }
+        if (len > 1) {
+            const uint32_t cp = CodePoint(name.data() + i, len);
+            // Overlong forms (C0 8A is a disguised newline), surrogates and code points past U+10FFFF
+            // aren't UTF-8 either: stop here, as for any other broken sequence.
+            const uint32_t least = len == 2 ? 0x80u : len == 3 ? 0x800u : 0x10000u;
+            if (cp < least || (cp >= 0xD800 && cp <= 0xDFFF) || cp > 0x10FFFF) break;
+            if (Unshowable(cp)) { i += len; continue; }
+        }
         if (out.size() + len > 40) break;
         out.append(name, i, len);
         i += len;

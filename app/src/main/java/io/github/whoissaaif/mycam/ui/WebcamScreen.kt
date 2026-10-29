@@ -300,6 +300,7 @@ fun WebcamScreen(
             timedOut = state.pendingPc == null && state.pairingTimedOut != null,
             onAnswer = actions.onAnswerPc,
             onDismissTimedOut = actions.onDismissTimedOut,
+            rePair = state.pendingRePair,
         )
         LicenceDialog(visible = showLicences && !pairing, onClose = { showLicences = false })
         PairedDialog(pcName = state.justPaired.takeIf { !pairing }, onClose = actions.onDismissPaired)

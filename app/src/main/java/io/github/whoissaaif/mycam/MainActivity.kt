@@ -1,6 +1,7 @@
 package io.github.whoissaaif.mycam
 
 import android.Manifest
+import android.app.KeyguardManager
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -14,6 +15,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import android.view.MotionEvent
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -47,6 +49,16 @@ class MainActivity : ComponentActivity() {
     private var dimmed by mutableStateOf(false)
     private var lastTouch = SystemClock.elapsedRealtime()
     private var swallowGesture = false
+    /** A gesture that began (or went on) under another app's window while Allow was showing: dropped. */
+    private var dropObscuredGesture = false
+
+    /**
+     * A USB launch while locked shows this activity over the lock screen, so Android lets the camera start
+     * ([showingWhenLocked]). Until the phone is unlocked, [overLock] keeps it to a status view: nothing in
+     * the app (settings, pairing, the camera gate, the preview) works for whoever holds the locked phone.
+     */
+    private var showingWhenLocked = false
+    private var overLock by mutableStateOf(false)
 
     /** Settings > Phone: dim automatically while streaming (persisted). */
     private var autoDim by mutableStateOf(true)
@@ -158,6 +170,7 @@ class MainActivity : ComponentActivity() {
                 // while the hills photo stays put. The setup cards still appear only once.
                 SplashGate(show = splash, onDone = { splash = false }) {
                     when {
+                        overLock -> DimScreen(state, lockScreen = true)
                         dimmed -> DimScreen(state)
                         firstRun && !state.connected && state.pendingPc == null && state.pairingTimedOut == null -> FirstRunScreen(onDone = {
                             FirstRun.done(prefs)
@@ -173,6 +186,11 @@ class MainActivity : ComponentActivity() {
 
     /** Any touch counts as activity; while dimmed, the whole gesture only wakes the screen. */
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        // Over the lock screen a tap only asks to unlock.
+        if (overLock) {
+            if (ev.actionMasked == MotionEvent.ACTION_UP) askToUnlock()
+            return true
+        }
         lastTouch = SystemClock.elapsedRealtime()
         if (ev.actionMasked == MotionEvent.ACTION_DOWN && dimmed) {
             dimmed = false
@@ -182,13 +200,72 @@ class MainActivity : ComponentActivity() {
             if (ev.actionMasked == MotionEvent.ACTION_UP || ev.actionMasked == MotionEvent.ACTION_CANCEL) swallowGesture = false
             return true
         }
+        // Allow on the pairing question or the camera gate lets a PC in, so while one shows, a touch that
+        // arrives through another app's window drawn over this one (tap-jacking) is dropped, gesture and all.
+        // Only then: elsewhere in the app an overlay (a chat bubble, say) doesn't get in the way.
+        if (!dropObscuredGesture && obscured(ev) && securityQuestionShowing()) {
+            dropObscuredGesture = true
+            Toast.makeText(this, R.string.touch_obscured, Toast.LENGTH_LONG).show()
+            // Whatever the gesture had pressed so far is let go of, without a click.
+            val cancel = MotionEvent.obtain(ev).apply { action = MotionEvent.ACTION_CANCEL }
+            super.dispatchTouchEvent(cancel)
+            cancel.recycle()
+        }
+        if (dropObscuredGesture) {
+            if (ev.actionMasked == MotionEvent.ACTION_UP || ev.actionMasked == MotionEvent.ACTION_CANCEL) dropObscuredGesture = false
+            return true
+        }
         return super.dispatchTouchEvent(ev)
+    }
+
+    private fun securityQuestionShowing(): Boolean {
+        val s = WebcamService.state.value
+        return s.pendingPc != null || s.cameraGate != null
+    }
+
+    private fun obscured(ev: MotionEvent): Boolean {
+        if (ev.flags and MotionEvent.FLAG_WINDOW_IS_OBSCURED != 0) return true
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            ev.flags and MotionEvent.FLAG_WINDOW_IS_PARTIALLY_OBSCURED != 0
+    }
+
+    /** Over the lock screen: whether the phone is still locked (else the full app shows). */
+    private fun updateOverLock() {
+        overLock = showingWhenLocked && getSystemService(KeyguardManager::class.java).isKeyguardLocked
+        updatePreviewVisible()
+    }
+
+    /** Stops showing over the lock screen: a locked phone shows the lock screen again, not MyCam. */
+    private fun leaveLockScreen() {
+        if (!showingWhenLocked) return
+        showingWhenLocked = false
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
+            setShowWhenLocked(false)
+            setTurnScreenOn(false)
+        }
+        updateOverLock()
+    }
+
+    private fun askToUnlock() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        getSystemService(KeyguardManager::class.java).requestDismissKeyguard(
+            this,
+            object : KeyguardManager.KeyguardDismissCallback() {
+                override fun onDismissSucceeded() = leaveLockScreen()
+            },
+        )
     }
 
     override fun onResume() {
         super.onResume()
         resumed = true
-        updatePreviewVisible()
+        updateOverLock()
+    }
+
+    override fun onStop() {
+        // Screen off or left: next time the lock screen comes first. The service carries the stream on.
+        leaveLockScreen()
+        super.onStop()
     }
 
     override fun onPause() {
@@ -199,7 +276,7 @@ class MainActivity : ComponentActivity() {
     }
 
     /** The preview may only run while the app is in front and the screen isn't dimmed. */
-    private fun updatePreviewVisible() = PhonePreview.setAppVisible(resumed && !dimmed)
+    private fun updatePreviewVisible() = PhonePreview.setAppVisible(resumed && !dimmed && !overLock)
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
@@ -220,9 +297,12 @@ class MainActivity : ComponentActivity() {
         }
         if (fromIntent != null) {
             // Plugged in while locked: come to the foreground so Android lets us start the camera.
+            // Only a status view shows until the phone is unlocked (overLock).
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O_MR1) {
                 setShowWhenLocked(true)
                 setTurnScreenOn(true)
+                showingWhenLocked = true
+                updateOverLock()
             }
             handleAccessory(fromIntent)
             return

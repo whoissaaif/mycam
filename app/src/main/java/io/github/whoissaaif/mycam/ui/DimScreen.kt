@@ -43,7 +43,12 @@ import kotlinx.coroutines.delay
  * it on any touch. Nothing animates except the burn-in drift.
  */
 @Composable
-fun DimScreen(state: WebcamService.UiState, modifier: Modifier = Modifier) {
+fun DimScreen(
+    state: WebcamService.UiState,
+    modifier: Modifier = Modifier,
+    /** Shown over the lock screen (MainActivity): says to unlock, and "live" only while streaming. */
+    lockScreen: Boolean = false,
+) {
     // Drift the content a little every minute so nothing stays lit in the same place (OLED burn-in).
     var step by remember { mutableIntStateOf(0) }
     LaunchedEffect(Unit) {
@@ -67,9 +72,14 @@ fun DimScreen(state: WebcamService.UiState, modifier: Modifier = Modifier) {
             )
             Spacer(Modifier.height(16.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.dim_title), style = MaterialTheme.typography.titleMedium, color = Xp.DimText)
-                Spacer(Modifier.width(12.dp))
-                LivePill(Modifier.alpha(0.6f))
+                Text(
+                    stringResource(if (lockScreen) R.string.locked_title else R.string.dim_title),
+                    style = MaterialTheme.typography.titleMedium, color = Xp.DimText,
+                )
+                if (!lockScreen || (state.streaming && !state.paused)) {
+                    Spacer(Modifier.width(12.dp))
+                    LivePill(Modifier.alpha(0.6f))
+                }
             }
             Spacer(Modifier.height(8.dp))
             Text(
@@ -82,7 +92,10 @@ fun DimScreen(state: WebcamService.UiState, modifier: Modifier = Modifier) {
                 Text(text, style = MaterialTheme.typography.bodyMedium, color = color, textAlign = TextAlign.Center)
             }
             Spacer(Modifier.height(48.dp))
-            Text(stringResource(R.string.dim_hint), style = MaterialTheme.typography.bodySmall, color = Xp.DimSubtle)
+            Text(
+                stringResource(if (lockScreen) R.string.locked_hint else R.string.dim_hint),
+                style = MaterialTheme.typography.bodySmall, color = Xp.DimSubtle,
+            )
         }
     }
 }
