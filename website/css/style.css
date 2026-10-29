@@ -852,6 +852,25 @@ a {
   text-decoration: underline;
 }
 
+/* A command to copy into a terminal (the Linux page). */
+.legal pre.command {
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 10px;
+  padding: 14px 18px;
+  margin: 0 0 16px;
+  max-width: 740px;
+  overflow-x: auto;
+  font-size: 0.95rem;
+}
+
+.legal pre.command code {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: inherit;
+}
+
 /* ---------- Responsive ---------- */
 
 @media (max-width: 900px) {
