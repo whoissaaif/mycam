@@ -98,10 +98,10 @@ add_executable(MyCamCompanion WIN32
     companion/companion.manifest
 )
 target_link_libraries(MyCamCompanion PRIVATE usb mfplat mfuuid ole32 shell32 advapi32 setupapi newdev cfgmgr32
-    comctl32 d2d1 dwrite windowscodecs dwmapi wtsapi32 taskschd ws2_32 winhttp iphlpapi bcrypt crypt32 ncrypt secur32 d3d11 dxgi dcomp dxguid uiautomationcore winmm)
+    comctl32 d2d1 dwrite windowscodecs dwmapi wtsapi32 taskschd ws2_32 winhttp iphlpapi bcrypt crypt32 ncrypt secur32 d3d11 dxgi dcomp dxguid uiautomationcore)
 
 # --- Developer tools (not shipped; install.ps1 copies only the two binaries above) -------------------
-option(MYCAM_BUILD_TOOLS "Build developer tools (capture_test, usb_probe, uia_dump, web_probe)" OFF)
+option(MYCAM_BUILD_TOOLS "Build developer tools (capture_test, usb_probe, uia_dump, web_probe, minimise_probe)" OFF)
 if(MYCAM_BUILD_TOOLS)
     add_executable(capture_test tools/capture_test.cpp)
     target_link_libraries(capture_test PRIVATE mfplat mf mfreadwrite mfuuid ole32)
@@ -112,6 +112,9 @@ if(MYCAM_BUILD_TOOLS)
     target_link_libraries(web_probe PRIVATE ws2_32 iphlpapi bcrypt crypt32 ncrypt secur32 ole32)
     add_executable(uia_dump tools/uia_dump.cpp)
     target_link_libraries(uia_dump PRIVATE ole32 oleaut32 uiautomationcore)
+    # Measures what minimising a window does to decoding (#95); needs an Annex-B H.264 file to chew on.
+    add_executable(minimise_probe tools/minimise_probe.cpp companion/decoder.cpp companion/log.cpp)
+    target_link_libraries(minimise_probe PRIVATE mfplat mfuuid d3d11 ole32 shell32)
 endif()
 
 # --- Unit tests ------------------------------------------------------------------------------------
