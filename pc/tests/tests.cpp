@@ -1024,8 +1024,22 @@ void TestStatusText() {
     CHECK(DescribeStatus(s, false).detail.find(L"Windows 11") == std::wstring::npos);
     v = DescribeStatus(s, true, L"DirectShow");
     CHECK(v.facts == L"Back camera · 1920 × 1080 · USB (DirectShow)");
+
     CHECK(v.detail == L"Back camera · 1920 × 1080");
     CHECK(DescribeStatus(s, true).facts == L"Back camera · 1920 × 1080 · USB"); // Frame Server: no tag.
+
+    // A cable held by a driver MyCam won't touch is named, not left as "plug in your phone" (#78). It beats
+    // both Searching texts, says what to do about it, and goes back to normal once the phone is openable.
+    s = LinkStatus{};
+    s.state = LinkState::Searching;
+    s.usbDriverBlocked = true;
+    v = DescribeStatus(s, true);
+    CHECK(v.headline != L"No phone connected" && v.icon == kIconError);
+    CHECK(v.detail.find(L"Device Manager") != std::wstring::npos);
+    s.wirelessSearch = true; // Still the cable's problem that gets named, not "turn on Wi-Fi".
+    CHECK(DescribeStatus(s, true).headline == v.headline);
+    s.usbDriverBlocked = false;
+    CHECK(DescribeStatus(s, true).headline == L"No phone connected");
 }
 
 // --- iPhone web camera (web_proto.h) -------------------------------------------------------------------

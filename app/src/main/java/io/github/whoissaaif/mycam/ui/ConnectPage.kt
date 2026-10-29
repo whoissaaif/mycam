@@ -72,6 +72,7 @@ fun ConnectPage(
     onScanQr: () -> Unit = {},
 ) {
     var usbHelp by rememberSaveable { mutableStateOf(false) }
+    var cantConnect by rememberSaveable { mutableStateOf(false) }
     Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         StatusCard(state, actions, applying, sweepLive, onLiveSwept)
 
@@ -109,6 +110,26 @@ fun ConnectPage(
                             try { uri.openUri(RELEASES_URL) } catch (_: Exception) {}
                         })
                     }
+                }
+            }
+            CardDivider()
+            // The four causes behind nearly every failed connection (#78), the same list as the PC's Devices
+            // page and the website FAQ. Folded away like the USB help above until somebody needs it.
+            NavRow(
+                LineIcon.Plug, stringResource(R.string.connect_help), stringResource(R.string.connect_help_detail),
+                onClick = { cantConnect = !cantConnect },
+            )
+            AnimatedVisibility(cantConnect) {
+                Column(Modifier.padding(start = 52.dp, end = 8.dp, bottom = 8.dp)) {
+                    Text(
+                        stringResource(R.string.connect_help_causes),
+                        style = MaterialTheme.typography.bodyMedium, color = V2.Subtle,
+                    )
+                    val uri = LocalUriHandler.current
+                    // The address is the link text, so it can still be read off without an email app.
+                    XpLink(stringResource(R.string.connect_help_contact, SUPPORT_EMAIL), onClick = {
+                        try { uri.openUri("mailto:$SUPPORT_EMAIL") } catch (_: Exception) {}
+                    })
                 }
             }
         }

@@ -868,6 +868,49 @@ struct SettingsWindow::Impl {
                             L"No device is connected yet.", true, x, y, w);
         LayoutDeviceSection(kAvailableTitle, kCardDevices, kScanList, kAvailableNote, L"Available Devices",
                             scanning ? L"" : L"Nothing else has answered yet.", false, x, y, w);
+        LayoutCantConnect(x, y, w);
+    }
+
+    // "Can't connect?" (#78): the four causes that account for nearly every failure, under the device
+    // lists where somebody is already looking for them. The same list as the phone app and the website FAQ.
+    void LayoutCantConnect(float x, float* y, float w) {
+        *y += kGap;
+        const float ix = x + kCardPad, iw = w - 2 * kCardPad;
+        const size_t ci = cards.size(), ii = items.size();
+        cards.push_back({kCardHelp, MakeBox(x, *y, w, 10)});
+        Item& card = Add(kCardHelp, Kind::Card, L"", MakeBox(x, *y, w, 10), kNone);
+        card.e.name = L"Can't connect?";
+        float cy = *y + kCardPad;
+        {
+            const Size t = paint.Measure(Font::BodyBold, L"Can't connect?", iw);
+            Item& h = Add(kHelpTitle, Kind::Text, L"", MakeBox(ix, cy, iw, t.h), kCardHelp);
+            h.e.name = h.label = L"Can't connect?";
+            cy += t.h + 6;
+        }
+        const std::wstring causes =
+            L"The phone has to allow the cable. Android asks once, and it is easy to miss: unplug the phone, plug "
+            L"it back in and tap OK, ticking Always so it stops asking.\n\n"
+            L"Some cables only charge. Use the one that came with the phone, and if Windows asks what the "
+            L"connection is for, choose file transfer rather than charging.\n\n"
+            L"Over Wi-Fi, the phone and this PC must be on the same network. Guest and public Wi-Fi usually keep "
+            L"devices apart on purpose, so MyCam can't reach across.\n\n"
+            L"If Windows calls this network Public, it blocks the phone from reaching the PC. Set the network to "
+            L"Private in Windows Settings, under Network & internet.";
+        {
+            const Size c = paint.Measure(Font::Body, causes, iw);
+            Item& t = Add(kHelpList, Kind::Text, L"", MakeBox(ix, cy, iw, c.h), kCardHelp);
+            t.e.name = t.label = causes;
+            cy += c.h + kGap;
+        }
+        // The address is the link text, so it can still be read off without a mail app.
+        const std::wstring contact = std::wstring(L"Still stuck? Write to ") + kSupportEmail;
+        const Size mail = paint.Measure(Font::Body, contact);
+        Add(kContact, Kind::Link, contact, MakeBox(ix, cy, mail.w, mail.h), kCardHelp);
+        cy += mail.h + kCardPad;
+        const Box box = MakeBox(x, *y, w, cy - *y);
+        cards[ci].box = box;
+        items[ii].e.rect = box;
+        *y = box.b;
     }
 
     // --- Camera -------------------------------------------------------------------------------------
@@ -1944,7 +1987,7 @@ struct SettingsWindow::Impl {
         case kWebNote: case kWebDevicesNote:
             paint.Text(Font::Small, it.label, e.rect, pal.subtle);
             break;
-        case kConnectedTitle: case kAvailableTitle: case kWebDevicesTitle:
+        case kConnectedTitle: case kAvailableTitle: case kWebDevicesTitle: case kHelpTitle:
             paint.Text(Font::BodyBold, it.label, e.rect, pal.text);
             break;
         default: {

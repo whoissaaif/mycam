@@ -320,6 +320,20 @@ bool AccessoryNeedsDriver(std::string* detail) {
     return needs;
 }
 
+bool AccessoryForeignDriver(std::string* detail) {
+    bool foreign = false;
+    ForEachAccessory([&](HDEVINFO, SP_DEVINFO_DATA*, const AccessoryNode& node) {
+        if (node.state != AccessoryDriver::Foreign) return true;
+        foreign = true;
+        if (detail) {
+            *detail = Narrow(node.instanceId) + ": " + AccessoryDriverName(node.state);
+            if (!node.info.service.empty()) *detail += " (" + Narrow(node.info.service) + ")";
+        }
+        return false;
+    });
+    return foreign;
+}
+
 int BindAccessoryDrivers() {
     int bound = 0;
     ForEachAccessory([&](HDEVINFO set, SP_DEVINFO_DATA* dev, const AccessoryNode& node) {

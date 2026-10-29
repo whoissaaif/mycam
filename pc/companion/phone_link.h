@@ -98,6 +98,9 @@ private:
     bool InitUsb();                                  // Logs how it went; false: no USB phones.
     void ExitUsb();
     bool UsbNeedsDriver();                           // A phone in accessory mode can't be opened yet.
+    // A phone in accessory mode held by a driver somebody installed, which BindAccessoryDrivers leaves
+    // alone: waiting will never help, so the status says so rather than "no phone connected" (#78).
+    bool UsbForeignDriver();
     // One USB session with a phone in accessory mode; checkOnly: just see whether it opens, then close it.
     // False: it couldn't be opened.
     bool RunAccessory(libusb_device* accessory, bool checkOnly = false);

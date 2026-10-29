@@ -148,8 +148,13 @@ void PhoneLink::ScanOnce() {
         libusb_unref_device(accessory);
     } else {
         libusb_free_device_list(list, 1);
-        if (status_.state != LinkState::Searching) {
+        // Nothing to open. A phone whose accessory interface carries a driver somebody installed is one
+        // BindAccessoryDrivers leaves alone, so waiting will never help: the status says that instead of
+        // "plug in your phone" (#78). Only asked here, so it costs nothing while a phone is connected.
+        const bool blocked = UsbForeignDriver();
+        if (status_.state != LinkState::Searching || status_.usbDriverBlocked != blocked) {
             status_ = LinkStatus{};
+            status_.usbDriverBlocked = blocked;
             Publish();
         }
     }

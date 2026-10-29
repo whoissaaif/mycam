@@ -72,6 +72,15 @@ bool PhoneLink::UsbNeedsDriver() {
     return needs;
 }
 
+bool PhoneLink::UsbForeignDriver() {
+    std::string detail;
+    bool foreign = AccessoryForeignDriver(&detail);
+    static std::string lastDetail; // Once per change: this runs on every scan that found nothing.
+    if (foreign && detail != lastDetail) Log("usb: accessory held by another driver: %s", detail.c_str());
+    lastDetail = foreign ? detail : std::string();
+    return foreign;
+}
+
 bool PhoneLink::RunAccessory(libusb_device* accessory, bool checkOnly) {
     // Prefer WinUSB: UsbDk refuses to redirect a device that already has a working driver, and the
     // accessory gets WinUSB bound on first connection (see winusb_bind.cpp).

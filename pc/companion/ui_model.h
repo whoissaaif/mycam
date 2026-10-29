@@ -51,6 +51,7 @@ enum Id : int {
     kCardUsb = 110, kCardWifi = 111, kCardDevices = 112, kCardControls = 113, kCardSettings = 114,
     kCardAbout = 115, kCardStatus = 116, kCardPairing = 117, kCardConnected = 118,
     kCardIPhone = 119, kCardWebDevices = 120, kCardWebHome = 121, // "Connect an iPhone" (web camera).
+    kCardHelp = 122,                // "Can't connect?" on the Devices page (#78).
     // "Now" group / the Home page's status area.
     kStatusHeadline = 200, kStatusDetail = 201, kPause = 202, kLivePill = 203, kStatusProgress = 204,
     kShowPairing = 205, kScanNow = 206, // "Scan for phones" in Now (only while no phone is connected).
@@ -82,6 +83,7 @@ enum Id : int {
     kCheckUpdates = 613,
     // Task links.
     kReconnect = 700, kOpenLog = 701, kContact = 702,
+    kHelpTitle = 703, kHelpList = 704, // "Can't connect?" (#78): the heading and the causes.
     // Right side: preview and live camera controls.
     kPreview = 800, kStatusSentence = 801, kZoomOut = 802, kZoomValue = 803, kZoomIn = 804, kZoomReset = 805,
     kEvDown = 806, kEvValue = 807, kEvUp = 808, kFocusAuto = 809, kFocusLock = 810, kTorch = 811, kAuto = 812,
