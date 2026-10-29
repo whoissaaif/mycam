@@ -3,6 +3,13 @@
 Android app and PC companion share one version (SemVer: PATCH = fixes, MINOR = features, MAJOR = breaking
 or protocol changes). Releases with their installers: https://github.com/whoissaaif/mycam/releases
 
+## Unreleased
+
+- **Linux: a settings window.** The MyCam entry in your apps (or **Open MyCam** in the tray menu) opens a
+  window with the Windows window's pages: Home (status, pause, connect, reconnect), Devices, Camera
+  (back/front, resolution, mirror, fill), Settings (start at login, update alerts, quit) and About. It
+  talks to the service like the tray does, so the two always agree. No camera preview yet.
+
 ## 1.7.1 — Linux fixes and a one-line install
 
 - **Linux: one-line install.** `wget -qO- https://mycam.dev/install.sh | sh` downloads the latest `.deb`,

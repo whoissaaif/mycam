@@ -606,8 +606,9 @@ the Windows tray menu through AppIndicator, which Ubuntu's dock shows out of the
 menu logic and sends one status line on every change (`control_proto.h`); menu clicks go back as commands
 on the same control socket, which now serves each client on its own thread (a tray and `--pair` at once).
 Mirror/Fill are saved in the store like on Windows. The "Connect an iPhone" window is plain GTK until 4b.
-**Phase 4b, next:** the settings window, sharing the Windows page code through a cross-platform XP drawing
-kit (Direct2D on Windows, Cairo/Pango on Linux) — decided 2026-10-20 over a separate Linux-only copy.
+**Phase 4b, first step (2026-10-30):** a GTK settings window in `mycam-tray` with the Windows window's pages
+and v2 palette as CSS, over the same control socket; no preview. Still planned: share the Windows page code
+through a cross-platform XP drawing kit (Direct2D on Windows, Cairo/Pango on Linux), decided 2026-10-20.
 
 ---
 
