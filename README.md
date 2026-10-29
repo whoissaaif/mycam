@@ -3,7 +3,7 @@
 </p>
 
 <h1 align="center">MyCam</h1>
-<p align="center"><b>Turn your phone into a webcam for Windows.</b></p>
+<p align="center"><b>Turn your phone into a webcam for Windows and Linux.</b></p>
 <p align="center"><a href="https://mycam.dev">mycam.dev</a></p>
 
 <p align="center">
@@ -18,7 +18,12 @@
 
 MyCam shows up as a camera called **MyCam** on your Windows PC (10 or 11) — in Zoom, Teams, OBS, browsers,
 and the Windows Camera app — fed live by your phone. Plug in an Android phone and it just works; scan a QR
-code on an iPhone and nothing even needs installing.
+code on an iPhone and nothing even needs installing. Linux is supported too, as a beta.
+
+> **Project status: finished.** MyCam is complete at **v1.8.0**: Windows, Android and Linux all share that
+> one version. No new development is planned. The [closed issues](https://github.com/whoissaaif/mycam/issues?q=is%3Aissue+is%3Aclosed+reason%3Anot-planned)
+> marked *not planned* are known bugs that were never fixed. Each one is written up, so they're a good
+> starting point for anyone who forks it.
 
 ## Why MyCam
 
@@ -89,13 +94,13 @@ protocol and architecture are in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#iph
 ## Linux (beta)
 
 MyCam also runs on Linux, as a background service that shows up as a camera called **MyCam**
-(v4l2loopback), with a tray icon carrying the same menu as on Windows. Install the `.deb` with
+(v4l2loopback), with a tray icon carrying the same menu as on Windows and a settings window with the
+same pages as the Windows one (open it from your apps, or **Open MyCam** in the tray menu). Install the `.deb` with
 `sudo apt install ./mycam_<version>_amd64.deb`; the service and tray then start at every login.
 
 It's a beta: the iPhone over Wi-Fi is tested on Ubuntu 24.04, and Android phones (USB and Wi-Fi) work with
-the same code as on Windows but haven't had much testing on Linux yet — reports welcome. There's no settings
-window yet; the tray menu has the everyday controls. Install, pairing and troubleshooting
-are in the [Linux guide](pc/linux/README.md).
+the same code as on Windows but haven't had much testing on Linux yet. The settings window has no
+camera preview yet. Install, pairing and troubleshooting are in the [Linux guide](pc/linux/README.md).
 
 ## Troubleshooting
 
@@ -129,13 +134,13 @@ and shows local network addresses, so look it over first).
 - **iPhone:** needs a browser with WebCodecs H.264 (current Safari); works over the network only (wired is
   a plan, not yet shipped); the page must stay open in front, since iOS stops the camera when Safari is
   backgrounded.
-- **Linux:** a beta — needs `v4l2loopback`; Android on Linux has had little testing so far, and there's no
-  settings window yet. See the [Linux guide](pc/linux/README.md).
+- **Linux:** a beta — needs `v4l2loopback`; Android on Linux has had little testing so far, and the
+  settings window has no camera preview. See the [Linux guide](pc/linux/README.md).
 
 ## Contributing
 
-Bug reports and small fixes are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for how to build, test,
-and what the pull request checklist expects. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) has the full
+The project is finished and no longer actively developed, but it's MIT-licensed: fork it freely.
+[CONTRIBUTING.md](CONTRIBUTING.md) covers how to build and test it. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) has the full
 technical picture: how the pieces fit together, the repo layout, and the wire protocol.
 
 ## License
