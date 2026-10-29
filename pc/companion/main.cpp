@@ -6,7 +6,6 @@
 #include <wtsapi32.h>
 #include <mfapi.h>
 #include <mfvirtualcamera.h>
-#include <timeapi.h>
 #include <wrl/client.h>
 
 #include <atomic>
@@ -463,18 +462,18 @@ void DemoScanDone() {
     PostMessageW(g_hwnd, WM_STATUS, 0, 0);
 }
 
-// MyCam usually runs with its window closed (tray) or minimised. Since Windows 11 such a process no longer
-// gets a fine timer, so every short wait on the video path (inside Media Foundation's decoder, the GPU
-// readback) rounds up to a 15.6 ms tick: decoding went from ~10 ms to 62 ms a frame and apps got stutter
-// (#95). Opt out of that throttling, and of EcoQoS, for the whole run: the companion is a real-time pipe.
+// MyCam usually runs with its window closed (tray), minimised or behind a call. Since Windows 11 such a
+// process no longer gets the timer resolution the media pipeline asks for, so the decoder's own short waits
+// round up to the 15.6 ms tick: decoding went from ~7 ms to 62 ms a frame and apps got stutter (#95). Only
+// this policy is the cause (pc/tools/minimise_probe measures each one): no timeBeginPeriod, and EcoQoS is
+// left alone, since this runs all day in the tray. Before Windows 11 the call just fails.
 void KeepTimerResolution() {
     PROCESS_POWER_THROTTLING_STATE state = {};
     state.Version = PROCESS_POWER_THROTTLING_CURRENT_VERSION;
-    state.ControlMask = PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION | PROCESS_POWER_THROTTLING_EXECUTION_SPEED;
-    state.StateMask = 0; // Off for both: keep the fine timer and full execution speed.
+    state.ControlMask = PROCESS_POWER_THROTTLING_IGNORE_TIMER_RESOLUTION; // This policy is ours to set...
+    state.StateMask = 0;                                                 // ...and it is off: don't throttle.
     const BOOL ok = SetProcessInformation(GetCurrentProcess(), ProcessPowerThrottling, &state, sizeof(state));
-    const MMRESULT period = timeBeginPeriod(1);
-    Log("timer: power throttling off -> %d, 1 ms timer -> %u", int(ok), unsigned(period));
+    Log("timer: keep the timer resolution in the background -> %d", int(ok));
 }
 
 int QuitRunningInstance() {
