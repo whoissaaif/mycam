@@ -85,6 +85,9 @@ or protocol changes). Releases with their installers: https://github.com/whoissa
   opened the cable yet (locked, its prompt unanswered, MyCam closed) no longer makes the PC drop Wi-Fi or sit
   in a dead USB session: it stays on Wi-Fi and switches once the phone answers. Switching a locked phone to
   USB mode no longer freezes a running Wi-Fi stream, and it's tried again while the phone stays plugged in.
+- **Windows: quitting MyCam no longer crashes it.** Every exit crashed while tearing down (COM and Media
+  Foundation were shut down before the objects still using them), which also made `--quit` report failure and
+  left copies running during installs and upgrades. A crash now also writes `crash.txt` next to the log. (#20)
 
 No protocol changes: 1.6.0 phones and PCs work with 1.5.x.
 
