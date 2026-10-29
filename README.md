@@ -52,7 +52,7 @@ code on an iPhone and nothing even needs installing.
 | **Windows (PC)** | Download `MyCam-Setup-X.Y.Z.exe` from the [latest release](https://github.com/whoissaaif/mycam/releases/latest) and run it. |
 | **Android** | Download `MyCam-X.Y.Z.apk` from the same release and install it (or build from source — see [Architecture → Build and test](docs/ARCHITECTURE.md#build-and-test-from-source)). |
 | **iPhone / iPad** | Nothing to install — see [iPhone](#iphone) below. |
-| **Linux (beta)** | In a terminal: `curl -fsSL https://mycam.dev/install.sh \| sh` (Ubuntu and friends), or download `mycam_X.Y.Z_amd64.deb` from the same release — see [Linux](#linux-beta) below. |
+| **Linux (beta)** | In a terminal: `wget -qO- https://mycam.dev/install.sh \| sh` (Ubuntu and friends), or download `mycam_X.Y.Z_amd64.deb` from the same release — see [Linux](#linux-beta) below. |
 
 ### Setting it up
 

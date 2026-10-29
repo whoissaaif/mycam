@@ -12,8 +12,10 @@ is no settings window yet.
 In a terminal:
 
 ```
-curl -fsSL https://mycam.dev/install.sh | sh
+wget -qO- https://mycam.dev/install.sh | sh
 ```
+
+(`curl -fsSL https://mycam.dev/install.sh | sh` works too; a fresh Ubuntu has `wget` but not `curl`.)
 
 It downloads the `.deb` from the [latest release](https://github.com/whoissaaif/mycam/releases/latest),
 installs it with apt (asking for your password), and starts MyCam and its tray icon. The script is
