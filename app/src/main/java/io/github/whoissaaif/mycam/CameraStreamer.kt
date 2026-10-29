@@ -74,7 +74,7 @@ class CameraStreamer(
     )
 
     private val cameraManager = context.getSystemService(CameraManager::class.java)
-    private var camera: CameraDevice? = null
+    @Volatile private var camera: CameraDevice? = null
     private var session: CameraCaptureSession? = null
     private var encoder: MediaCodec? = null
     private var inputSurface: Surface? = null
@@ -322,6 +322,15 @@ class CameraStreamer(
         inputSurface?.release()
         session = null; camera = null; encoder = null; inputSurface = null; request = null
         previewConfig = null; previewSurface = null; previewFinalized = false
+    }
+
+    /**
+     * Any thread: lets go of the camera at once, for when [handler]'s thread is stuck (a frame write the PC
+     * never reads, #92). CameraDevice.close may be called from any thread. Call [stop] on the handler thread
+     * once it runs again.
+     */
+    fun releaseCameraNow() {
+        try { camera?.close() } catch (_: Exception) {}
     }
 
     /** Cameras facing the requested way, in the order the phone lists them (the main one first). */

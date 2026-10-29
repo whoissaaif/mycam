@@ -112,7 +112,30 @@ class WebcamService : Service() {
 
     private lateinit var cameraThread: HandlerThread
     private lateinit var camera: Handler
-    private var streamer: CameraStreamer? = null
+    @Volatile private var streamer: CameraStreamer? = null
+    /** When the frame write now running started (elapsedRealtime), 0 between writes. Camera thread writes. */
+    @Volatile private var writeStartedAt = 0L
+    /** The watchdog let go of the camera because a write was stuck (#92); the camera thread finishes the stop. */
+    @Volatile private var writeStalled = false
+    /**
+     * Main thread, every 2 s while linked. Over the cable a PC that died (crashed, killed) leaves nobody
+     * reading, so a frame write blocks for as long as the cable stays in, with the camera thread inside it and
+     * the camera still running. After [WRITE_STALL_MS] the camera is let go from here; a companion that starts
+     * again reads the stuck write, and its START brings the camera back.
+     */
+    private val writeWatchdog = object : Runnable {
+        override fun run() {
+            if (!linked) return
+            val started = writeStartedAt
+            if (started != 0L && !writeStalled && SystemClock.elapsedRealtime() - started > WRITE_STALL_MS) {
+                writeStalled = true
+                Log.w(TAG, "the PC hasn't read anything for ${WRITE_STALL_MS / 1000} s: camera off until it does")
+                streamer?.releaseCameraNow()
+                _state.update { it.copy(streaming = false, resolution = "") }
+            }
+            main.postDelayed(this, 2_000)
+        }
+    }
     private var orientationListener: OrientationEventListener? = null
     private var thermalListener: Any? = null // PowerManager.OnThermalStatusChangedListener (API 29+).
     private var wakeLock: PowerManager.WakeLock? = null
@@ -820,6 +843,9 @@ class WebcamService : Service() {
         _state.update { it.copy(connected = true, error = null, wireless = wirelessPc != null, wirelessPc = wirelessPc, qr = null) }
         orientationListener?.takeIf { it.canDetectOrientation() }?.enable()
         acquireWakeLock()
+        writeStalled = false
+        main.removeCallbacks(writeWatchdog)
+        main.postDelayed(writeWatchdog, 2_000)
         updateNotification()
         readerThread = Thread({ readLoop(input, id) }, if (wirelessPc != null) "wifi-reader" else "accessory-reader").apply { start() }
     }
@@ -1125,11 +1151,20 @@ class WebcamService : Service() {
     /** Called on the camera thread only, so writes are naturally serialized. */
     private fun send(type: Int, flags: Int, ptsUs: Long, payload: ByteArray) {
         val out = output ?: return
+        writeStartedAt = SystemClock.elapsedRealtime()
         try {
             out.write(Protocol.packet(type, flags, ptsUs, payload))
         } catch (e: IOException) {
             Log.i(TAG, "Accessory write failed: ${e.message}")
             output = null
+            stopStreamer()
+        } finally {
+            writeStartedAt = 0L
+        }
+        if (writeStalled) {
+            // The PC reads again (a companion started): finish the stop the watchdog began. Its START restarts.
+            writeStalled = false
+            remoteLog("a frame write was stuck while the PC wasn't reading: the camera was turned off meanwhile")
             stopStreamer()
         }
     }
@@ -1266,6 +1301,8 @@ class WebcamService : Service() {
         /** "Connect to me" is resent every 2 s, five times, because a single datagram may be lost. */
         private const val INVITE_EVERY_MS = 2_000L
         private const val INVITE_TRIES = 5
+        /** A frame write stuck this long means the PC stopped reading (#92). */
+        private const val WRITE_STALL_MS = 10_000L
         /** How long after Find devices (or tapping a PC) a new PC may ask to pair: time to go and click Connect. */
         private const val PAIRING_WINDOW_MS = 120_000L
 
