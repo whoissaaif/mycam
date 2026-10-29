@@ -4,8 +4,8 @@ MyCam turns your phone into a webcam for Zoom, OBS, Discord and browsers. On Lin
 background and shows up as a camera called **MyCam**.
 
 **Status:** a beta. The iPhone (over Wi-Fi) is tested on Ubuntu 24.04. Android phones (USB and Wi-Fi) use
-the same code as on Windows but have had little testing on Linux yet: please report what you find. A tray icon shows the status and has the everyday controls; there
-is no settings window yet.
+the same code as on Windows but have had little testing on Linux yet: please report what you find. A tray icon shows the status and has the everyday controls; the
+**MyCam** entry in your apps (or **Open MyCam** in the tray menu) opens the settings window.
 
 ## Install
 

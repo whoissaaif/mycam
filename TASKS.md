@@ -156,8 +156,9 @@ Status: `[ ]` to do · `[~]` in progress · `[x]` done
       (control socket in $XDG_RUNTIME_DIR). All on main (2026-10-20); 1.6.0 ships it as a preview.
       GUI phase 4a done (2026-10-20): `mycam-tray`, an AppIndicator tray with the Windows tray's icons and
       menu, over the control socket; verified on Ubuntu 24.04 with the iPhone (status, pause, mirror, front
-      camera, Connect an iPhone window). Next: 4b, the settings window on a shared XP drawing kit
-      (Direct2D on Windows, Cairo/Pango on Linux; needs saif's review and a Windows test). Android (USB +
+      camera, Connect an iPhone window). Settings window (2026-10-30): plain GTK with the v2 palette, inside
+      `mycam-tray` (Open MyCam, or the MyCam app entry = `mycam-tray --window`): Home, Devices, Camera,
+      Settings, About. No preview yet. Later: the shared XP drawing kit (Direct2D/Cairo) replaces it. Android (USB +
       Wi-Fi) on Linux: last, once an Android phone is at hand
 
 ## Backlog
