@@ -109,7 +109,8 @@ class CameraStreamer(
     private var previewSurface: Surface? = null             // The surface currently in the repeating request.
     private var previewFinalized = false
     private var previewWanted: Surface? = null              // What the UI last asked for.
-    private var previewRefused = false                      // This camera refused the second output; don't retry.
+    // On the Huawei P30 Pro with Android 10, a deferred preview output can stall the capture session.
+    private var previewRefused = Build.VERSION.SDK_INT == Build.VERSION_CODES.Q && Build.DEVICE.equals("HWVOG", ignoreCase = true)
 
     /** How a camera delivers a quality at a frame rate: output size, capture range, normal or high-speed. */
     private class Mode(val size: Size, val fps: Int, val range: Range<Int>, val highSpeed: Boolean)
@@ -592,7 +593,7 @@ class CameraStreamer(
 
     private fun startEncoder() {
         val codec = MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC)
-        codec.setCallback(object : MediaCodec.Callback() {
+        val callback = object : MediaCodec.Callback() {
             override fun onInputBufferAvailable(codec: MediaCodec, index: Int) {}
 
             override fun onOutputBufferAvailable(codec: MediaCodec, index: Int, info: MediaCodec.BufferInfo) {
@@ -639,13 +640,15 @@ class CameraStreamer(
                 configSent = true
                 listener.onConfig(width, height, sensorOrientation, facing, csd)
             }
-        }, handler)
+        }
+        codec.setCallback(callback, handler)
         try {
             codec.configure(encoderFormat(lowLatencyExtras = true), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         } catch (e: Exception) {
             // Some vendor encoders reject the optional low-latency keys; retry without them.
             Log.w(TAG, "Encoder rejected format, retrying with basic settings", e)
             codec.reset()
+            codec.setCallback(callback, handler)
             codec.configure(encoderFormat(lowLatencyExtras = false), null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
         }
         inputSurface = codec.createInputSurface()
