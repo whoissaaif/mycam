@@ -3,6 +3,16 @@
 Android app and PC companion share one version (SemVer: PATCH = fixes, MINOR = features, MAJOR = breaking
 or protocol changes). Releases with their installers: https://github.com/whoissaaif/mycam/releases
 
+## 1.8.1 — Huawei P30 Pro fix
+
+- **Android: restore Huawei P30 Pro webcam streaming.** On the P30 Pro (Android 10, EMUI 12) the encoder
+  fallback path lost its output callback after a codec reset, causing `Camera error 4` after a few
+  seconds. The callback is now re-registered after every reset. A narrow workaround also skips the
+  deferred phone preview on the affected device so the webcam stream stays stable. (#112, thanks
+  `@Asditus`)
+
+No changes for Windows or Linux apart from the version number. No protocol changes.
+
 ## 1.8.0 — a settings window for Linux
 
 - **Linux: a settings window.** The MyCam entry in your apps (or **Open MyCam** in the tray menu) opens a
